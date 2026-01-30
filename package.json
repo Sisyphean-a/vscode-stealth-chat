@@ -1,0 +1,57 @@
+{
+  "name": "vscode-stealth-chat",
+  "displayName": "TS-Lint Service",
+  "description": "A stealth chat client disguised as a linting service",
+  "version": "1.0.0",
+  "publisher": "stealth",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.stealthSend",
+        "title": "Configure Parameters",
+        "category": "TS-Lint"
+      }
+    ],
+    "configuration": {
+      "title": "TS-Lint Service",
+      "properties": {
+        "tsLint.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Server URL for the TS-Lint service"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "extension.stealthSend",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.0"
+  }
+}
