@@ -27,9 +27,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Get configuration
     const config = vscode.workspace.getConfiguration('tsLint');
     const serverUrl = config.get<string>('serverUrl') || 'http://localhost:3000';
+    const secret = config.get<string>('secret') || 'ChangeMeInProduction';
     
     // Connect to Socket.io server
-    connectToServer(serverUrl);
+    connectToServer(serverUrl, secret);
     
     // Register command: Send message (disguised as configuration input)
     const sendCommand = vscode.commands.registerCommand('extension.stealthSend', async () => {
@@ -59,13 +60,14 @@ export function activate(context: vscode.ExtensionContext) {
     
     // Listen for configuration changes
     const configChangeDisposable = vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('tsLint.serverUrl')) {
+        if (e.affectsConfiguration('tsLint.serverUrl') || e.affectsConfiguration('tsLint.secret')) {
             const newConfig = vscode.workspace.getConfiguration('tsLint');
             const newServerUrl = newConfig.get<string>('serverUrl') || 'http://localhost:3000';
+            const newSecret = newConfig.get<string>('secret') || 'ChangeMeInProduction';
             
             // Reconnect with new URL
             socket?.disconnect();
-            connectToServer(newServerUrl);
+            connectToServer(newServerUrl, newSecret);
         }
     });
     
@@ -78,9 +80,13 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-function connectToServer(serverUrl: string): void {
+function connectToServer(serverUrl: string, secret: string): void {
     try {
-        socket = io(serverUrl);
+        socket = io(serverUrl, {
+             auth: {
+                token: secret
+             }
+        });
         
         socket.on('connect', () => {
             const timestamp = getCurrentTimestamp();

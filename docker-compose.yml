@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  gotify:
+    image: gotify/server
+    container_name: gotify
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      GOTIFY_DEFAULTUSER_PASS: "${GOTIFY_PASS:-admin}"
+    volumes:
+      - ./gotify_data:/app/data
+
+  chat-server:
+    build: ./server
+    container_name: stealth-chat-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - GOTIFY_URL=http://gotify:80/message
+      - GOTIFY_TOKEN=${GOTIFY_TOKEN}
+      - STEALTH_SECRET=${STEALTH_SECRET:-ChangeMeInProduction}
+      - CLICK_URL=http://localhost:3000
+    depends_on:
+      - gotify

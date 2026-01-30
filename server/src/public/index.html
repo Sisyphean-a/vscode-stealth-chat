@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stealth Chat</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        #messages { list-style-type: none; padding: 0; height: 60vh; overflow-y: scroll; border: 1px solid #333; background: #252526; border-radius: 6px; }
+        #messages li { padding: 8px 12px; margin-bottom: 5px; border-bottom: 1px solid #333; }
+        #auth-container { margin-bottom: 20px; }
+        .input-group { display: flex; gap: 10px; margin-top: 10px; }
+        input { flex: 1; padding: 12px; border: 1px solid #3c3c3c; background: #3c3c3c; color: white; border-radius: 4px; }
+        button { padding: 12px 24px; background: #007acc; border: none; color: white; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0062a3; }
+        .msg-own { color: #4ec9b0; }
+        .msg-remote { color: #ce9178; }
+        .system { color: #6a9955; font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <div id="auth-container">
+        <input id="token-input" type="password" placeholder="Enter Secret Token" value="ChangeMeInProduction">
+        <button onclick="connect()">Connect</button>
+    </div>
+
+    <div id="chat-container" style="display:none;">
+        <ul id="messages"></ul>
+        <form id="form" action="">
+          <div class="input-group">
+            <input id="input" autocomplete="off" placeholder="Type a message..." /><button>Send</button>
+          </div>
+        </form>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      var socket;
+      var messages = document.getElementById('messages');
+      var form = document.getElementById('form');
+      var input = document.getElementById('input');
+
+      function connect() {
+        const token = document.getElementById('token-input').value;
+        
+        socket = io({
+            auth: { token: token }
+        });
+
+        socket.on('connect_error', (err) => {
+            appendMessage(`System: Connection failed - ${err.message}`, 'system');
+        });
+
+        socket.on('connect', () => {
+             document.getElementById('auth-container').style.display = 'none';
+             document.getElementById('chat-container').style.display = 'block';
+             appendMessage('System: Connected securely.', 'system');
+        });
+
+        socket.on('chat message', function(msg) {
+            const type = msg.source === 'mobile' ? 'msg-own' : 'msg-remote';
+            const prefix = msg.source === 'mobile' ? 'Me: ' : 'VSCode: ';
+            appendMessage(prefix + msg.text, type);
+        });
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (input.value && socket.connected) {
+              socket.emit('chat message', { text: input.value, source: 'mobile' });
+              input.value = '';
+            }
+        });
+      }
+
+      function appendMessage(text, className) {
+        var item = document.createElement('li');
+        item.textContent = text;
+        item.className = className;
+        messages.appendChild(item);
+        messages.scrollTop = messages.scrollHeight;
+      }
+    </script>
+  </body>
+</html>
