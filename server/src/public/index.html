@@ -1,83 +1,877 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
   <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Stealth Chat</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
-        #messages { list-style-type: none; padding: 0; height: 60vh; overflow-y: scroll; border: 1px solid #333; background: #252526; border-radius: 6px; }
-        #messages li { padding: 8px 12px; margin-bottom: 5px; border-bottom: 1px solid #333; }
-        #auth-container { margin-bottom: 20px; }
-        .input-group { display: flex; gap: 10px; margin-top: 10px; }
-        input { flex: 1; padding: 12px; border: 1px solid #3c3c3c; background: #3c3c3c; color: white; border-radius: 4px; }
-        button { padding: 12px 24px; background: #007acc; border: none; color: white; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #0062a3; }
-        .msg-own { color: #4ec9b0; }
-        .msg-remote { color: #ce9178; }
-        .system { color: #6a9955; font-style: italic; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #007acc;
+            --primary-hover: #005a9e;
+            --bg-dark: #1e1e1e;
+            --bg-darker: #181818;
+            --bg-light: #252526;
+            --border-color: #333;
+            --text-primary: #d4d4d4;
+            --text-secondary: #9d9d9d;
+            --msg-own-bg: #007acc;
+            --msg-remote-bg: #2d2d30;
+            --system-color: #6a9955;
+            --danger-color: #f48771;
+            --success-color: #4ec9b0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 认证界面 */
+        #auth-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            padding: 20px;
+            background: linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+        }
+
+        .auth-box {
+            background: var(--bg-light);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .auth-title {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+            background: linear-gradient(135deg, var(--primary-color), var(--success-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .auth-subtitle {
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--bg-darker);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 15px;
+            transition: border-color 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .auth-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .auth-button {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary-color);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .auth-button:hover {
+            background: var(--primary-hover);
+        }
+
+        .auth-button:active {
+            transform: scale(0.98);
+        }
+
+        .auth-options {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }
+
+        .remember-me {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .remember-me input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .clear-saved {
+            color: var(--text-secondary);
+            cursor: pointer;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .clear-saved:hover {
+            color: var(--primary-color);
+        }
+
+        .auth-error {
+            color: var(--danger-color);
+            font-size: 13px;
+            margin-top: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        .auth-warning {
+            background: rgba(244, 135, 113, 0.1);
+            border-left: 3px solid var(--danger-color);
+            padding: 12px;
+            margin-top: 20px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .auth-warning strong {
+            color: var(--danger-color);
+        }
+
+        /* 聊天界面 */
+        #chat-container {
+            display: none;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* 头部 */
+        .chat-header {
+            background: var(--bg-light);
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .chat-title h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--success-color);
+            box-shadow: 0 0 8px var(--success-color);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .chat-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .online-count {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .online-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--success-color);
+            border-radius: 50%;
+        }
+
+        /* 消息区域 */
+        .messages-wrapper {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: var(--bg-darker);
+            scroll-behavior: smooth;
+        }
+
+        .messages-wrapper::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .messages-wrapper::-webkit-scrollbar-track {
+            background: var(--bg-darker);
+        }
+
+        .messages-wrapper::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .messages-wrapper::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+
+        #messages {
+            list-style: none;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* 消息项 */
+        .message-item {
+            display: flex;
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-item.own {
+            justify-content: flex-end;
+        }
+
+        .message-item.system {
+            justify-content: center;
+        }
+
+        .message-content {
+            max-width: 70%;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .message-bubble {
+            padding: 10px 14px;
+            border-radius: 16px;
+            word-wrap: break-word;
+            line-height: 1.5;
+            font-size: 15px;
+        }
+
+        .message-item.own .message-bubble {
+            background: var(--msg-own-bg);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message-item.remote .message-bubble {
+            background: var(--msg-remote-bg);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-item.system .message-bubble {
+            background: transparent;
+            color: var(--system-color);
+            font-size: 13px;
+            font-style: italic;
+            text-align: center;
+            padding: 6px 12px;
+        }
+
+        .message-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 0 4px;
+        }
+
+        .message-item.own .message-meta {
+            justify-content: flex-end;
+        }
+
+        .message-sender {
+            font-weight: 500;
+        }
+
+        .message-time {
+            opacity: 0.7;
+        }
+
+        /* 输入区域 */
+        .input-container {
+            background: var(--bg-light);
+            border-top: 1px solid var(--border-color);
+            padding: 16px 20px;
+        }
+
+        #form {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        #input {
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--bg-darker);
+            border: 2px solid var(--border-color);
+            border-radius: 24px;
+            color: var(--text-primary);
+            font-size: 15px;
+            resize: none;
+            max-height: 120px;
+            overflow-y: hidden;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        #input:focus {
+            overflow-y: auto;
+        }
+
+        #input::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #input::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #input::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        #input::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+
+        #input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .send-button {
+            padding: 12px 24px;
+            background: var(--primary-color);
+            border: none;
+            border-radius: 24px;
+            color: white;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .send-button:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+        }
+
+        .send-button:active {
+            transform: scale(0.95);
+        }
+
+        .send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .auth-box {
+                padding: 30px 20px;
+            }
+
+            .chat-header {
+                padding: 12px 16px;
+            }
+
+            .chat-info {
+                font-size: 12px;
+                gap: 12px;
+            }
+
+            .messages-wrapper {
+                padding: 16px 12px;
+            }
+
+            .message-content {
+                max-width: 85%;
+            }
+
+            .input-container {
+                padding: 12px 16px;
+            }
+
+            #input {
+                font-size: 16px; /* 防止 iOS 自动缩放 */
+            }
+
+            .send-button {
+                padding: 12px 20px;
+            }
+        }
+
+        /* 空状态 */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+            gap: 12px;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            opacity: 0.5;
+        }
+
+        .empty-text {
+            font-size: 15px;
+        }
     </style>
   </head>
   <body>
+    <!-- 认证界面 -->
     <div id="auth-container">
-        <input id="token-input" type="password" placeholder="Enter Secret Token" value="ChangeMeInProduction">
-        <button onclick="connect()">Connect</button>
+        <div class="auth-box">
+            <h1 class="auth-title">🔒 Stealth Chat</h1>
+            <p class="auth-subtitle">输入密钥以连接</p>
+            <input
+                id="token-input"
+                type="password"
+                class="auth-input"
+                placeholder="请输入密钥"
+                autocomplete="off"
+            >
+            <div class="auth-options">
+                <label class="remember-me">
+                    <input type="checkbox" id="remember-checkbox">
+                    <span>记住密钥</span>
+                </label>
+                <a class="clear-saved" id="clear-saved" style="display: none;" onclick="clearSavedToken()">清除已保存</a>
+            </div>
+            <button class="auth-button" onclick="connect()">连接</button>
+            <div id="auth-error" class="auth-error"></div>
+            <div class="auth-warning">
+                <strong>安全提示：</strong>切勿在公共设备上保存密钥，建议定期更换密钥。
+            </div>
+        </div>
     </div>
 
-    <div id="chat-container" style="display:none;">
-        <ul id="messages"></ul>
-        <form id="form" action="">
-          <div class="input-group">
-            <input id="input" autocomplete="off" placeholder="Type a message..." /><button>Send</button>
-          </div>
-        </form>
+    <!-- 聊天界面 -->
+    <div id="chat-container">
+        <div class="chat-header">
+            <div class="chat-title">
+                <div class="status-indicator" id="status-indicator"></div>
+                <h1>Stealth Chat</h1>
+            </div>
+            <div class="chat-info">
+                <div class="online-count">
+                    <span class="online-dot"></span>
+                    <span id="online-count">1 在线</span>
+                </div>
+                <button class="send-button" onclick="disconnect()" style="padding: 8px 16px; font-size: 13px;">断开</button>
+            </div>
+        </div>
+
+        <div class="messages-wrapper">
+            <ul id="messages">
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-icon">💬</div>
+                    <div class="empty-text">暂无消息</div>
+                </div>
+            </ul>
+        </div>
+
+        <div class="input-container">
+            <form id="form" action="">
+                <textarea
+                    id="input"
+                    rows="1"
+                    autocomplete="off"
+                    placeholder="输入消息..."
+                ></textarea>
+                <button type="submit" class="send-button" id="send-btn">发送</button>
+            </form>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      var socket;
-      var messages = document.getElementById('messages');
-      var form = document.getElementById('form');
-      var input = document.getElementById('input');
+      let socket;
+      const messages = document.getElementById('messages');
+      const form = document.getElementById('form');
+      const input = document.getElementById('input');
+      const sendBtn = document.getElementById('send-btn');
+      const emptyState = document.getElementById('empty-state');
+      const statusIndicator = document.getElementById('status-indicator');
+      const onlineCount = document.getElementById('online-count');
+      const tokenInput = document.getElementById('token-input');
+      const rememberCheckbox = document.getElementById('remember-checkbox');
+      const clearSavedBtn = document.getElementById('clear-saved');
+      let messageCount = 0;
+      let failedAttempts = 0;
+      const MAX_ATTEMPTS = 5;
+      const LOCKOUT_TIME = 60000; // 1 分钟
 
+      // 简单的加密/解密（基于 Base64，仅防止直接查看）
+      function encode(str) {
+        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => {
+          return String.fromCharCode('0x' + p1);
+        }));
+      }
+
+      function decode(str) {
+        try {
+          return decodeURIComponent(atob(str).split('').map(c => {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+          }).join(''));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // 加载保存的密钥
+      function loadSavedToken() {
+        const saved = localStorage.getItem('st_token');
+        if (saved) {
+          const decoded = decode(saved);
+          if (decoded) {
+            tokenInput.value = decoded;
+            rememberCheckbox.checked = true;
+            clearSavedBtn.style.display = 'block';
+          }
+        }
+      }
+
+      // 保存密钥
+      function saveToken(token) {
+        if (rememberCheckbox.checked) {
+          localStorage.setItem('st_token', encode(token));
+        } else {
+          localStorage.removeItem('st_token');
+        }
+      }
+
+      // 清除保存的密钥
+      function clearSavedToken() {
+        localStorage.removeItem('st_token');
+        tokenInput.value = '';
+        rememberCheckbox.checked = false;
+        clearSavedBtn.style.display = 'none';
+        showAuthError('已清除保存的密钥', false);
+      }
+
+      // 检查锁定状态
+      function checkLockout() {
+        const lockoutUntil = localStorage.getItem('st_lockout');
+        if (lockoutUntil) {
+          const remaining = parseInt(lockoutUntil) - Date.now();
+          if (remaining > 0) {
+            const seconds = Math.ceil(remaining / 1000);
+            showAuthError(`尝试次数过多，请等待 ${seconds} 秒后重试`, true);
+            return true;
+          } else {
+            localStorage.removeItem('st_lockout');
+            failedAttempts = 0;
+          }
+        }
+        return false;
+      }
+
+      // 记录失败尝试
+      function recordFailedAttempt() {
+        failedAttempts++;
+        if (failedAttempts >= MAX_ATTEMPTS) {
+          const lockoutUntil = Date.now() + LOCKOUT_TIME;
+          localStorage.setItem('st_lockout', lockoutUntil.toString());
+          showAuthError(`尝试次数过多，已锁定 ${LOCKOUT_TIME / 1000} 秒`, true);
+          return true;
+        }
+        return false;
+      }
+
+      // 显示错误信息
+      function showAuthError(message, isError = true) {
+        const authError = document.getElementById('auth-error');
+        authError.textContent = message;
+        authError.style.display = 'block';
+        authError.style.color = isError ? 'var(--danger-color)' : 'var(--success-color)';
+      }
+
+      // 格式化时间
+      function formatTime(date) {
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
+      }
+
+      // 连接
       function connect() {
-        const token = document.getElementById('token-input').value;
-        
+        const token = tokenInput.value.trim();
+        const authError = document.getElementById('auth-error');
+
+        // 检查是否锁定
+        if (checkLockout()) {
+          return;
+        }
+
+        if (!token) {
+          showAuthError('请输入密钥');
+          return;
+        }
+
+        authError.style.display = 'none';
+
         socket = io({
             auth: { token: token }
         });
 
         socket.on('connect_error', (err) => {
-            appendMessage(`System: Connection failed - ${err.message}`, 'system');
+            const isLocked = recordFailedAttempt();
+            if (!isLocked) {
+              showAuthError(`连接失败: ${err.message} (剩余 ${MAX_ATTEMPTS - failedAttempts} 次尝试)`);
+            }
         });
 
         socket.on('connect', () => {
+             // 连接成功，重置失败次数
+             failedAttempts = 0;
+             localStorage.removeItem('st_lockout');
+
+             // 保存密钥
+             saveToken(token);
+
              document.getElementById('auth-container').style.display = 'none';
-             document.getElementById('chat-container').style.display = 'block';
-             appendMessage('System: Connected securely.', 'system');
+             document.getElementById('chat-container').style.display = 'flex';
+             appendMessage('已安全连接', 'system');
+             updateStatus(true);
+        });
+
+        socket.on('disconnect', () => {
+            appendMessage('连接已断开', 'system');
+            updateStatus(false);
         });
 
         socket.on('chat message', function(msg) {
-            const type = msg.source === 'mobile' ? 'msg-own' : 'msg-remote';
-            const prefix = msg.source === 'mobile' ? 'Me: ' : 'VSCode: ';
-            appendMessage(prefix + msg.text, type);
+            const type = msg.source === 'mobile' ? 'own' : 'remote';
+            const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
+            appendMessage(msg.text, type, sender);
         });
 
+        // 表单提交
         form.addEventListener('submit', function(e) {
             e.preventDefault();
-            if (input.value && socket.connected) {
-              socket.emit('chat message', { text: input.value, source: 'mobile' });
-              input.value = '';
+            sendMessage();
+        });
+
+        // 输入框自动调整高度
+        input.addEventListener('input', function() {
+            this.style.height = 'auto';
+            const newHeight = Math.min(this.scrollHeight, 120);
+            this.style.height = newHeight + 'px';
+
+            // 当内容超过最大高度时显示滚动条
+            if (this.scrollHeight > 120) {
+                this.style.overflowY = 'auto';
+            } else {
+                this.style.overflowY = 'hidden';
+            }
+        });
+
+        // Enter 发送，Shift+Enter 换行
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
             }
         });
       }
 
-      function appendMessage(text, className) {
-        var item = document.createElement('li');
-        item.textContent = text;
-        item.className = className;
-        messages.appendChild(item);
-        messages.scrollTop = messages.scrollHeight;
+      // 发送消息
+      function sendMessage() {
+        const text = input.value.trim();
+        if (text && socket.connected) {
+          socket.emit('chat message', { text: text, source: 'mobile' });
+          input.value = '';
+          input.style.height = 'auto';
+          input.focus();
+        }
       }
+
+      // 断开连接
+      function disconnect() {
+        if (socket) {
+          socket.disconnect();
+          document.getElementById('auth-container').style.display = 'flex';
+          document.getElementById('chat-container').style.display = 'none';
+          messages.innerHTML = '<div class="empty-state" id="empty-state"><div class="empty-icon">💬</div><div class="empty-text">暂无消息</div></div>';
+          messageCount = 0;
+        }
+      }
+
+      // 添加消息
+      function appendMessage(text, type, sender = null) {
+        // 移除空状态
+        if (messageCount === 0 && emptyState) {
+          emptyState.remove();
+        }
+
+        const item = document.createElement('li');
+        item.className = `message-item ${type}`;
+
+        if (type === 'system') {
+          item.innerHTML = `
+            <div class="message-content">
+              <div class="message-bubble">${escapeHtml(text)}</div>
+            </div>
+          `;
+        } else {
+          const time = formatTime(new Date());
+          item.innerHTML = `
+            <div class="message-content">
+              <div class="message-meta">
+                ${type === 'remote' ? `<span class="message-sender">${escapeHtml(sender)}</span>` : ''}
+                <span class="message-time">${time}</span>
+                ${type === 'own' ? `<span class="message-sender">${escapeHtml(sender)}</span>` : ''}
+              </div>
+              <div class="message-bubble">${escapeHtml(text)}</div>
+            </div>
+          `;
+        }
+
+        messages.appendChild(item);
+        messageCount++;
+
+        // 滚动到底部
+        const wrapper = document.querySelector('.messages-wrapper');
+        wrapper.scrollTop = wrapper.scrollHeight;
+
+        // 如果页面不可见，更新标题提示
+        if (document.hidden && type !== 'system') {
+          document.title = `(新消息) Stealth Chat`;
+        }
+      }
+
+      // 更新连接状态
+      function updateStatus(isConnected) {
+        if (isConnected) {
+          statusIndicator.style.background = 'var(--success-color)';
+          statusIndicator.style.boxShadow = '0 0 8px var(--success-color)';
+        } else {
+          statusIndicator.style.background = 'var(--danger-color)';
+          statusIndicator.style.boxShadow = '0 0 8px var(--danger-color)';
+        }
+      }
+
+      // 转义 HTML
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // 页面可见性变化
+      document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+          document.title = 'Stealth Chat';
+        }
+      });
+
+      // 复选框变化
+      rememberCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+          clearSavedBtn.style.display = 'none';
+        } else {
+          localStorage.removeItem('st_token');
+          clearSavedBtn.style.display = 'none';
+        }
+      });
+
+      // 初始化：加载保存的密钥
+      loadSavedToken();
+
+      // 自动聚焦输入框（仅桌面端）
+      if (window.innerWidth > 768) {
+        tokenInput.focus();
+      }
+
+      // Enter 键连接
+      tokenInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          connect();
+        }
+      });
     </script>
   </body>
 </html>
