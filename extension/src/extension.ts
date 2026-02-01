@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Listen for configuration changes
   const configChangeDisposable = vscode.workspace.onDidChangeConfiguration(
-    (e) => {
+    (e: vscode.ConfigurationChangeEvent) => {
       if (
         e.affectsConfiguration("tsLint.serverUrl") ||
         e.affectsConfiguration("tsLint.secret")
@@ -110,7 +110,7 @@ function connectToServer(serverUrl: string, secret: string): void {
       );
 
       // Request history messages after connection
-      socket.emit("load history", 50);
+      socket?.emit("load history", 50);
     });
 
     socket.on("disconnect", () => {
@@ -120,7 +120,7 @@ function connectToServer(serverUrl: string, secret: string): void {
       );
     });
 
-    socket.on("connect_error", (error) => {
+    socket.on("connect_error", (error: Error) => {
       const timestamp = getCurrentTimestamp();
       outputChannel.appendLine(
         `[Error - ${timestamp}] Connection failed: ${error.message}`,
