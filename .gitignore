@@ -29,3 +29,8 @@ Thumbs.db
 # OS generated files
 ehthumbs.db
 Icon?
+desktop.ini
+
+# Database
+*.db
+server/data/

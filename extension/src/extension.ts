@@ -21,7 +21,7 @@ export function activate(context: vscode.ExtensionContext) {
     100,
   );
   statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
-  statusBarItem.command = "extension.openOutputChannel";
+  statusBarItem.command = "extension.stealthSend";
   statusBarItem.show();
 
   // Get configuration
@@ -193,6 +193,7 @@ function handleIncomingMessage(text: string): void {
 function updateStatusBar(): void {
   if (unreadCount > 0) {
     statusBarItem.text = `${STATUS_BAR_ALERT_TEXT} (${unreadCount})`;
+    statusBarItem.command = "extension.openOutputChannel";
     statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground",
     );
@@ -201,6 +202,7 @@ function updateStatusBar(): void {
     );
   } else {
     statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
+    statusBarItem.command = "extension.stealthSend";
     statusBarItem.backgroundColor = undefined;
     statusBarItem.color = undefined;
   }
