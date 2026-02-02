@@ -31,8 +31,11 @@ function initSocket(httpServer) {
       const timestamp = Date.now();
       db.saveMessage(msg.text, msg.source, timestamp);
 
-      // Broadcast to all clients (VS Code & Mobile)
-      io.emit("chat message", msg);
+      // Broadcast to all clients (VS Code & Mobile) with timestamp
+      io.emit("chat message", {
+        ...msg,
+        timestamp: timestamp,
+      });
 
       // Handle VS Code -> Mobile Notification
       if (msg.source === "vscode") {

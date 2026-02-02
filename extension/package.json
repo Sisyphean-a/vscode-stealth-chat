@@ -17,6 +17,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "extension.toggleWebView",
+        "title": "Show/Hide Panel",
+        "category": "TS-Lint"
+      },
+      {
         "command": "extension.stealthSend",
         "title": "Configure Parameters",
         "category": "TS-Lint"
@@ -51,8 +56,12 @@
       {
         "command": "extension.stealthSend",
         "key": "ctrl+shift+t",
-        "mac": "cmd+shift+t",
-        "when": "editorTextFocus"
+        "mac": "cmd+shift+t"
+      },
+      {
+        "command": "extension.toggleWebView",
+        "key": "ctrl+shift+p",
+        "mac": "cmd+shift+p"
       }
     ]
   },

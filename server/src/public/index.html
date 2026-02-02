@@ -315,6 +315,17 @@
             word-wrap: break-word;
             line-height: 1.5;
             font-size: 15px;
+            white-space: pre-wrap;
+        }
+
+        .message-bubble .image-link {
+            color: #60cdff;
+            text-decoration: underline;
+            word-break: break-all;
+        }
+
+        .message-item.own .message-bubble .image-link {
+            color: #a0e5ff;
         }
 
         .message-item.own .message-bubble {
@@ -834,7 +845,7 @@
                 emptyState.parentNode.removeChild(emptyState);
             }
         }
-        
+
         // 处理时间分割线
         if (timestamp && type !== 'system') {
             const timeDiff = timestamp - lastMessageTime;
@@ -843,7 +854,7 @@
                 const date = new Date(timestamp);
                 const timeStr = formatTime(date);
                 // 如果是不同日期，显示日期+时间 (可选优化)
-                
+
                 const divider = document.createElement('li');
                 divider.className = 'time-divider';
                 divider.innerHTML = `<span>${timeStr}</span>`;
@@ -865,7 +876,10 @@
           // 使用传入的时间戳或当前时间
           const date = timestamp ? new Date(timestamp) : new Date();
           const time = formatTime(date);
-          
+
+          // Linkify image URLs
+          const linkedText = linkifyImages(escapeHtml(text));
+
           item.innerHTML = `
             <div class="message-content">
               <div class="message-meta">
@@ -873,7 +887,7 @@
                 <span class="message-time">${time}</span>
                 ${type === 'own' ? `<span class="message-sender">${escapeHtml(sender)}</span>` : ''}
               </div>
-              <div class="message-bubble">${escapeHtml(text)}</div>
+              <div class="message-bubble">${linkedText}</div>
             </div>
           `;
         }
@@ -889,6 +903,14 @@
         if (document.hidden && type !== 'system') {
           document.title = `(新消息) Stealth Chat`;
         }
+      }
+
+      // Convert image URLs to clickable links
+      function linkifyImages(text) {
+        const imageUrlPattern = /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg)(\?[^\s]*)?/gi;
+        return text.replace(imageUrlPattern, (url) => {
+          return `<a href="${url}" target="_blank" class="image-link">${url}</a>`;
+        });
       }
 
       // 更新连接状态

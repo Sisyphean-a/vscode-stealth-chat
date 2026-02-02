@@ -1,27 +1,25 @@
 import * as vscode from "vscode";
 import { io, Socket } from "socket.io-client";
+import { getChatHtml } from "./webview/chatContent";
 
 // Channel name disguised as a linting service
 const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 const STATUS_BAR_DEFAULT_TEXT = "$(check) TS-Lint";
 const STATUS_BAR_ALERT_TEXT = "$(alert) TS-Lint";
 
-let outputChannel: vscode.OutputChannel;
+let webviewPanel: vscode.WebviewPanel | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let socket: Socket | undefined;
 let unreadCount = 0;
 
 export function activate(context: vscode.ExtensionContext) {
-  // Create output channel (disguised as lint service)
-  outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
-
   // Create status bar item on the right side
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
     100,
   );
   statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
-  statusBarItem.command = "extension.stealthSend";
+  statusBarItem.command = "extension.toggleWebView";
   statusBarItem.show();
 
   // Get configuration
@@ -32,6 +30,20 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Connect to Socket.io server
   connectToServer(serverUrl, secret, forceWebsocket);
+
+  // Register command: Toggle WebView visibility
+  const toggleWebViewCommand = vscode.commands.registerCommand(
+    "extension.toggleWebView",
+    () => {
+      if (webviewPanel) {
+        webviewPanel.reveal(vscode.ViewColumn.One);
+        clearUnreadStatus();
+      } else {
+        createWebView(context);
+        clearUnreadStatus();
+      }
+    },
+  );
 
   // Register command: Send message (disguised as configuration input)
   const sendCommand = vscode.commands.registerCommand(
@@ -55,23 +67,20 @@ export function activate(context: vscode.ExtensionContext) {
           clickUrl: clickUrl,
         });
 
-        // Show sent message in output channel
-        const timestamp = getCurrentTimestamp();
-        outputChannel.appendLine(
-          `[Info - ${timestamp}] Sent: ${message.trim()}`,
-        );
+        // Send message to WebView
+        if (webviewPanel) {
+          webviewPanel.webview.postMessage({
+            type: "addMessage",
+            payload: {
+              text: message.trim(),
+              source: "vscode",
+              timestamp: Date.now(),
+            },
+          });
+        }
       }
-      
-      // Clear unread status when sending message
-      clearUnreadStatus();
-    },
-  );
 
-  // Register command: Open output channel and clear unread status
-  const openOutputCommand = vscode.commands.registerCommand(
-    "extension.openOutputChannel",
-    () => {
-      outputChannel.show();
+      // Clear unread status when sending message
       clearUnreadStatus();
     },
   );
@@ -100,12 +109,69 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    toggleWebViewCommand,
     sendCommand,
-    openOutputCommand,
     configChangeDisposable,
-    outputChannel,
     statusBarItem,
   );
+}
+
+function createWebView(context: vscode.ExtensionContext): void {
+  // Create WebView panel
+  webviewPanel = vscode.window.createWebviewPanel(
+    "tsLintChat",
+    "TS-Lint Service",
+    vscode.ViewColumn.One,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [],
+    },
+  );
+
+  // Generate nonce for CSP
+  const nonce = getNonce();
+  webviewPanel.webview.html = getChatHtml(nonce);
+
+  // Update connection status
+  if (socket?.connected) {
+    webviewPanel.webview.postMessage({
+      type: "updateStatus",
+      payload: { connected: true },
+    });
+  }
+
+  // Listen for messages from WebView
+  webviewPanel.webview.onDidReceiveMessage(
+    (message) => {
+      switch (message.type) {
+        case "ready":
+          // WebView is ready, can send initial data if needed
+          break;
+      }
+    },
+    undefined,
+    context.subscriptions,
+  );
+
+  // Handle WebView disposal
+  webviewPanel.onDidDispose(
+    () => {
+      webviewPanel = undefined;
+    },
+    undefined,
+    context.subscriptions,
+  );
+}
+
+function getNonce(): string {
+  let text = "";
+  const possible =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
 
 function connectToServer(
@@ -122,27 +188,36 @@ function connectToServer(
     });
 
     socket.on("connect", () => {
-      const timestamp = getCurrentTimestamp();
-      outputChannel.appendLine(
-        `[Info - ${timestamp}] TS-Lint Service connected`,
-      );
+      // Update WebView status
+      if (webviewPanel) {
+        webviewPanel.webview.postMessage({
+          type: "updateStatus",
+          payload: { connected: true },
+        });
+      }
 
       // Request history messages after connection
       socket?.emit("load history", 50);
     });
 
     socket.on("disconnect", () => {
-      const timestamp = getCurrentTimestamp();
-      outputChannel.appendLine(
-        `[Info - ${timestamp}] TS-Lint Service disconnected`,
-      );
+      // Update WebView status
+      if (webviewPanel) {
+        webviewPanel.webview.postMessage({
+          type: "updateStatus",
+          payload: { connected: false },
+        });
+      }
     });
 
     socket.on("connect_error", (error: Error) => {
-      const timestamp = getCurrentTimestamp();
-      outputChannel.appendLine(
-        `[Error - ${timestamp}] Connection failed: ${error.message}`,
-      );
+      // Update WebView status
+      if (webviewPanel) {
+        webviewPanel.webview.postMessage({
+          type: "updateStatus",
+          payload: { connected: false },
+        });
+      }
     });
 
     // Listen for history loaded event
@@ -151,24 +226,11 @@ function connectToServer(
       (
         messages: Array<{ text: string; source: string; timestamp: number }>,
       ) => {
-        if (messages.length > 0) {
-          const timestamp = getCurrentTimestamp();
-          outputChannel.appendLine(
-            `[Info - ${timestamp}] Loading ${messages.length} historical messages...`,
-          );
-
-          messages.forEach((msg) => {
-            const msgTime = new Date(msg.timestamp);
-            const formattedTime = formatTimestamp(msgTime);
-            const prefix = msg.source === "mobile" ? "Process" : "Sent";
-            outputChannel.appendLine(
-              `[Info - ${formattedTime}] ${prefix}: ${msg.text}`,
-            );
+        if (messages.length > 0 && webviewPanel) {
+          webviewPanel.webview.postMessage({
+            type: "loadHistory",
+            payload: messages,
           });
-
-          outputChannel.appendLine(
-            `[Info - ${timestamp}] History loaded successfully`,
-          );
         }
       },
     );
@@ -176,38 +238,39 @@ function connectToServer(
     // Listen for chat messages
     socket.on(
       "chat message",
-      (data: { text: string; source: "mobile" | "vscode" }) => {
+      (data: { text: string; source: "mobile" | "vscode"; timestamp?: number }) => {
         if (data.source === "mobile") {
-          handleIncomingMessage(data.text);
+          handleIncomingMessage(data.text, data.timestamp);
         }
       },
     );
   } catch (error) {
-    const timestamp = getCurrentTimestamp();
-    outputChannel.appendLine(
-      `[Error - ${timestamp}] Failed to initialize: ${error}`,
-    );
+    // Silent error handling
   }
 }
 
-function formatTimestamp(date: Date): string {
-  const hours = date.getHours().toString().padStart(2, "0");
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  const seconds = date.getSeconds().toString().padStart(2, "0");
-  return `${hours}:${minutes}:${seconds}`;
-}
 
-function handleIncomingMessage(text: string): void {
-  const timestamp = getCurrentTimestamp();
+function handleIncomingMessage(text: string, timestamp?: number): void {
+  // Send message to WebView
+  if (webviewPanel) {
+    webviewPanel.webview.postMessage({
+      type: "addMessage",
+      payload: {
+        text: text,
+        source: "mobile",
+        timestamp: timestamp || Date.now(),
+      },
+    });
+  }
+
   const config = vscode.workspace.getConfiguration("tsLint");
   const autoReveal = config.get<boolean>("autoReveal") || false;
 
-  // Append message to output channel (disguised as process log)
-  outputChannel.appendLine(`[Info - ${timestamp}] Process: ${text}`);
-
   if (autoReveal) {
-    // If autoReveal is on, show the channel (preserves focus) and don't increment unread count
-    outputChannel.show(true); 
+    // If autoReveal is on, show WebView and don't increment unread count
+    if (webviewPanel) {
+      webviewPanel.reveal(vscode.ViewColumn.One, true);
+    }
   } else {
     // Update unread count and status bar
     unreadCount++;
@@ -218,7 +281,7 @@ function handleIncomingMessage(text: string): void {
 function updateStatusBar(): void {
   if (unreadCount > 0) {
     statusBarItem.text = `${STATUS_BAR_ALERT_TEXT} (${unreadCount})`;
-    statusBarItem.command = "extension.openOutputChannel";
+    statusBarItem.command = "extension.toggleWebView";
     statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground",
     );
@@ -227,7 +290,7 @@ function updateStatusBar(): void {
     );
   } else {
     statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
-    statusBarItem.command = "extension.stealthSend";
+    statusBarItem.command = "extension.toggleWebView";
     statusBarItem.backgroundColor = undefined;
     statusBarItem.color = undefined;
   }
@@ -236,14 +299,6 @@ function updateStatusBar(): void {
 function clearUnreadStatus(): void {
   unreadCount = 0;
   updateStatusBar();
-}
-
-function getCurrentTimestamp(): string {
-  const now = new Date();
-  const hours = now.getHours().toString().padStart(2, "0");
-  const minutes = now.getMinutes().toString().padStart(2, "0");
-  const seconds = now.getSeconds().toString().padStart(2, "0");
-  return `${hours}:${minutes}:${seconds}`;
 }
 
 export function deactivate() {
