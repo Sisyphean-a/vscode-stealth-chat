@@ -1,6 +1,7 @@
 const { Server } = require("socket.io");
 const { sendNotification } = require("./services/gotify");
 const db = require("./db");
+const { processImage } = require("./utils/imageStorage");
 
 const CHAT_SECRET = process.env.STEALTH_SECRET || "ChangeMeInProduction";
 // External URL for the phone to open when clicking notification
@@ -27,21 +28,72 @@ function initSocket(httpServer) {
 
     // Handle chat messages
     socket.on("chat message", (msg) => {
-      // Save message to database
-      const timestamp = Date.now();
-      db.saveMessage(msg.text, msg.source, timestamp);
+      try {
+        let finalMessage = { ...msg };
+        const timestamp = Date.now();
 
-      // Broadcast to all clients (VS Code & Mobile) with timestamp
-      io.emit("chat message", {
-        ...msg,
-        timestamp: timestamp,
-      });
+        // Process image attachments if present
+        if (msg.attachments && msg.attachments.length > 0) {
+          const processedAttachments = [];
 
-      // Handle VS Code -> Mobile Notification
-      if (msg.source === "vscode") {
-        console.log("[Socket] Message from VS Code, triggering Gotify...");
-        const targetUrl = msg.clickUrl || CLICK_URL;
-        sendNotification("New Reply", msg.text, 8, targetUrl);
+          for (let attachment of msg.attachments) {
+            if (attachment.type === "image") {
+              // Extract base64 data (remove data URL prefix if present)
+              let base64Data = attachment.data;
+              if (base64Data && base64Data.startsWith("data:")) {
+                base64Data = base64Data.split(",")[1];
+              }
+
+              // Process image (returns inline data URL or file URL)
+              const result = processImage(
+                base64Data,
+                attachment.mimeType || "image/png",
+                attachment.filename || "image.png",
+              );
+
+              processedAttachments.push({
+                type: "image",
+                data: result.data, // inline images (Base64)
+                url: result.url, // file images (URL)
+                filename: attachment.filename,
+                size: result.size,
+              });
+            }
+          }
+
+          finalMessage.attachments = processedAttachments;
+        }
+
+        // Save to database (JSON serialize if has attachments)
+        const dbText = finalMessage.attachments
+          ? JSON.stringify({
+              text: finalMessage.text,
+              attachments: finalMessage.attachments,
+            })
+          : finalMessage.text;
+
+        db.saveMessage(dbText, msg.source, timestamp);
+
+        // Broadcast to all clients with timestamp
+        io.emit("chat message", {
+          ...finalMessage,
+          timestamp: timestamp,
+        });
+
+        // Handle VS Code -> Mobile Notification
+        if (msg.source === "vscode") {
+          console.log("[Socket] Message from VS Code, triggering Gotify...");
+          const targetUrl = msg.clickUrl || CLICK_URL;
+          const pushText = finalMessage.attachments
+            ? "[图片]"
+            : finalMessage.text;
+          sendNotification("New Reply", pushText, 8, targetUrl);
+        }
+      } catch (error) {
+        console.error("[Socket] Error processing message:", error);
+        socket.emit("error", {
+          message: error.message || "Failed to process message",
+        });
       }
     });
 

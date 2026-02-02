@@ -304,9 +304,20 @@ function connectToServer(
     // Listen for chat messages
     socket.on(
       "chat message",
-      (data: { text: string; source: "mobile" | "vscode"; timestamp?: number }) => {
+      (data: {
+        text: string;
+        source: "mobile" | "vscode";
+        timestamp?: number;
+        attachments?: Array<{
+          type: string;
+          data?: string;
+          url?: string;
+          filename?: string;
+          size?: number;
+        }>;
+      }) => {
         if (data.source === "mobile") {
-          handleIncomingMessage(data.text, data.timestamp);
+          handleIncomingMessage(data.text, data.timestamp, data.attachments);
         }
       },
     );
@@ -316,12 +327,24 @@ function connectToServer(
 }
 
 
-function handleIncomingMessage(text: string, timestamp?: number): void {
-  // Show in Output Channel
+function handleIncomingMessage(
+  text: string,
+  timestamp?: number,
+  attachments?: Array<{
+    type: string;
+    data?: string;
+    url?: string;
+    filename?: string;
+    size?: number;
+  }>,
+): void {
+  // Show in Output Channel (degraded for images)
   const ts = getCurrentTimestamp();
-  outputChannel.appendLine(`[Info - ${ts}] Process: ${text}`);
+  const displayText =
+    attachments && attachments.length > 0 ? `[图片消息] ${text}` : text;
+  outputChannel.appendLine(`[Info - ${ts}] Process: ${displayText}`);
 
-  // Send message to WebView
+  // Send message to WebView (full data including images)
   if (webviewView) {
     webviewView.webview.postMessage({
       type: "addMessage",
@@ -329,6 +352,7 @@ function handleIncomingMessage(text: string, timestamp?: number): void {
         text: text,
         source: "mobile",
         timestamp: timestamp || Date.now(),
+        attachments: attachments,
       },
     });
   }

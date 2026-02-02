@@ -121,9 +121,9 @@ function getRecentMessages(limit = 50) {
 
   try {
     const stmt = db.prepare(`
-            SELECT text, source, timestamp 
-            FROM messages 
-            ORDER BY timestamp DESC 
+            SELECT text, source, timestamp
+            FROM messages
+            ORDER BY timestamp DESC
             LIMIT ?
         `);
     stmt.bind([limit]);
@@ -131,7 +131,27 @@ function getRecentMessages(limit = 50) {
     const messages = [];
     while (stmt.step()) {
       const row = stmt.getAsObject();
-      messages.push(row);
+
+      // Try to parse JSON (image messages), fallback to plain text
+      let parsedText = row.text;
+      let attachments = null;
+
+      try {
+        const parsed = JSON.parse(row.text);
+        if (parsed.attachments) {
+          parsedText = parsed.text;
+          attachments = parsed.attachments;
+        }
+      } catch (e) {
+        // Plain text message, keep as-is
+      }
+
+      messages.push({
+        text: parsedText,
+        source: row.source,
+        timestamp: row.timestamp,
+        attachments: attachments,
+      });
     }
     stmt.free();
 

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run compile:*)",
+      "Bash(npm install)",
+      "Bash(node test-image-storage.js:*)"
+    ]
+  }
+}

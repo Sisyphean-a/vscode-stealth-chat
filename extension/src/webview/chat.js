@@ -209,8 +209,33 @@
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble ' + (msg.source === 'vscode' ? 'own' : 'remote');
 
-    // Linkify image URLs
-    const html = linkifyImages(escapeHtml(msg.text));
+    // Render image attachments or linkify text
+    /** @type {string} */
+    let html;
+    if (msg.attachments && msg.attachments.length > 0) {
+      html = '';
+      msg.attachments.forEach(/** @param {any} att */ (att) => {
+        if (att.type === 'image') {
+          // Get server URL from window location (assuming WebView is served from same origin)
+          // For VS Code WebView, we need to handle both inline data URLs and server URLs
+          let imageUrl = att.data || att.url;
+
+          // If it's a relative URL, we need to convert it to absolute
+          // Note: In VS Code WebView, we'll need to use asWebviewUri for local resources
+          if (imageUrl && imageUrl.startsWith('/uploads/')) {
+            // This will be handled by server URL configuration
+            // For now, assume we can access server directly
+            const serverUrl = 'http://localhost:3000'; // TODO: Make this configurable
+            imageUrl = serverUrl + imageUrl;
+          }
+
+          html += `<img src="${imageUrl}" class="message-image" onclick="showImagePreview('${imageUrl}')" alt="Image" style="max-width: 100%; max-height: 300px; border-radius: 8px; cursor: pointer; display: block; margin-top: 8px;" />`;
+        }
+      });
+    } else {
+      html = linkifyImages(escapeHtml(msg.text));
+    }
+
     bubble.innerHTML = html;
 
     // Append elements

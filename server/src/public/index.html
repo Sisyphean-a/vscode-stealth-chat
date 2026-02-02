@@ -468,6 +468,21 @@
             to { transform: rotate(360deg); }
         }
 
+        /* 图片消息样式 */
+        .message-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            margin-top: 8px;
+            cursor: pointer;
+            display: block;
+            transition: transform 0.2s;
+        }
+
+        .message-image:hover {
+            transform: scale(1.02);
+        }
+
         /* 响应式设计 */
         @media (max-width: 768px) {
             .auth-box {
@@ -761,9 +776,9 @@
                     const type = msg.source === 'mobile' ? 'own' : 'remote';
                     const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
                     // 历史消息使用其原始时间戳
-                    appendMessage(msg.text, type, sender, msg.timestamp); 
+                    appendMessage(msg.text, type, sender, msg.timestamp, msg.attachments);
                 });
-                
+
                 // 滚动到底部
                 const wrapper = document.querySelector('.messages-wrapper');
                 wrapper.scrollTop = wrapper.scrollHeight;
@@ -781,8 +796,8 @@
         socket.on('chat message', function(msg) {
             const type = msg.source === 'mobile' ? 'own' : 'remote';
             const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
-            // 实时消息使用当前时间或服务器时间(如果有)
-            appendMessage(msg.text, type, sender, Date.now());
+            // 实时消息使用服务器时间戳(如果有)或当前时间
+            appendMessage(msg.text, type, sender, msg.timestamp || Date.now(), msg.attachments);
         });
 
         // 表单提交
@@ -812,6 +827,66 @@
                 sendMessage();
             }
         });
+
+        // 粘贴图片事件监听
+        input.addEventListener('paste', async function(e) {
+          const items = e.clipboardData?.items;
+          if (!items) return;
+
+          for (let item of items) {
+            if (item.type.indexOf('image') !== -1) {
+              e.preventDefault();
+
+              const file = item.getAsFile();
+              if (!file) continue;
+
+              // 显示上传中提示
+              const loadingItem = appendMessage('[图片上传中...]', 'system');
+
+              try {
+                // 转为 Base64
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                  const base64Full = event.target.result;
+                  const base64Data = base64Full.split(',')[1];
+
+                  // 发送图片消息
+                  socket.emit('chat message', {
+                    text: '[图片]',
+                    source: 'mobile',
+                    attachments: [{
+                      type: 'image',
+                      data: base64Data,
+                      filename: file.name || 'paste.png',
+                      size: file.size,
+                      mimeType: file.type
+                    }]
+                  });
+
+                  // 移除加载提示
+                  if (loadingItem && loadingItem.parentNode) {
+                    loadingItem.parentNode.removeChild(loadingItem);
+                  }
+                };
+                reader.onerror = function() {
+                  if (loadingItem && loadingItem.parentNode) {
+                    loadingItem.parentNode.removeChild(loadingItem);
+                  }
+                  appendMessage('[图片上传失败]', 'system');
+                };
+                reader.readAsDataURL(file);
+              } catch (error) {
+                console.error('Failed to process image:', error);
+                if (loadingItem && loadingItem.parentNode) {
+                  loadingItem.parentNode.removeChild(loadingItem);
+                }
+                appendMessage('[图片处理失败]', 'system');
+              }
+
+              break; // Only process first image
+            }
+          }
+        });
       }
 
       // 发送消息
@@ -838,7 +913,7 @@
       }
 
       // 添加消息
-      function appendMessage(text, type, sender = null, timestamp = null) {
+      function appendMessage(text, type, sender = null, timestamp = null, attachments = null) {
         // 移除空状态
         if (messageCount === 0 && emptyState) {
             if (emptyState.parentNode) {
@@ -877,8 +952,19 @@
           const date = timestamp ? new Date(timestamp) : new Date();
           const time = formatTime(date);
 
-          // Linkify image URLs
-          const linkedText = linkifyImages(escapeHtml(text));
+          // Render image attachments or linkify text
+          let messageContent;
+          if (attachments && attachments.length > 0) {
+            messageContent = '';
+            attachments.forEach(att => {
+              if (att.type === 'image') {
+                const imageUrl = att.data || att.url;
+                messageContent += `<img src="${imageUrl}" class="message-image" onclick="showImagePreview('${imageUrl}')" alt="Image" />`;
+              }
+            });
+          } else {
+            messageContent = linkifyImages(escapeHtml(text));
+          }
 
           item.innerHTML = `
             <div class="message-content">
@@ -887,7 +973,7 @@
                 <span class="message-time">${time}</span>
                 ${type === 'own' ? `<span class="message-sender">${escapeHtml(sender)}</span>` : ''}
               </div>
-              <div class="message-bubble">${linkedText}</div>
+              <div class="message-bubble">${messageContent}</div>
             </div>
           `;
         }
@@ -903,6 +989,8 @@
         if (document.hidden && type !== 'system') {
           document.title = `(新消息) Stealth Chat`;
         }
+
+        return item; // Return the element for potential cleanup
       }
 
       // Convert image URLs to clickable links
@@ -929,6 +1017,37 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+      }
+
+      // 显示图片预览（点击图片放大）
+      function showImagePreview(imageUrl) {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.9);
+          z-index: 10000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        `;
+
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.style.cssText = `
+          max-width: 90%;
+          max-height: 90%;
+          border-radius: 8px;
+        `;
+
+        overlay.appendChild(img);
+        overlay.onclick = () => document.body.removeChild(overlay);
+
+        document.body.appendChild(overlay);
       }
 
       // 页面可见性变化
