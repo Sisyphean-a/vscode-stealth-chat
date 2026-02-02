@@ -1,7 +1,6 @@
 const axios = require('axios');
 
 const GOTIFY_URL = process.env.GOTIFY_URL || 'http://gotify:80/message';
-const GOTIFY_TOKEN = process.env.GOTIFY_TOKEN || 'Ahc7pv3uyv4rtv9';
 
 /**
  * Send a notification via Gotify
@@ -12,6 +11,12 @@ const GOTIFY_TOKEN = process.env.GOTIFY_TOKEN || 'Ahc7pv3uyv4rtv9';
  */
 async function sendNotification(title, message, priority = 5, clickUrl) {
     try {
+        const token = process.env.GOTIFY_TOKEN;
+        if (!token) {
+            console.warn('[Gotify] Skipped: No token configured');
+            return;
+        }
+
         const payload = {
             title,
             message,
@@ -25,7 +30,7 @@ async function sendNotification(title, message, priority = 5, clickUrl) {
             };
         }
 
-        await axios.post(`${GOTIFY_URL}?token=${GOTIFY_TOKEN}`, payload);
+        await axios.post(`${GOTIFY_URL}?token=${token}`, payload);
         console.log(`[Gotify] Notification sent: ${title}`);
     } catch (error) {
         console.error(`[Gotify] Failed to send notification: ${error.message}`);

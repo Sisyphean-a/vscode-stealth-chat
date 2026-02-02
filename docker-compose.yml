@@ -22,6 +22,7 @@ services:
       - PORT=3000
       - GOTIFY_URL=http://gotify:80/message
       - GOTIFY_TOKEN=${GOTIFY_TOKEN}
+      - GOTIFY_ADMIN_PASS=${GOTIFY_PASS:-admin}
       - STEALTH_SECRET=${STEALTH_SECRET:-ChangeMeInProduction}
       - CLICK_URL=http://localhost:3000
       - DB_PATH=/app/data/messages.db
