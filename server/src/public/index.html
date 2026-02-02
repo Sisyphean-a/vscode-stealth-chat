@@ -262,6 +262,21 @@
         }
 
         /* 消息项 */
+        .time-divider {
+            text-align: center;
+            margin: 24px 0 12px;
+            position: relative;
+            display: flex;
+            justify-content: center;
+        }
+
+        .time-divider span {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 12px;
+        }
         .message-item {
             display: flex;
             margin-bottom: 16px;
@@ -580,6 +595,7 @@
       const clearSavedBtn = document.getElementById('clear-saved');
       let messageCount = 0;
       let failedAttempts = 0;
+      let lastMessageTime = 0; // 记录上一条消息的时间
       const MAX_ATTEMPTS = 5;
       const LOCKOUT_TIME = 60000; // 1 分钟
 
@@ -716,19 +732,46 @@
 
              document.getElementById('auth-container').style.display = 'none';
              document.getElementById('chat-container').style.display = 'flex';
+             document.getElementById('auth-container').style.display = 'none';
+             document.getElementById('chat-container').style.display = 'flex';
              appendMessage('已安全连接', 'system');
              updateStatus(true);
+             
+             // 请求历史记录
+             socket.emit('load history', 50);
+        });
+        
+        // 监听历史记录
+        socket.on('history loaded', (historyMessages) => {
+            if (historyMessages && historyMessages.length > 0) {
+                // 清空当前（或保留system消息？这里选择保留）
+                // 暂时只追加，因为是新连接
+                historyMessages.forEach(msg => {
+                    const type = msg.source === 'mobile' ? 'own' : 'remote';
+                    const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
+                    // 历史消息使用其原始时间戳
+                    appendMessage(msg.text, type, sender, msg.timestamp); 
+                });
+                
+                // 滚动到底部
+                const wrapper = document.querySelector('.messages-wrapper');
+                wrapper.scrollTop = wrapper.scrollHeight;
+                
+                // 添加一条分割线表示"以上是历史记录"? (可选，暂不加)
+            }
         });
 
         socket.on('disconnect', () => {
             appendMessage('连接已断开', 'system');
             updateStatus(false);
+            lastMessageTime = 0; // 重置时间记录
         });
 
         socket.on('chat message', function(msg) {
             const type = msg.source === 'mobile' ? 'own' : 'remote';
             const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
-            appendMessage(msg.text, type, sender);
+            // 实时消息使用当前时间或服务器时间(如果有)
+            appendMessage(msg.text, type, sender, Date.now());
         });
 
         // 表单提交
@@ -765,6 +808,7 @@
         const text = input.value.trim();
         if (text && socket.connected) {
           socket.emit('chat message', { text: text, source: 'mobile' });
+          // appendMessage(text, 'own', 'Me', Date.now()); // 不需要手动添加，socket.on会收到广播
           input.value = '';
           input.style.height = 'auto';
           input.focus();
@@ -783,10 +827,29 @@
       }
 
       // 添加消息
-      function appendMessage(text, type, sender = null) {
+      function appendMessage(text, type, sender = null, timestamp = null) {
         // 移除空状态
         if (messageCount === 0 && emptyState) {
-          emptyState.remove();
+            if (emptyState.parentNode) {
+                emptyState.parentNode.removeChild(emptyState);
+            }
+        }
+        
+        // 处理时间分割线
+        if (timestamp && type !== 'system') {
+            const timeDiff = timestamp - lastMessageTime;
+            // 如果间隔超过 5 分钟 (300000ms)，或者没有上一条消息时间(且不是第一条自动消息)，显示分割线
+            if (lastMessageTime === 0 || timeDiff > 300000) {
+                const date = new Date(timestamp);
+                const timeStr = formatTime(date);
+                // 如果是不同日期，显示日期+时间 (可选优化)
+                
+                const divider = document.createElement('li');
+                divider.className = 'time-divider';
+                divider.innerHTML = `<span>${timeStr}</span>`;
+                messages.appendChild(divider);
+            }
+            lastMessageTime = timestamp;
         }
 
         const item = document.createElement('li');
@@ -799,7 +862,10 @@
             </div>
           `;
         } else {
-          const time = formatTime(new Date());
+          // 使用传入的时间戳或当前时间
+          const date = timestamp ? new Date(timestamp) : new Date();
+          const time = formatTime(date);
+          
           item.innerHTML = `
             <div class="message-content">
               <div class="message-meta">

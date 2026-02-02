@@ -3,5 +3,5 @@
 src/**
 .gitignore
 yarn.lock
-node_modules/**
+
 out/**/*.map
