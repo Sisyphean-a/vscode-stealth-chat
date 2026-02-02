@@ -8,7 +8,7 @@ const STATUS_BAR_DEFAULT_TEXT = "$(check) TS-Lint";
 const STATUS_BAR_ALERT_TEXT = "$(alert) TS-Lint";
 
 let outputChannel: vscode.OutputChannel;
-let webviewPanel: vscode.WebviewPanel | undefined;
+let webviewView: vscode.WebviewView | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let socket: Socket | undefined;
 let unreadCount = 0;
@@ -23,7 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
     100,
   );
   statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
-  statusBarItem.command = "extension.toggleWebView";
+  statusBarItem.command = "tsLintService.focus"; // Focus on sidebar view
   statusBarItem.show();
 
   // Get configuration
@@ -35,18 +35,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Connect to Socket.io server
   connectToServer(serverUrl, secret, forceWebsocket);
 
-  // Register command: Toggle WebView visibility
-  const toggleWebViewCommand = vscode.commands.registerCommand(
-    "extension.toggleWebView",
-    () => {
-      if (webviewPanel) {
-        webviewPanel.reveal(vscode.ViewColumn.One);
-        clearUnreadStatus();
-      } else {
-        createWebView(context);
-        clearUnreadStatus();
-      }
-    },
+  // Register WebView Provider for sidebar
+  const provider = new ChatViewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("tsLintChat.chatView", provider)
   );
 
   // Register command: Send message (disguised as configuration input)
@@ -71,9 +63,15 @@ export function activate(context: vscode.ExtensionContext) {
           clickUrl: clickUrl,
         });
 
+        // Show in Output Channel
+        const timestamp = getCurrentTimestamp();
+        outputChannel.appendLine(
+          `[Info - ${timestamp}] Sent: ${message.trim()}`,
+        );
+
         // Send message to WebView
-        if (webviewPanel) {
-          webviewPanel.webview.postMessage({
+        if (webviewView) {
+          webviewView.webview.postMessage({
             type: "addMessage",
             payload: {
               text: message.trim(),
@@ -113,7 +111,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    toggleWebViewCommand,
     sendCommand,
     configChangeDisposable,
     outputChannel,
@@ -121,40 +118,44 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-function createWebView(context: vscode.ExtensionContext): void {
-  // Create WebView panel
-  webviewPanel = vscode.window.createWebviewPanel(
-    "tsLintChat",
-    "TS-Lint Service",
-    vscode.ViewColumn.One,
-    {
+class ChatViewProvider implements vscode.WebviewViewProvider {
+  constructor(private readonly _extensionUri: vscode.Uri) {}
+
+  public resolveWebviewView(
+    view: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken,
+  ) {
+    // Store reference to global webviewView
+    webviewView = view;
+
+    view.webview.options = {
       enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [],
-    },
-  );
+      localResourceRoots: [
+        vscode.Uri.joinPath(this._extensionUri, "src", "webview"),
+      ],
+    };
 
-  // Generate nonce for CSP
-  const nonce = getNonce();
-  webviewPanel.webview.html = getChatHtml(nonce);
+    // Generate nonce for CSP
+    const nonce = getNonce();
+    view.webview.html = getChatHtml(view.webview, this._extensionUri, nonce);
 
-  // Update connection status
-  if (socket?.connected) {
-    webviewPanel.webview.postMessage({
-      type: "updateStatus",
-      payload: { connected: true },
-    });
-    
-    // Request history for the newly created WebView
-    socket.emit("load history", 50);
-  }
+    // Update connection status
+    if (socket?.connected) {
+      view.webview.postMessage({
+        type: "updateStatus",
+        payload: { connected: true },
+      });
+      
+      // Request history for the newly created WebView
+      socket.emit("load history", 50);
+    }
 
-  // Listen for messages from WebView
-  webviewPanel.webview.onDidReceiveMessage(
-    (message) => {
+    // Listen for messages from WebView
+    view.webview.onDidReceiveMessage((message: any) => {
       switch (message.type) {
         case "ready":
-          // WebView is ready, can send initial data if needed
+          // WebView is ready
           break;
         case "sendMessage":
           // Handle message sent from WebView
@@ -177,7 +178,7 @@ function createWebView(context: vscode.ExtensionContext): void {
             );
 
             // Echo back to WebView
-            webviewPanel?.webview.postMessage({
+            webviewView?.webview.postMessage({
               type: "addMessage",
               payload: {
                 text: text.trim(),
@@ -188,19 +189,8 @@ function createWebView(context: vscode.ExtensionContext): void {
           }
           break;
       }
-    },
-    undefined,
-    context.subscriptions,
-  );
-
-  // Handle WebView disposal
-  webviewPanel.onDidDispose(
-    () => {
-      webviewPanel = undefined;
-    },
-    undefined,
-    context.subscriptions,
-  );
+    });
+  }
 }
 
 function getNonce(): string {
@@ -233,8 +223,8 @@ function connectToServer(
       );
 
       // Update WebView status
-      if (webviewPanel) {
-        webviewPanel.webview.postMessage({
+      if (webviewView) {
+        webviewView.webview.postMessage({
           type: "updateStatus",
           payload: { connected: true },
         });
@@ -251,8 +241,8 @@ function connectToServer(
       );
 
       // Update WebView status
-      if (webviewPanel) {
-        webviewPanel.webview.postMessage({
+      if (webviewView) {
+        webviewView.webview.postMessage({
           type: "updateStatus",
           payload: { connected: false },
         });
@@ -266,8 +256,8 @@ function connectToServer(
       );
 
       // Update WebView status
-      if (webviewPanel) {
-        webviewPanel.webview.postMessage({
+      if (webviewView) {
+        webviewView.webview.postMessage({
           type: "updateStatus",
           payload: { connected: false },
         });
@@ -301,8 +291,8 @@ function connectToServer(
           );
 
           // Send to WebView
-          if (webviewPanel) {
-            webviewPanel.webview.postMessage({
+          if (webviewView) {
+            webviewView.webview.postMessage({
               type: "loadHistory",
               payload: messages,
             });
@@ -332,8 +322,8 @@ function handleIncomingMessage(text: string, timestamp?: number): void {
   outputChannel.appendLine(`[Info - ${ts}] Process: ${text}`);
 
   // Send message to WebView
-  if (webviewPanel) {
-    webviewPanel.webview.postMessage({
+  if (webviewView) {
+    webviewView.webview.postMessage({
       type: "addMessage",
       payload: {
         text: text,
@@ -348,8 +338,8 @@ function handleIncomingMessage(text: string, timestamp?: number): void {
 
   if (autoReveal) {
     // If autoReveal is on, show WebView and don't increment unread count
-    if (webviewPanel) {
-      webviewPanel.reveal(vscode.ViewColumn.One, true);
+    if (webviewView) {
+      webviewView.show();
     }
   } else {
     // Update unread count and status bar
@@ -399,3 +389,4 @@ function formatTimestamp(date: Date): string {
 export function deactivate() {
   socket?.disconnect();
 }
+

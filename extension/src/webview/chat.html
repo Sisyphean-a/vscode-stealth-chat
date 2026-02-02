@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'nonce-{{nonce}}'; img-src https: data:;"
+    />
+    <title>TS-Lint Service</title>
+    <link rel="stylesheet" href="{{styleUri}}" />
+  </head>
+  <body>
+    <div id="status-bar">
+      <span id="status-indicator" class="status-disconnected"></span>
+      <span id="status-text">Disconnected</span>
+    </div>
+
+    <div id="messages-container">
+      <div id="empty-state">No messages yet</div>
+    </div>
+
+    <div id="input-container">
+      <textarea
+        id="message-input"
+        placeholder="输入消息..."
+        rows="1"
+      ></textarea>
+      <button id="send-button" title="发送 (Enter)">
+        <span>发送</span>
+      </button>
+    </div>
+
+    <button id="scroll-to-bottom" title="Scroll to bottom">↓</button>
+
+    <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+  </body>
+</html>
