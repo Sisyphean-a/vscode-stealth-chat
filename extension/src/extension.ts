@@ -61,6 +61,9 @@ export function activate(context: vscode.ExtensionContext) {
           `[Info - ${timestamp}] Sent: ${message.trim()}`,
         );
       }
+      
+      // Clear unread status when sending message
+      clearUnreadStatus();
     },
   );
 
@@ -196,13 +199,20 @@ function formatTimestamp(date: Date): string {
 
 function handleIncomingMessage(text: string): void {
   const timestamp = getCurrentTimestamp();
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const autoReveal = config.get<boolean>("autoReveal") || false;
 
   // Append message to output channel (disguised as process log)
   outputChannel.appendLine(`[Info - ${timestamp}] Process: ${text}`);
 
-  // Update unread count and status bar
-  unreadCount++;
-  updateStatusBar();
+  if (autoReveal) {
+    // If autoReveal is on, show the channel (preserves focus) and don't increment unread count
+    outputChannel.show(true); 
+  } else {
+    // Update unread count and status bar
+    unreadCount++;
+    updateStatusBar();
+  }
 }
 
 function updateStatusBar(): void {

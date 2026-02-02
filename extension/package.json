@@ -39,6 +39,11 @@
           "type": "boolean",
           "default": false,
           "description": "Force WebSocket transport (recommended for Cloudflare Tunnels)"
+        },
+        "tsLint.autoReveal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically reveal output channel and mark as read when new message arrives"
         }
       }
     },
