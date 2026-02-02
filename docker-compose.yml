@@ -24,7 +24,7 @@ services:
       - GOTIFY_TOKEN=${GOTIFY_TOKEN}
       - GOTIFY_ADMIN_PASS=${GOTIFY_PASS:-admin}
       - STEALTH_SECRET=${STEALTH_SECRET:-ChangeMeInProduction}
-      - CLICK_URL=http://localhost:3000
+      - CLICK_URL=${CLICK_URL:-https://chat.sisyphean.top}
       - DB_PATH=/app/data/messages.db
       - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-30}
       - MESSAGE_MAX_COUNT=${MESSAGE_MAX_COUNT:-1000}

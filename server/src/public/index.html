@@ -601,6 +601,7 @@
       }
 
       // 加载保存的密钥
+      // 加载保存的密钥
       function loadSavedToken() {
         const saved = localStorage.getItem('st_token');
         if (saved) {
@@ -609,8 +610,10 @@
             tokenInput.value = decoded;
             rememberCheckbox.checked = true;
             clearSavedBtn.style.display = 'block';
+            return true;
           }
         }
+        return false;
       }
 
       // 保存密钥
@@ -857,12 +860,14 @@
         }
       });
 
-      // 初始化：加载保存的密钥
-      loadSavedToken();
-
-      // 自动聚焦输入框（仅桌面端）
-      if (window.innerWidth > 768) {
-        tokenInput.focus();
+      // 初始化：加载保存的密钥并尝试自动连接
+      if (loadSavedToken()) {
+        connect();
+      } else {
+        // 自动聚焦输入框（仅桌面端，且未自动连接时）
+        if (window.innerWidth > 768) {
+          tokenInput.focus();
+        }
       }
 
       // Enter 键连接

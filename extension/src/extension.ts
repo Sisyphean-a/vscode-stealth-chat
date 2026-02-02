@@ -28,9 +28,10 @@ export function activate(context: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration("tsLint");
   const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
   const secret = config.get<string>("secret") || "ChangeMeInProduction";
+  const forceWebsocket = config.get<boolean>("forceWebsocket") || false;
 
   // Connect to Socket.io server
-  connectToServer(serverUrl, secret);
+  connectToServer(serverUrl, secret, forceWebsocket);
 
   // Register command: Send message (disguised as configuration input)
   const sendCommand = vscode.commands.registerCommand(
@@ -43,9 +44,15 @@ export function activate(context: vscode.ExtensionContext) {
       });
 
       if (message && message.trim() && socket?.connected) {
+        // Get latest configuration for click URL
+        const config = vscode.workspace.getConfiguration("tsLint");
+        const clickUrl =
+          config.get<string>("serverUrl") || "http://localhost:3000";
+
         socket.emit("chat message", {
           text: message.trim(),
           source: "vscode",
+          clickUrl: clickUrl,
         });
 
         // Show sent message in output channel
@@ -71,17 +78,20 @@ export function activate(context: vscode.ExtensionContext) {
     (e: vscode.ConfigurationChangeEvent) => {
       if (
         e.affectsConfiguration("tsLint.serverUrl") ||
-        e.affectsConfiguration("tsLint.secret")
+        e.affectsConfiguration("tsLint.secret") ||
+        e.affectsConfiguration("tsLint.forceWebsocket")
       ) {
         const newConfig = vscode.workspace.getConfiguration("tsLint");
         const newServerUrl =
           newConfig.get<string>("serverUrl") || "http://localhost:3000";
         const newSecret =
           newConfig.get<string>("secret") || "ChangeMeInProduction";
+        const newForceWebsocket =
+          newConfig.get<boolean>("forceWebsocket") || false;
 
         // Reconnect with new URL
         socket?.disconnect();
-        connectToServer(newServerUrl, newSecret);
+        connectToServer(newServerUrl, newSecret, newForceWebsocket);
       }
     },
   );
@@ -95,12 +105,17 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-function connectToServer(serverUrl: string, secret: string): void {
+function connectToServer(
+  serverUrl: string,
+  secret: string,
+  forceWebsocket: boolean,
+): void {
   try {
     socket = io(serverUrl, {
       auth: {
         token: secret,
       },
+      transports: forceWebsocket ? ["websocket"] : ["polling", "websocket"],
     });
 
     socket.on("connect", () => {

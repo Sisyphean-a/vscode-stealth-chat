@@ -37,7 +37,8 @@ function initSocket(httpServer) {
       // Handle VS Code -> Mobile Notification
       if (msg.source === "vscode") {
         console.log("[Socket] Message from VS Code, triggering Gotify...");
-        sendNotification("New Reply", msg.text, 8, CLICK_URL);
+        const targetUrl = msg.clickUrl || CLICK_URL;
+        sendNotification("New Reply", msg.text, 8, targetUrl);
       }
     });
 
