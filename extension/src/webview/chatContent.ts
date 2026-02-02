@@ -183,6 +183,57 @@ export function getChatHtml(nonce: string): string {
     #messages-container::-webkit-scrollbar-thumb:hover {
       background: var(--vscode-scrollbarSlider-activeBackground);
     }
+
+    /* Input container styling */
+    #input-container {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--vscode-editorWidget-background);
+      border-top: 1px solid var(--vscode-editorWidget-border);
+      flex-shrink: 0;
+    }
+
+    #message-input {
+      flex: 1;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      resize: none;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    #message-input:focus {
+      outline: none;
+      border-color: var(--vscode-focusBorder);
+    }
+
+    #send-button {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+
+    #send-button:hover {
+      opacity: 0.9;
+    }
+
+    #send-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -195,6 +246,17 @@ export function getChatHtml(nonce: string): string {
 
   <div id="messages-container">
     <div id="empty-state">No messages yet</div>
+  </div>
+
+  <div id="input-container">
+    <textarea 
+      id="message-input" 
+      placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+      rows="1"
+    ></textarea>
+    <button id="send-button" title="发送消息">
+      <span>发送</span>
+    </button>
   </div>
 
   <button id="scroll-to-bottom" title="Scroll to bottom">↓</button>
@@ -211,6 +273,8 @@ export function getChatHtml(nonce: string): string {
       const statusText = document.getElementById('status-text');
       const scrollToBottomBtn = document.getElementById('scroll-to-bottom');
       const imageTooltip = document.getElementById('image-tooltip');
+      const messageInput = document.getElementById('message-input');
+      const sendButton = document.getElementById('send-button');
 
       let autoScrollEnabled = true;
       let lastMessageTime = 0;
@@ -221,6 +285,39 @@ export function getChatHtml(nonce: string): string {
 
       // Notify extension that WebView is ready
       vscode.postMessage({ type: 'ready' });
+
+      // Send message function
+      function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text) return;
+        
+        // Send message to extension
+        vscode.postMessage({
+          type: 'sendMessage',
+          payload: { text }
+        });
+        
+        // Clear input and reset height
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+      }
+
+      // Send button click event
+      sendButton.addEventListener('click', sendMessage);
+
+      // Enter to send, Shift+Enter for new line
+      messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      // Auto-adjust input height
+      messageInput.addEventListener('input', () => {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = messageInput.scrollHeight + 'px';
+      });
 
       // Listen for messages from extension
       window.addEventListener('message', event => {

@@ -7,12 +7,16 @@ const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 const STATUS_BAR_DEFAULT_TEXT = "$(check) TS-Lint";
 const STATUS_BAR_ALERT_TEXT = "$(alert) TS-Lint";
 
+let outputChannel: vscode.OutputChannel;
 let webviewPanel: vscode.WebviewPanel | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let socket: Socket | undefined;
 let unreadCount = 0;
 
 export function activate(context: vscode.ExtensionContext) {
+  // Create output channel (disguised as lint service)
+  outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+
   // Create status bar item on the right side
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -112,6 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
     toggleWebViewCommand,
     sendCommand,
     configChangeDisposable,
+    outputChannel,
     statusBarItem,
   );
 }
@@ -139,6 +144,9 @@ function createWebView(context: vscode.ExtensionContext): void {
       type: "updateStatus",
       payload: { connected: true },
     });
+    
+    // Request history for the newly created WebView
+    socket.emit("load history", 50);
   }
 
   // Listen for messages from WebView
@@ -147,6 +155,37 @@ function createWebView(context: vscode.ExtensionContext): void {
       switch (message.type) {
         case "ready":
           // WebView is ready, can send initial data if needed
+          break;
+        case "sendMessage":
+          // Handle message sent from WebView
+          const text = message.payload.text;
+          if (text && text.trim() && socket?.connected) {
+            const config = vscode.workspace.getConfiguration("tsLint");
+            const clickUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+
+            // Send to server
+            socket.emit("chat message", {
+              text: text.trim(),
+              source: "vscode",
+              clickUrl: clickUrl,
+            });
+
+            // Show in Output Channel
+            const timestamp = getCurrentTimestamp();
+            outputChannel.appendLine(
+              `[Info - ${timestamp}] Sent: ${text.trim()}`,
+            );
+
+            // Echo back to WebView
+            webviewPanel?.webview.postMessage({
+              type: "addMessage",
+              payload: {
+                text: text.trim(),
+                source: "vscode",
+                timestamp: Date.now(),
+              },
+            });
+          }
           break;
       }
     },
@@ -188,6 +227,11 @@ function connectToServer(
     });
 
     socket.on("connect", () => {
+      const timestamp = getCurrentTimestamp();
+      outputChannel.appendLine(
+        `[Info - ${timestamp}] TS-Lint Service connected`,
+      );
+
       // Update WebView status
       if (webviewPanel) {
         webviewPanel.webview.postMessage({
@@ -201,6 +245,11 @@ function connectToServer(
     });
 
     socket.on("disconnect", () => {
+      const timestamp = getCurrentTimestamp();
+      outputChannel.appendLine(
+        `[Info - ${timestamp}] TS-Lint Service disconnected`,
+      );
+
       // Update WebView status
       if (webviewPanel) {
         webviewPanel.webview.postMessage({
@@ -211,6 +260,11 @@ function connectToServer(
     });
 
     socket.on("connect_error", (error: Error) => {
+      const timestamp = getCurrentTimestamp();
+      outputChannel.appendLine(
+        `[Error - ${timestamp}] Connection failed: ${error.message}`,
+      );
+
       // Update WebView status
       if (webviewPanel) {
         webviewPanel.webview.postMessage({
@@ -226,11 +280,33 @@ function connectToServer(
       (
         messages: Array<{ text: string; source: string; timestamp: number }>,
       ) => {
-        if (messages.length > 0 && webviewPanel) {
-          webviewPanel.webview.postMessage({
-            type: "loadHistory",
-            payload: messages,
+        if (messages.length > 0) {
+          // Show in Output Channel
+          const timestamp = getCurrentTimestamp();
+          outputChannel.appendLine(
+            `[Info - ${timestamp}] Loading ${messages.length} historical messages...`,
+          );
+
+          messages.forEach((msg) => {
+            const msgTime = new Date(msg.timestamp);
+            const formattedTime = formatTimestamp(msgTime);
+            const prefix = msg.source === "mobile" ? "Process" : "Sent";
+            outputChannel.appendLine(
+              `[Info - ${formattedTime}] ${prefix}: ${msg.text}`,
+            );
           });
+
+          outputChannel.appendLine(
+            `[Info - ${timestamp}] History loaded successfully`,
+          );
+
+          // Send to WebView
+          if (webviewPanel) {
+            webviewPanel.webview.postMessage({
+              type: "loadHistory",
+              payload: messages,
+            });
+          }
         }
       },
     );
@@ -251,6 +327,10 @@ function connectToServer(
 
 
 function handleIncomingMessage(text: string, timestamp?: number): void {
+  // Show in Output Channel
+  const ts = getCurrentTimestamp();
+  outputChannel.appendLine(`[Info - ${ts}] Process: ${text}`);
+
   // Send message to WebView
   if (webviewPanel) {
     webviewPanel.webview.postMessage({
@@ -299,6 +379,21 @@ function updateStatusBar(): void {
 function clearUnreadStatus(): void {
   unreadCount = 0;
   updateStatusBar();
+}
+
+function getCurrentTimestamp(): string {
+  const now = new Date();
+  const hours = now.getHours().toString().padStart(2, "0");
+  const minutes = now.getMinutes().toString().padStart(2, "0");
+  const seconds = now.getSeconds().toString().padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function formatTimestamp(date: Date): string {
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
 }
 
 export function deactivate() {
