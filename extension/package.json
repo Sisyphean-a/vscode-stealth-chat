@@ -4,6 +4,10 @@
   "description": "A stealth chat client disguised as a linting service",
   "version": "1.0.0",
   "publisher": "stealth",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sisyphean-a/vscode-stealth-chat.git"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
