@@ -12,6 +12,13 @@ let webviewView: vscode.WebviewView | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let socket: Socket | undefined;
 let unreadCount = 0;
+let historyLoaded = false;
+let cachedMessages: Array<{
+  text: string;
+  source: string;
+  timestamp: number;
+  attachments?: any[];
+}> = [];
 
 export function activate(context: vscode.ExtensionContext) {
   // Create output channel (disguised as lint service)
@@ -136,6 +143,8 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
     context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ) {
+    console.log('[ChatViewProvider] resolveWebviewView called, socket connected:', socket?.connected);
+
     // Store reference to global webviewView
     webviewView = view;
 
@@ -146,26 +155,52 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
       ],
     };
 
-    // Generate nonce for CSP
-    const nonce = getNonce();
-    view.webview.html = getChatHtml(view.webview, this._extensionUri, nonce);
+    // Check if HTML is already set
+    console.log('[ChatViewProvider] view.webview.html length:', view.webview.html?.length || 0);
+    console.log('[ChatViewProvider] context.state:', context.state);
 
-    // Update connection status
-    if (socket?.connected) {
-      view.webview.postMessage({
-        type: "updateStatus",
-        payload: { connected: true },
-      });
-      
-      // Request history for the newly created WebView
-      socket.emit("load history", 50);
+    // Only set HTML if it's empty (first time or after being destroyed)
+    if (!view.webview.html || view.webview.html.length === 0) {
+      console.log('[ChatViewProvider] Setting HTML for the first time');
+      const nonce = getNonce();
+      view.webview.html = getChatHtml(view.webview, this._extensionUri, nonce);
+    } else {
+      console.log('[ChatViewProvider] WebView already has content, skipping HTML setup');
+      // Just update the status since WebView is already initialized
+      if (socket?.connected) {
+        view.webview.postMessage({
+          type: "updateStatus",
+          payload: { connected: true },
+        });
+      }
     }
 
     // Listen for messages from WebView
     view.webview.onDidReceiveMessage((message: any) => {
       switch (message.type) {
         case "ready":
-          // WebView is ready
+          console.log('[ChatViewProvider] WebView ready, socket connected:', socket?.connected);
+          console.log('[ChatViewProvider] Cached messages count:', cachedMessages.length);
+
+          // WebView is ready, send current connection status
+          view.webview.postMessage({
+            type: "updateStatus",
+            payload: { connected: socket?.connected || false },
+          });
+
+          // Send cached messages to WebView
+          if (cachedMessages.length > 0) {
+            console.log('[ChatViewProvider] Sending cached messages to WebView');
+            view.webview.postMessage({
+              type: "loadHistory",
+              payload: cachedMessages,
+            });
+          } else if (socket?.connected && !historyLoaded) {
+            // Only load from server if cache is empty and not loaded yet
+            console.log('[ChatViewProvider] Loading history from server');
+            socket.emit("load history", 50);
+            historyLoaded = true;
+          }
           break;
         case "sendMessage":
           // Handle message sent from WebView
@@ -196,6 +231,14 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
                 timestamp: Date.now(),
               },
             });
+
+            // Add to cache
+            cachedMessages.push({
+              text: text.trim(),
+              source: "vscode",
+              timestamp: Date.now(),
+            });
+            console.log('[sendMessage] Added to cache, total:', cachedMessages.length);
           }
           break;
       }
@@ -224,6 +267,10 @@ function connectToServer(
         token: secret,
       },
       transports: forceWebsocket ? ["websocket"] : ["polling", "websocket"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
     });
 
     socket.on("connect", () => {
@@ -281,6 +328,10 @@ function connectToServer(
         messages: Array<{ text: string; source: string; timestamp: number }>,
       ) => {
         if (messages.length > 0) {
+          // Cache messages
+          cachedMessages = messages;
+          console.log('[Socket] Cached', messages.length, 'messages');
+
           // Show in Output Channel
           const timestamp = getCurrentTimestamp();
           outputChannel.appendLine(
@@ -348,6 +399,15 @@ function handleIncomingMessage(
     size?: number;
   }>,
 ): void {
+  // Add to cache
+  cachedMessages.push({
+    text,
+    source: "mobile",
+    timestamp: timestamp || Date.now(),
+    attachments,
+  });
+  console.log('[handleIncomingMessage] Added to cache, total:', cachedMessages.length);
+
   // Show in Output Channel (degraded for images)
   const ts = getCurrentTimestamp();
   const displayText =

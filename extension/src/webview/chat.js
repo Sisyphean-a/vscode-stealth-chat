@@ -82,7 +82,8 @@
   // Listen for messages from extension
   window.addEventListener('message', (event) => {
     const message = event.data;
-    
+    console.log('[WebView] Received message:', message.type, message.payload);
+
     switch (message.type) {
       case 'addMessage':
         appendMessage(message.payload);
@@ -91,6 +92,7 @@
         loadHistory(message.payload);
         break;
       case 'updateStatus':
+        console.log('[WebView] Updating status to:', message.payload.connected);
         updateStatus(message.payload.connected);
         break;
       case 'clearMessages':
@@ -128,6 +130,7 @@
     messages.forEach(msg => {
       appendMessage(msg, true);
     });
+    // Scroll to bottom when loading history (first time or reconnect)
     scrollToBottom(true);
   }
 
@@ -352,6 +355,9 @@
   // Initialization
   // ============================================================================
 
+  console.log('[WebView] Initializing chat view');
+
   // Notify extension that webview is ready
+  console.log('[WebView] Sending ready message');
   vscode.postMessage({ type: 'ready' });
 })();
