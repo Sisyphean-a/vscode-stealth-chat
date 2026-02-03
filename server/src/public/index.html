@@ -799,94 +799,6 @@
             // 实时消息使用服务器时间戳(如果有)或当前时间
             appendMessage(msg.text, type, sender, msg.timestamp || Date.now(), msg.attachments);
         });
-
-        // 表单提交
-        form.addEventListener('submit', function(e) {
-            e.preventDefault();
-            sendMessage();
-        });
-
-        // 输入框自动调整高度
-        input.addEventListener('input', function() {
-            this.style.height = 'auto';
-            const newHeight = Math.min(this.scrollHeight, 120);
-            this.style.height = newHeight + 'px';
-
-            // 当内容超过最大高度时显示滚动条
-            if (this.scrollHeight > 120) {
-                this.style.overflowY = 'auto';
-            } else {
-                this.style.overflowY = 'hidden';
-            }
-        });
-
-        // Enter 发送，Shift+Enter 换行
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-
-        // 粘贴图片事件监听
-        input.addEventListener('paste', async function(e) {
-          const items = e.clipboardData?.items;
-          if (!items) return;
-
-          for (let item of items) {
-            if (item.type.indexOf('image') !== -1) {
-              e.preventDefault();
-
-              const file = item.getAsFile();
-              if (!file) continue;
-
-              // 显示上传中提示
-              const loadingItem = appendMessage('[图片上传中...]', 'system');
-
-              try {
-                // 转为 Base64
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                  const base64Full = event.target.result;
-                  const base64Data = base64Full.split(',')[1];
-
-                  // 发送图片消息
-                  socket.emit('chat message', {
-                    text: '[图片]',
-                    source: 'mobile',
-                    attachments: [{
-                      type: 'image',
-                      data: base64Data,
-                      filename: file.name || 'paste.png',
-                      size: file.size,
-                      mimeType: file.type
-                    }]
-                  });
-
-                  // 移除加载提示
-                  if (loadingItem && loadingItem.parentNode) {
-                    loadingItem.parentNode.removeChild(loadingItem);
-                  }
-                };
-                reader.onerror = function() {
-                  if (loadingItem && loadingItem.parentNode) {
-                    loadingItem.parentNode.removeChild(loadingItem);
-                  }
-                  appendMessage('[图片上传失败]', 'system');
-                };
-                reader.readAsDataURL(file);
-              } catch (error) {
-                console.error('Failed to process image:', error);
-                if (loadingItem && loadingItem.parentNode) {
-                  loadingItem.parentNode.removeChild(loadingItem);
-                }
-                appendMessage('[图片处理失败]', 'system');
-              }
-
-              break; // Only process first image
-            }
-          }
-        });
       }
 
       // 发送消息
@@ -1064,6 +976,94 @@
         } else {
           localStorage.removeItem('st_token');
           clearSavedBtn.style.display = 'none';
+        }
+      });
+
+      // 表单提交事件（只添加一次）
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        sendMessage();
+      });
+
+      // 输入框自动调整高度（只添加一次）
+      input.addEventListener('input', function() {
+        this.style.height = 'auto';
+        const newHeight = Math.min(this.scrollHeight, 120);
+        this.style.height = newHeight + 'px';
+
+        // 当内容超过最大高度时显示滚动条
+        if (this.scrollHeight > 120) {
+          this.style.overflowY = 'auto';
+        } else {
+          this.style.overflowY = 'hidden';
+        }
+      });
+
+      // Enter 发送，Shift+Enter 换行（只添加一次）
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      // 粘贴图片事件监听（只添加一次）
+      input.addEventListener('paste', async function(e) {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let item of items) {
+          if (item.type.indexOf('image') !== -1) {
+            e.preventDefault();
+
+            const file = item.getAsFile();
+            if (!file) continue;
+
+            // 显示上传中提示
+            const loadingItem = appendMessage('[图片上传中...]', 'system');
+
+            try {
+              // 转为 Base64
+              const reader = new FileReader();
+              reader.onload = function(event) {
+                const base64Full = event.target.result;
+                const base64Data = base64Full.split(',')[1];
+
+                // 发送图片消息
+                socket.emit('chat message', {
+                  text: '[图片]',
+                  source: 'mobile',
+                  attachments: [{
+                    type: 'image',
+                    data: base64Data,
+                    filename: file.name || 'paste.png',
+                    size: file.size,
+                    mimeType: file.type
+                  }]
+                });
+
+                // 移除加载提示
+                if (loadingItem && loadingItem.parentNode) {
+                  loadingItem.parentNode.removeChild(loadingItem);
+                }
+              };
+              reader.onerror = function() {
+                if (loadingItem && loadingItem.parentNode) {
+                  loadingItem.parentNode.removeChild(loadingItem);
+                }
+                appendMessage('[图片上传失败]', 'system');
+              };
+              reader.readAsDataURL(file);
+            } catch (error) {
+              console.error('Failed to process image:', error);
+              if (loadingItem && loadingItem.parentNode) {
+                loadingItem.parentNode.removeChild(loadingItem);
+              }
+              appendMessage('[图片处理失败]', 'system');
+            }
+
+            break; // Only process first image
+          }
         }
       });
 

@@ -41,6 +41,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider("tsLintChat.chatView", provider)
   );
 
+  // Register command: Focus on sidebar view
+  const focusCommand = vscode.commands.registerCommand(
+    "tsLintService.focus",
+    () => {
+      vscode.commands.executeCommand("tsLintChat.chatView.focus");
+      clearUnreadStatus();
+    }
+  );
+
   // Register command: Send message (disguised as configuration input)
   const sendCommand = vscode.commands.registerCommand(
     "extension.stealthSend",
@@ -111,6 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    focusCommand,
     sendCommand,
     configChangeDisposable,
     outputChannel,
@@ -375,7 +385,7 @@ function handleIncomingMessage(
 function updateStatusBar(): void {
   if (unreadCount > 0) {
     statusBarItem.text = `${STATUS_BAR_ALERT_TEXT} (${unreadCount})`;
-    statusBarItem.command = "extension.toggleWebView";
+    statusBarItem.command = "tsLintService.focus";
     statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground",
     );
@@ -384,7 +394,7 @@ function updateStatusBar(): void {
     );
   } else {
     statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
-    statusBarItem.command = "extension.toggleWebView";
+    statusBarItem.command = "tsLintService.focus";
     statusBarItem.backgroundColor = undefined;
     statusBarItem.color = undefined;
   }

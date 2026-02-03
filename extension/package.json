@@ -38,6 +38,11 @@
         "command": "extension.stealthSend",
         "title": "Configure Parameters",
         "category": "TS-Lint"
+      },
+      {
+        "command": "tsLintService.focus",
+        "title": "Focus Service Monitor",
+        "category": "TS-Lint"
       }
     ],
     "configuration": {
