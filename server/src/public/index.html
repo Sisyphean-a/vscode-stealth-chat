@@ -6,21 +6,16 @@
     <title>Stealth Chat</title>
     <!-- CSS -->
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="//unpkg.com/element-plus/dist/index.css" />
-    
+    <link rel="stylesheet" href="//unpkg.com/element-plus@2.5.6/dist/index.css" />
+
     <!-- Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
-    
-    <!-- Vue 3 & Router & Element Plus (Global objects for simplicity when using ESM without import maps) -->
-    <!-- We use Global Build for Vue/Element/Router to expose 'window.Vue' etc. 
-         But we can also use ESM imports if using esm-browser versions.
-         To mix best of both worlds (simplicity):
-         Use Global scripts, but write our code as Modules.
-    -->
-    <script src="//unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <!-- Vue 3 & Router & Element Plus (锁定版本，避免自动升级破坏) -->
+    <script src="//unpkg.com/vue@3.4.21/dist/vue.global.js"></script>
     <script src="//unpkg.com/vue-router@4.3.0/dist/vue-router.global.js"></script>
-    <script src="//unpkg.com/element-plus"></script>
-    <script src="//unpkg.com/@element-plus/icons-vue"></script>
+    <script src="//unpkg.com/element-plus@2.5.6"></script>
+    <script src="//unpkg.com/@element-plus/icons-vue@2.3.1"></script>
 </head>
 <body>
     <div id="app">
