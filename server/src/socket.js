@@ -37,7 +37,7 @@ function initSocket(httpServer) {
     socket.join(appId);
 
     // Handle chat messages
-    socket.on("chat message", (msg) => {
+    socket.on("chat message", async (msg) => {
       try {
         let finalMessage = { ...msg };
         const timestamp = Date.now();
@@ -98,9 +98,13 @@ function initSocket(httpServer) {
           const pushText = finalMessage.attachments
             ? "[图片]"
             : finalMessage.text;
-            
-          // Pass app config to Gotify service
-          sendNotification("New Reply", pushText, 8, targetUrl, app);
+
+          // Pass app config to Gotify service (异步等待)
+          try {
+            await sendNotification("New Reply", pushText, 8, targetUrl, app);
+          } catch (notifyErr) {
+            console.error('[Socket] Gotify push failed:', notifyErr.message);
+          }
         }
       } catch (error) {
         console.error("[Socket] Error processing message:", error);

@@ -22,7 +22,7 @@ body {
   gap: 8px;
   padding: 8px 12px;
   background: var(--vscode-statusBar-background);
-  border-bottom: 1px solid var(--vscode-statusBar-border);
+  border-bottom: 1px solid var(--vscode-editorWidget-border);
   flex-shrink: 0;
 }
 

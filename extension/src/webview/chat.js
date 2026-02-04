@@ -27,6 +27,11 @@
   let pendingAttachments = [];
   /** @type {'bubble' | 'log'} */
   let displayMode = 'bubble';
+  /** @type {string} */
+  let serverUrl = 'http://localhost:3000';
+
+  // 图片大小限制 (5MB)
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
   // ============================================================================
   // Event Listeners
@@ -117,6 +122,9 @@
         updateStatus(message.payload.connected);
         break;
       case 'setDisplayMode':
+        if (message.payload.serverUrl) {
+          serverUrl = message.payload.serverUrl;
+        }
         setDisplayMode(message.payload.mode);
         break;
       case 'clearMessages':
@@ -272,7 +280,6 @@
 
           // If it's a relative URL, convert to absolute
           if (imageUrl && imageUrl.startsWith('/uploads/')) {
-            const serverUrl = 'http://localhost:3000'; // TODO: Make this configurable
             imageUrl = serverUrl + imageUrl;
           }
 
@@ -343,7 +350,6 @@
         if (att.type === 'image') {
           let imageUrl = att.data || att.url;
           if (imageUrl && imageUrl.startsWith('/uploads/')) {
-            const serverUrl = 'http://localhost:3000';
             imageUrl = serverUrl + imageUrl;
           }
 
@@ -538,6 +544,13 @@
    * @param {File} file
    */
   function handleImageFile(file) {
+    // 检查文件大小
+    if (file.size > MAX_IMAGE_SIZE) {
+      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+      console.warn('[WebView] Image too large:', sizeMB, 'MB');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = /** @type {string} */ (e.target?.result);
@@ -549,6 +562,9 @@
         });
         renderAttachmentPreview();
       }
+    };
+    reader.onerror = () => {
+      console.error('[WebView] Failed to read file:', file.name);
     };
     reader.readAsDataURL(file);
   }

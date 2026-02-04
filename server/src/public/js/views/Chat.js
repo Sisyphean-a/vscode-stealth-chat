@@ -25,7 +25,10 @@ export default {
                     <span v-if="hasSavedToken" class="action-link" @click="clearSavedToken">清除记录</span>
                 </div>
 
-                <button class="primary-btn" @click="connect">进入聊天</button>
+                <button class="primary-btn" @click="connect" :disabled="isConnecting">
+                    <span v-if="isConnecting" class="loading-spinner"></span>
+                    {{ isConnecting ? '连接中...' : '进入聊天' }}
+                </button>
                 <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
             </div>
         </div>
@@ -106,6 +109,7 @@ export default {
         // State
         const connected = ref(false)
         const socketConnected = ref(false)
+        const isConnecting = ref(false)
         const authToken = ref('')
         const rememberMe = ref(false)
         const errorMsg = ref('')
@@ -119,6 +123,9 @@ export default {
 
         // Pending images for sending
         const pendingImages = reactive([])
+
+        // 图片大小限制 (5MB)
+        const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
         // Image preview state
         const previewImage = ref(null)
@@ -159,6 +166,10 @@ export default {
                 return
             }
 
+            // 显示连接中状态
+            isConnecting.value = true
+            errorMsg.value = ''
+
             // Connect
             socket = io({
                 auth: { token: authToken.value }
@@ -167,6 +178,7 @@ export default {
             socket.on('connect', () => {
                 connected.value = true
                 socketConnected.value = true
+                isConnecting.value = false
                 errorMsg.value = ''
                 saveToken()
                 socket.emit('load history', 50)
@@ -174,6 +186,7 @@ export default {
             })
 
             socket.on('connect_error', (err) => {
+                isConnecting.value = false
                 errorMsg.value = "连接失败: " + err.message
                 socketConnected.value = false
             })
@@ -287,6 +300,13 @@ export default {
         }
 
         const processImageFile = (file) => {
+            // 检查文件大小
+            if (file.size > MAX_IMAGE_SIZE) {
+                const sizeMB = (file.size / 1024 / 1024).toFixed(2)
+                appendSystemMessage(`图片过大 (${sizeMB}MB)，请选择小于 5MB 的图片`)
+                return
+            }
+
             const reader = new FileReader()
             reader.onload = (e) => {
                 const dataUrl = e.target?.result
@@ -385,7 +405,7 @@ export default {
         })
 
         return {
-            connected, socketConnected, authToken, rememberMe, errorMsg, hasSavedToken,
+            connected, socketConnected, isConnecting, authToken, rememberMe, errorMsg, hasSavedToken,
             messages, inputText, messagesContainer, inputArea, fileInput,
             pendingImages, previewImage, previewScale,
             connect, disconnect, sendMessage, clearSavedToken,

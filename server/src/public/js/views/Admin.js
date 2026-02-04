@@ -89,9 +89,12 @@ export default {
                                 <span class="name-text">{{ scope.row.name }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column label="连接密钥" width="180">
+                        <el-table-column label="连接密钥" width="200">
                             <template #default="scope">
-                                <span class="token-mask" title="点击复制">{{ scope.row.token.substring(0,8) }}...</span>
+                                <div class="token-cell">
+                                    <span class="token-mask" title="点击复制完整密钥" @click="copyToken(scope.row.token)">{{ scope.row.token.substring(0,8) }}...</span>
+                                    <el-button link type="primary" size="small" @click="copyToken(scope.row.token)" title="复制">📋</el-button>
+                                </div>
                             </template>
                         </el-table-column>
                         <el-table-column label="Gotify" width="100" align="center">
@@ -231,29 +234,63 @@ export default {
         }
 
         const submitForm = async () => {
+            // 表单验证
+            if (!form.id || !form.id.trim()) {
+                ElMessage.warning('请输入频道 ID')
+                return
+            }
+            if (!/^[a-zA-Z0-9_-]+$/.test(form.id)) {
+                ElMessage.warning('ID 只能包含字母、数字、下划线和连字符')
+                return
+            }
+            if (!form.token || form.token.length < 8) {
+                ElMessage.warning('密钥长度至少 8 位')
+                return
+            }
+
             const url = isEdit.value ? `/api/admin/apps/${form.id}` : '/api/admin/apps'
             const method = isEdit.value ? 'PUT' : 'POST'
-            
+
             const res = await fetch(url, {
                 method: method,
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token.value}` 
+                    'Authorization': `Bearer ${token.value}`
                 },
                 body: JSON.stringify(form)
             })
-            
+
             if (res.ok) {
                 ElMessage.success(isEdit.value ? '已更新' : '已创建')
                 dialogVisible.value = false
                 fetchStatus()
             } else {
-                ElMessage.error('操作失败')
+                const data = await res.json().catch(() => ({}))
+                ElMessage.error(data.message || '操作失败')
             }
         }
 
         const generateToken = () => {
-            form.token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+            // 使用 crypto API 生成安全随机 Token（32字符 hex）
+            const array = new Uint8Array(16)
+            crypto.getRandomValues(array)
+            form.token = Array.from(array, b => b.toString(16).padStart(2, '0')).join('')
+        }
+
+        const copyToken = async (tokenValue) => {
+            try {
+                await navigator.clipboard.writeText(tokenValue)
+                ElMessage.success('已复制到剪贴板')
+            } catch (err) {
+                // Fallback for older browsers
+                const textarea = document.createElement('textarea')
+                textarea.value = tokenValue
+                document.body.appendChild(textarea)
+                textarea.select()
+                document.execCommand('copy')
+                document.body.removeChild(textarea)
+                ElMessage.success('已复制到剪贴板')
+            }
         }
 
         const formatUptime = (seconds) => {
@@ -270,7 +307,7 @@ export default {
 
         return {
             password, token, loading, errorMsg, stats,
-            login, logout, formatUptime, deleteApp,
+            login, logout, formatUptime, deleteApp, copyToken,
             dialogVisible, isEdit, form, openDialog, submitForm, generateToken
         }
     }

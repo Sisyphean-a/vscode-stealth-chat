@@ -13,12 +13,93 @@ let statusBarItem: vscode.StatusBarItem;
 let socket: Socket | undefined;
 let unreadCount = 0;
 let historyLoaded = false;
+
+// 缓存配置
+const CACHE_MAX_SIZE = 200;
+
+// 消息去重 Set
+const processedMessageKeys = new Set<string>();
+
 let cachedMessages: Array<{
   text: string;
   source: string;
   timestamp: number;
   attachments?: any[];
 }> = [];
+
+// 生成消息唯一键（用于去重）
+function getMessageKey(msg: { text: string; source: string; timestamp: number }): string {
+  // 使用时间戳 + 来源 + 内容前20字符作为唯一键
+  const textKey = msg.text?.slice(0, 20) || '';
+  return `${msg.timestamp}-${msg.source}-${textKey}`;
+}
+
+// 检查消息是否已处理（去重）
+function isMessageDuplicate(msg: { text: string; source: string; timestamp: number }): boolean {
+  const key = getMessageKey(msg);
+  if (processedMessageKeys.has(key)) {
+    return true;
+  }
+  processedMessageKeys.add(key);
+  // 限制 Set 大小，防止内存泄漏
+  if (processedMessageKeys.size > CACHE_MAX_SIZE * 2) {
+    const keysToDelete = Array.from(processedMessageKeys).slice(0, CACHE_MAX_SIZE);
+    keysToDelete.forEach(k => processedMessageKeys.delete(k));
+  }
+  return false;
+}
+
+// 添加消息到缓存（带去重和大小限制）
+function addToCache(msg: { text: string; source: string; timestamp: number; attachments?: any[] }): boolean {
+  if (isMessageDuplicate(msg)) {
+    return false;
+  }
+  cachedMessages.push(msg);
+  // 限制缓存大小
+  if (cachedMessages.length > CACHE_MAX_SIZE) {
+    cachedMessages = cachedMessages.slice(-CACHE_MAX_SIZE);
+  }
+  return true;
+}
+
+// 合并历史消息（保留本地未同步消息）
+function mergeHistory(history: Array<{ text: string; source: string; timestamp: number; attachments?: any[] }>): void {
+  // 获取本地消息的最大时间戳
+  const localMaxTimestamp = cachedMessages.length > 0
+    ? Math.max(...cachedMessages.map(m => m.timestamp))
+    : 0;
+
+  // 合并：历史消息 + 本地比历史更新的消息
+  const localNewerMessages = cachedMessages.filter(m => m.timestamp > localMaxTimestamp - 1000);
+
+  // 重建去重 Set
+  processedMessageKeys.clear();
+
+  // 先添加历史消息
+  const merged: typeof cachedMessages = [];
+  for (const msg of history) {
+    const key = getMessageKey(msg);
+    if (!processedMessageKeys.has(key)) {
+      processedMessageKeys.add(key);
+      merged.push(msg);
+    }
+  }
+
+  // 再添加本地较新的消息（可能是断线期间发送的）
+  for (const msg of localNewerMessages) {
+    const key = getMessageKey(msg);
+    if (!processedMessageKeys.has(key)) {
+      processedMessageKeys.add(key);
+      merged.push(msg);
+    }
+  }
+
+  // 按时间排序
+  merged.sort((a, b) => a.timestamp - b.timestamp);
+
+  // 限制大小
+  cachedMessages = merged.slice(-CACHE_MAX_SIZE);
+}
 
 export function activate(context: vscode.ExtensionContext) {
   // Create output channel (disguised as lint service)
@@ -128,10 +209,11 @@ export function activate(context: vscode.ExtensionContext) {
       if (e.affectsConfiguration("tsLint.displayMode")) {
         const newConfig = vscode.workspace.getConfiguration("tsLint");
         const displayMode = newConfig.get<string>("displayMode") || "bubble";
+        const serverUrlForWebview = newConfig.get<string>("serverUrl") || "http://localhost:3000";
         if (webviewView) {
           webviewView.webview.postMessage({
             type: "setDisplayMode",
-            payload: { mode: displayMode },
+            payload: { mode: displayMode, serverUrl: serverUrlForWebview },
           });
         }
       }
@@ -203,9 +285,10 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
           // Send current display mode
           const displayModeConfig = vscode.workspace.getConfiguration("tsLint");
           const currentDisplayMode = displayModeConfig.get<string>("displayMode") || "bubble";
+          const currentServerUrl = displayModeConfig.get<string>("serverUrl") || "http://localhost:3000";
           view.webview.postMessage({
             type: "setDisplayMode",
-            payload: { mode: currentDisplayMode },
+            payload: { mode: currentDisplayMode, serverUrl: currentServerUrl },
           });
 
           // Send cached messages to WebView
@@ -259,8 +342,8 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
                 },
               });
 
-              // Add to cache
-              cachedMessages.push({
+              // Add to cache (使用去重机制)
+              addToCache({
                 text: text?.trim() || "",
                 source: "vscode",
                 timestamp: Date.now(),
@@ -295,6 +378,18 @@ function connectToServer(
   forceWebsocket: boolean,
 ): void {
   try {
+    // 显示"正在连接"状态
+    statusBarItem.text = "$(sync~spin) TS-Lint";
+    statusBarItem.tooltip = "正在连接服务器...";
+
+    // 通知 WebView 正在连接
+    if (webviewView) {
+      webviewView.webview.postMessage({
+        type: "updateStatus",
+        payload: { connected: false, connecting: true },
+      });
+    }
+
     socket = io(serverUrl, {
       auth: {
         token: secret,
@@ -312,11 +407,15 @@ function connectToServer(
         `[Info - ${timestamp}] TS-Lint Service connected`,
       );
 
+      // 恢复状态栏
+      statusBarItem.tooltip = "TS-Lint Service 已连接";
+      updateStatusBar();
+
       // Update WebView status
       if (webviewView) {
         webviewView.webview.postMessage({
           type: "updateStatus",
-          payload: { connected: true },
+          payload: { connected: true, connecting: false },
         });
       }
 
@@ -330,11 +429,14 @@ function connectToServer(
         `[Info - ${timestamp}] TS-Lint Service disconnected`,
       );
 
+      // 更新状态栏
+      statusBarItem.tooltip = "TS-Lint Service 已断开";
+
       // Update WebView status
       if (webviewView) {
         webviewView.webview.postMessage({
           type: "updateStatus",
-          payload: { connected: false },
+          payload: { connected: false, connecting: false },
         });
       }
     });
@@ -345,11 +447,14 @@ function connectToServer(
         `[Error - ${timestamp}] Connection failed: ${error.message}`,
       );
 
-      // Update WebView status
+      // 更新状态栏显示错误
+      statusBarItem.tooltip = `连接失败: ${error.message}`;
+
+      // Update WebView status with error
       if (webviewView) {
         webviewView.webview.postMessage({
           type: "updateStatus",
-          payload: { connected: false },
+          payload: { connected: false, connecting: false, error: error.message },
         });
       }
     });
@@ -361,9 +466,9 @@ function connectToServer(
         messages: Array<{ text: string; source: string; timestamp: number }>,
       ) => {
         if (messages.length > 0) {
-          // Cache messages
-          cachedMessages = messages;
-          console.log('[Socket] Cached', messages.length, 'messages');
+          // 合并历史消息和本地缓存（保留断线期间的本地消息）
+          mergeHistory(messages);
+          console.log('[Socket] Merged history, total:', cachedMessages.length);
 
           // Show in Output Channel
           const timestamp = getCurrentTimestamp();
@@ -384,11 +489,11 @@ function connectToServer(
             `[Info - ${timestamp}] History loaded successfully`,
           );
 
-          // Send to WebView
+          // Send merged cache to WebView
           if (webviewView) {
             webviewView.webview.postMessage({
               type: "loadHistory",
-              payload: messages,
+              payload: cachedMessages,
             });
           }
         }
@@ -432,13 +537,19 @@ function handleIncomingMessage(
     size?: number;
   }>,
 ): void {
-  // Add to cache
-  cachedMessages.push({
+  const msgTimestamp = timestamp || Date.now();
+  const msg = {
     text,
     source: "mobile",
-    timestamp: timestamp || Date.now(),
+    timestamp: msgTimestamp,
     attachments,
-  });
+  };
+
+  // 去重检查
+  if (!addToCache(msg)) {
+    console.log('[handleIncomingMessage] Duplicate message, skipping');
+    return;
+  }
   console.log('[handleIncomingMessage] Added to cache, total:', cachedMessages.length);
 
   // Show in Output Channel (degraded for images)
@@ -454,7 +565,7 @@ function handleIncomingMessage(
       payload: {
         text: text,
         source: "mobile",
-        timestamp: timestamp || Date.now(),
+        timestamp: msgTimestamp,
         attachments: attachments,
       },
     });
