@@ -8,7 +8,7 @@ const DB_PATH =
 const MESSAGE_RETENTION_DAYS = parseInt(
   process.env.MESSAGE_RETENTION_DAYS || "30",
 );
-const MESSAGE_MAX_COUNT = parseInt(process.env.MESSAGE_MAX_COUNT || "1000");
+const MESSAGE_MAX_COUNT = parseInt(process.env.MESSAGE_MAX_COUNT || "1000"); // Per app limit
 
 let db = null;
 let isInitialized = false;
@@ -35,10 +35,11 @@ async function init() {
 
     db = new SQL.Database(buffer);
 
-    // 创建消息表
+    // 1. 创建表 (如果是新库)
     db.run(`
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                app_id TEXT DEFAULT 'default',
                 text TEXT NOT NULL,
                 source TEXT NOT NULL,
                 timestamp INTEGER NOT NULL,
@@ -46,8 +47,22 @@ async function init() {
             );
         `);
 
+    // 2. 检查并执行迁移 (如果是旧库，缺少 app_id)
+    try {
+        db.run("SELECT app_id FROM messages LIMIT 1");
+    } catch (e) {
+        console.log("[DB] Migrating schema: adding app_id column...");
+        db.run("ALTER TABLE messages ADD COLUMN app_id TEXT DEFAULT 'default'");
+        db.run("UPDATE messages SET app_id = 'default' WHERE app_id IS NULL");
+        console.log("[DB] Migration completed.");
+    }
+
+    // 索引
     db.run(
       `CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp DESC);`,
+    );
+    db.run(
+        `CREATE INDEX IF NOT EXISTS idx_app_id ON messages(app_id);`
     );
 
     isInitialized = true;
@@ -90,17 +105,19 @@ function saveToFile() {
  * @param {string} text 消息内容
  * @param {string} source 消息来源 ('vscode' | 'mobile')
  * @param {number} timestamp 时间戳
+ * @param {string} appId 应用ID
  */
-function saveMessage(text, source, timestamp) {
+function saveMessage(text, source, timestamp, appId = 'default') {
   if (!isInitialized || !db) {
     return false;
   }
 
   try {
-    db.run("INSERT INTO messages (text, source, timestamp) VALUES (?, ?, ?)", [
+    db.run("INSERT INTO messages (text, source, timestamp, app_id) VALUES (?, ?, ?, ?)", [
       text,
       source,
       timestamp,
+      appId
     ]);
     return true;
   } catch (error) {
@@ -112,9 +129,10 @@ function saveMessage(text, source, timestamp) {
 /**
  * 获取最近的消息
  * @param {number} limit 返回消息数量
+ * @param {string} appId 应用ID
  * @returns {Array} 消息数组
  */
-function getRecentMessages(limit = 50) {
+function getRecentMessages(limit = 50, appId = 'default') {
   if (!isInitialized || !db) {
     return [];
   }
@@ -123,10 +141,11 @@ function getRecentMessages(limit = 50) {
     const stmt = db.prepare(`
             SELECT text, source, timestamp
             FROM messages
+            WHERE app_id = ?
             ORDER BY timestamp DESC
             LIMIT ?
         `);
-    stmt.bind([limit]);
+    stmt.bind([appId, limit]);
 
     const messages = [];
     while (stmt.step()) {
@@ -164,16 +183,27 @@ function getRecentMessages(limit = 50) {
 }
 
 /**
- * 获取消息总数
+ * 获取消息总数 (Global or App specific? Currently global for simplicity in counting)
+ * But cleanup should ideally be per app. 
+ * For now let's keep it simple: Count ALL messages for stats if needed, or by App ID.
+ * @param {string} [appId] Optional app ID
  * @returns {number} 消息数量
  */
-function getMessageCount() {
+function getMessageCount(appId) {
   if (!isInitialized || !db) {
     return 0;
   }
 
   try {
-    const stmt = db.prepare("SELECT COUNT(*) as count FROM messages");
+    let sql = "SELECT COUNT(*) as count FROM messages";
+    let params = [];
+    if (appId) {
+        sql += " WHERE app_id = ?";
+        params.push(appId);
+    }
+
+    const stmt = db.prepare(sql);
+    stmt.bind(params);
     stmt.step();
     const result = stmt.getAsObject();
     stmt.free();
@@ -196,26 +226,39 @@ function cleanupOldMessages() {
     const retentionTimestamp =
       Date.now() - MESSAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-    // 删除过期消息
+    // 1. 删除过期的 (Global)
     db.run("DELETE FROM messages WHERE timestamp < ?", [retentionTimestamp]);
 
-    // 如果消息数量超过限制,删除最旧的消息
-    const count = getMessageCount();
+    // 2. 数量限制 (Per App is better, but to save SQL performance, we can do a simplified versions)
+    // We will do a generic clean up: distinct app_ids, then for each app, keep max.
+    
+    // Get distinct app_ids
+    const appSmt = db.prepare("SELECT DISTINCT app_id FROM messages");
+    const appIds = [];
+    while(appSmt.step()) {
+        appIds.push(appSmt.getAsObject().app_id);
+    }
+    appSmt.free();
 
-    if (count > MESSAGE_MAX_COUNT) {
-      const excess = count - MESSAGE_MAX_COUNT;
-      db.run(
-        `
+    for (const appId of appIds) {
+        const count = getMessageCount(appId);
+        if (count > MESSAGE_MAX_COUNT) {
+            const excess = count - MESSAGE_MAX_COUNT;
+            // Delete oldest for this app
+            db.run(
+                `
                 DELETE FROM messages 
                 WHERE id IN (
                     SELECT id FROM messages 
+                    WHERE app_id = ?
                     ORDER BY timestamp ASC 
                     LIMIT ?
                 )
-            `,
-        [excess],
-      );
-      console.log(`[DB] Cleaned up ${excess} excess messages`);
+                `,
+                [appId, excess]
+            );
+            console.log(`[DB] Cleaned up ${excess} excess messages for app ${appId}`);
+        }
     }
 
     // 保存到文件

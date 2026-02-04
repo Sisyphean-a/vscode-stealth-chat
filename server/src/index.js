@@ -4,26 +4,28 @@ const path = require("path");
 const { initSocket } = require("./socket");
 const db = require("./db");
 const { IMAGES_DIR, cleanupOldImages } = require("./utils/imageStorage");
-
-const { setupGotify } = require("./services/gotify-setup");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 const server = http.createServer(app);
 
+// Parser middleware
+app.use(express.json());
+
 // Start Server Sequence
 (async () => {
   try {
-    // 1. Auto-configure Gotify Token
-    await setupGotify();
-
-    // 2. Initialize Database
+    // 1. Initialize Database
     await db.init();
     console.log("[Server] Database initialized");
 
-    // 3. Initialize Socket.io
+    // 2. Initialize Socket.io
     initSocket(server);
 
-    // 4. Serve static files (Mobile Client)
+    // 3. Admin Routes
+    app.use("/api/admin", adminRoutes);
+
+    // 4. Serve static files (Mobile Client & Admin UI)
     app.use(express.static(path.join(__dirname, "public")));
 
     // 5. Serve uploaded images
@@ -38,9 +40,6 @@ const server = http.createServer(app);
     const PORT = process.env.PORT || 3000;
     server.listen(PORT, () => {
       console.log(`[Server] running on port ${PORT}`);
-      console.log(
-        `[Server] Secret: ${process.env.STEALTH_SECRET ? "***" : "Default (ChangeMeInProduction)"}`,
-      );
     });
 
   } catch (err) {

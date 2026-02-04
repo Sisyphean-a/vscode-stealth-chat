@@ -2,10 +2,11 @@ const { Server } = require("socket.io");
 const { sendNotification } = require("./services/gotify");
 const db = require("./db");
 const { processImage } = require("./utils/imageStorage");
+const config = require("./config");
 
-const CHAT_SECRET = process.env.STEALTH_SECRET || "ChangeMeInProduction";
-// External URL for the phone to open when clicking notification
-const CLICK_URL = process.env.CLICK_URL || "http://localhost:3000";
+// Global click URL (can be overridden by app config if we extended it, 
+// but currently clickUrl is passed in msg or falls back to global env)
+const CLICK_URL = config.CLICK_URL;
 
 function initSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -15,7 +16,12 @@ function initSocket(httpServer) {
   // Authentication Middleware
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
-    if (token === CHAT_SECRET) {
+    const app = config.findAppByToken(token);
+
+    if (app) {
+      // Store app info in socket session
+      socket.data.app = app;
+      socket.data.appId = app.id;
       next();
     } else {
       console.log(`[Socket] Unauthorized access attempt: ${socket.id}`);
@@ -24,7 +30,11 @@ function initSocket(httpServer) {
   });
 
   io.on("connection", (socket) => {
-    console.log(`[Socket] Client connected: ${socket.id}`);
+    const { app, appId } = socket.data;
+    console.log(`[Socket] Client connected: ${socket.id} (App: ${app.name})`);
+
+    // Join room based on App ID for isolation
+    socket.join(appId);
 
     // Handle chat messages
     socket.on("chat message", (msg) => {
@@ -72,22 +82,25 @@ function initSocket(httpServer) {
             })
           : finalMessage.text;
 
-        db.saveMessage(dbText, msg.source, timestamp);
+        // Save with App ID
+        db.saveMessage(dbText, msg.source, timestamp, appId);
 
-        // Broadcast to all clients with timestamp
-        io.emit("chat message", {
+        // Broadcast ONLY to this App's room
+        io.to(appId).emit("chat message", {
           ...finalMessage,
           timestamp: timestamp,
         });
 
         // Handle VS Code -> Mobile Notification
         if (msg.source === "vscode") {
-          console.log("[Socket] Message from VS Code, triggering Gotify...");
+          console.log(`[Socket] Message from VS Code (App: ${app.name}), triggering Gotify...`);
           const targetUrl = msg.clickUrl || CLICK_URL;
           const pushText = finalMessage.attachments
             ? "[图片]"
             : finalMessage.text;
-          sendNotification("New Reply", pushText, 8, targetUrl);
+            
+          // Pass app config to Gotify service
+          sendNotification("New Reply", pushText, 8, targetUrl, app);
         }
       } catch (error) {
         console.error("[Socket] Error processing message:", error);
@@ -100,9 +113,10 @@ function initSocket(httpServer) {
     // Handle history loading request
     socket.on("load history", (limit = 50) => {
       console.log(
-        `[Socket] Loading history (limit: ${limit}) for ${socket.id}`,
+        `[Socket] Loading history (limit: ${limit}) for ${socket.id} (App: ${app.name})`,
       );
-      const messages = db.getRecentMessages(limit);
+      // Load history for this App ID
+      const messages = db.getRecentMessages(limit, appId);
       socket.emit("history loaded", messages);
     });
 

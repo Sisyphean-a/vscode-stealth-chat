@@ -28,6 +28,7 @@ services:
       - DB_PATH=/app/data/messages.db
       - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-30}
       - MESSAGE_MAX_COUNT=${MESSAGE_MAX_COUNT:-1000}
+      - APP_APPS=${APP_APPS}
     volumes:
       - ./server/data:/app/data
     depends_on:

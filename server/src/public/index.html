@@ -1,1089 +1,315 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Stealth Chat</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        :root {
-            --primary-color: #007acc;
-            --primary-hover: #005a9e;
-            --bg-dark: #1e1e1e;
-            --bg-darker: #181818;
-            --bg-light: #252526;
-            --border-color: #333;
-            --text-primary: #d4d4d4;
-            --text-secondary: #9d9d9d;
-            --msg-own-bg: #007acc;
-            --msg-remote-bg: #2d2d30;
-            --system-color: #6a9955;
-            --danger-color: #f48771;
-            --success-color: #4ec9b0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
-            background: var(--bg-dark);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* 认证界面 */
-        #auth-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            padding: 20px;
-            background: linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
-        }
-
-        .auth-box {
-            background: var(--bg-light);
-            border-radius: 16px;
-            padding: 40px;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
-
-        .auth-title {
-            font-size: 28px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            text-align: center;
-            background: linear-gradient(135deg, var(--primary-color), var(--success-color));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .auth-subtitle {
-            color: var(--text-secondary);
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 14px;
-        }
-
-        .auth-input {
-            width: 100%;
-            padding: 14px 16px;
-            background: var(--bg-darker);
-            border: 2px solid var(--border-color);
-            border-radius: 8px;
-            color: var(--text-primary);
-            font-size: 15px;
-            transition: border-color 0.3s;
-            margin-bottom: 20px;
-        }
-
-        .auth-input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-        }
-
-        .auth-button {
-            width: 100%;
-            padding: 14px;
-            background: var(--primary-color);
-            border: none;
-            border-radius: 8px;
-            color: white;
-            font-size: 16px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        .auth-button:hover {
-            background: var(--primary-hover);
-        }
-
-        .auth-button:active {
-            transform: scale(0.98);
-        }
-
-        .auth-options {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 20px;
-            font-size: 13px;
-        }
-
-        .remember-me {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .remember-me input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-        }
-
-        .clear-saved {
-            color: var(--text-secondary);
-            cursor: pointer;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-
-        .clear-saved:hover {
-            color: var(--primary-color);
-        }
-
-        .auth-error {
-            color: var(--danger-color);
-            font-size: 13px;
-            margin-top: 10px;
-            text-align: center;
-            display: none;
-        }
-
-        .auth-warning {
-            background: rgba(244, 135, 113, 0.1);
-            border-left: 3px solid var(--danger-color);
-            padding: 12px;
-            margin-top: 20px;
-            border-radius: 4px;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .auth-warning strong {
-            color: var(--danger-color);
-        }
-
-        /* 聊天界面 */
-        #chat-container {
-            display: none;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        /* 头部 */
-        .chat-header {
-            background: var(--bg-light);
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .chat-title {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .chat-title h1 {
-            font-size: 18px;
-            font-weight: 600;
-        }
-
-        .status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: var(--success-color);
-            box-shadow: 0 0 8px var(--success-color);
-            animation: pulse 2s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .chat-info {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-
-        .online-count {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .online-dot {
-            width: 6px;
-            height: 6px;
-            background: var(--success-color);
-            border-radius: 50%;
-        }
-
-        /* 消息区域 */
-        .messages-wrapper {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            background: var(--bg-darker);
-            scroll-behavior: smooth;
-        }
-
-        .messages-wrapper::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .messages-wrapper::-webkit-scrollbar-track {
-            background: var(--bg-darker);
-        }
-
-        .messages-wrapper::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 4px;
-        }
-
-        .messages-wrapper::-webkit-scrollbar-thumb:hover {
-            background: #444;
-        }
-
-        #messages {
-            list-style: none;
-            max-width: 800px;
-            margin: 0 auto;
-        }
-
-        /* 消息项 */
-        .time-divider {
-            text-align: center;
-            margin: 24px 0 12px;
-            position: relative;
-            display: flex;
-            justify-content: center;
-        }
-
-        .time-divider span {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-secondary);
-            font-size: 12px;
-            padding: 4px 12px;
-            border-radius: 12px;
-        }
-        .message-item {
-            display: flex;
-            margin-bottom: 16px;
-            animation: fadeIn 0.3s ease-in-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .message-item.own {
-            justify-content: flex-end;
-        }
-
-        .message-item.system {
-            justify-content: center;
-        }
-
-        .message-content {
-            max-width: 70%;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .message-bubble {
-            padding: 10px 14px;
-            border-radius: 16px;
-            word-wrap: break-word;
-            line-height: 1.5;
-            font-size: 15px;
-            white-space: pre-wrap;
-        }
-
-        .message-bubble .image-link {
-            color: #60cdff;
-            text-decoration: underline;
-            word-break: break-all;
-        }
-
-        .message-item.own .message-bubble .image-link {
-            color: #a0e5ff;
-        }
-
-        .message-item.own .message-bubble {
-            background: var(--msg-own-bg);
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-
-        .message-item.remote .message-bubble {
-            background: var(--msg-remote-bg);
-            border-bottom-left-radius: 4px;
-        }
-
-        .message-item.system .message-bubble {
-            background: transparent;
-            color: var(--system-color);
-            font-size: 13px;
-            font-style: italic;
-            text-align: center;
-            padding: 6px 12px;
-        }
-
-        .message-meta {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            color: var(--text-secondary);
-            padding: 0 4px;
-        }
-
-        .message-item.own .message-meta {
-            justify-content: flex-end;
-        }
-
-        .message-sender {
-            font-weight: 500;
-        }
-
-        .message-time {
-            opacity: 0.7;
-        }
-
-        /* 输入区域 */
-        .input-container {
-            background: var(--bg-light);
-            border-top: 1px solid var(--border-color);
-            padding: 16px 20px;
-        }
-
-        #form {
-            max-width: 800px;
-            margin: 0 auto;
-            display: flex;
-            gap: 12px;
-            align-items: flex-end;
-        }
-
-        #input {
-            flex: 1;
-            padding: 12px 16px;
-            background: var(--bg-darker);
-            border: 2px solid var(--border-color);
-            border-radius: 24px;
-            color: var(--text-primary);
-            font-size: 15px;
-            resize: none;
-            max-height: 120px;
-            overflow-y: hidden;
-            transition: border-color 0.3s;
-            font-family: inherit;
-        }
-
-        #input:focus {
-            overflow-y: auto;
-        }
-
-        #input::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        #input::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        #input::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 3px;
-        }
-
-        #input::-webkit-scrollbar-thumb:hover {
-            background: #444;
-        }
-
-        #input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-        }
-
-        .send-button {
-            padding: 12px 24px;
-            background: var(--primary-color);
-            border: none;
-            border-radius: 24px;
-            color: white;
-            font-size: 15px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s;
-            white-space: nowrap;
-        }
-
-        .send-button:hover {
-            background: var(--primary-hover);
-            transform: scale(1.05);
-        }
-
-        .send-button:active {
-            transform: scale(0.95);
-        }
-
-        .send-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        /* 加载动画 */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* 图片消息样式 */
-        .message-image {
-            max-width: 100%;
-            max-height: 300px;
-            border-radius: 8px;
-            margin-top: 8px;
-            cursor: pointer;
-            display: block;
-            transition: transform 0.2s;
-        }
-
-        .message-image:hover {
-            transform: scale(1.02);
-        }
-
-        /* 响应式设计 */
-        @media (max-width: 768px) {
-            .auth-box {
-                padding: 30px 20px;
-            }
-
-            .chat-header {
-                padding: 12px 16px;
-            }
-
-            .chat-info {
-                font-size: 12px;
-                gap: 12px;
-            }
-
-            .messages-wrapper {
-                padding: 16px 12px;
-            }
-
-            .message-content {
-                max-width: 85%;
-            }
-
-            .input-container {
-                padding: 12px 16px;
-            }
-
-            #input {
-                font-size: 16px; /* 防止 iOS 自动缩放 */
-            }
-
-            .send-button {
-                padding: 12px 20px;
-            }
-        }
-
-        /* 空状态 */
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--text-secondary);
-            gap: 12px;
-        }
-
-        .empty-icon {
-            font-size: 48px;
-            opacity: 0.5;
-        }
-
-        .empty-text {
-            font-size: 15px;
-        }
-    </style>
-  </head>
-  <body>
-    <!-- 认证界面 -->
-    <div id="auth-container">
-        <div class="auth-box">
-            <h1 class="auth-title">🔒 Stealth Chat</h1>
-            <p class="auth-subtitle">输入密钥以连接</p>
-            <input
-                id="token-input"
-                type="password"
-                class="auth-input"
-                placeholder="请输入密钥"
-                autocomplete="off"
-            >
-            <div class="auth-options">
-                <label class="remember-me">
-                    <input type="checkbox" id="remember-checkbox">
-                    <span>记住密钥</span>
-                </label>
-                <a class="clear-saved" id="clear-saved" style="display: none;" onclick="clearSavedToken()">清除已保存</a>
-            </div>
-            <button class="auth-button" onclick="connect()">连接</button>
-            <div id="auth-error" class="auth-error"></div>
-            <div class="auth-warning">
-                <strong>安全提示：</strong>切勿在公共设备上保存密钥，建议定期更换密钥。
-            </div>
-        </div>
-    </div>
-
-    <!-- 聊天界面 -->
-    <div id="chat-container">
-        <div class="chat-header">
-            <div class="chat-title">
-                <div class="status-indicator" id="status-indicator"></div>
-                <h1>Stealth Chat</h1>
-            </div>
-            <div class="chat-info">
-                <div class="online-count">
-                    <span class="online-dot"></span>
-                    <span id="online-count">1 在线</span>
-                </div>
-                <button class="send-button" onclick="disconnect()" style="padding: 8px 16px; font-size: 13px;">断开</button>
-            </div>
-        </div>
-
-        <div class="messages-wrapper">
-            <ul id="messages">
-                <div class="empty-state" id="empty-state">
-                    <div class="empty-icon">💬</div>
-                    <div class="empty-text">暂无消息</div>
-                </div>
-            </ul>
-        </div>
-
-        <div class="input-container">
-            <form id="form" action="">
-                <textarea
-                    id="input"
-                    rows="1"
-                    autocomplete="off"
-                    placeholder="输入消息..."
-                ></textarea>
-                <button type="submit" class="send-button" id="send-btn">发送</button>
-            </form>
-        </div>
-    </div>
-
+    <link rel="stylesheet" href="css/style.css">
+    <script src="//unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script>
-      let socket;
-      const messages = document.getElementById('messages');
-      const form = document.getElementById('form');
-      const input = document.getElementById('input');
-      const sendBtn = document.getElementById('send-btn');
-      const emptyState = document.getElementById('empty-state');
-      const statusIndicator = document.getElementById('status-indicator');
-      const onlineCount = document.getElementById('online-count');
-      const tokenInput = document.getElementById('token-input');
-      const rememberCheckbox = document.getElementById('remember-checkbox');
-      const clearSavedBtn = document.getElementById('clear-saved');
-      let messageCount = 0;
-      let failedAttempts = 0;
-      let lastMessageTime = 0; // 记录上一条消息的时间
-      const MAX_ATTEMPTS = 5;
-      const LOCKOUT_TIME = 60000; // 1 分钟
-
-      // 简单的加密/解密（基于 Base64，仅防止直接查看）
-      function encode(str) {
-        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => {
-          return String.fromCharCode('0x' + p1);
-        }));
-      }
-
-      function decode(str) {
-        try {
-          return decodeURIComponent(atob(str).split('').map(c => {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-          }).join(''));
-        } catch (e) {
-          return null;
-        }
-      }
-
-      // 加载保存的密钥
-      // 加载保存的密钥
-      function loadSavedToken() {
-        const saved = localStorage.getItem('st_token');
-        if (saved) {
-          const decoded = decode(saved);
-          if (decoded) {
-            tokenInput.value = decoded;
-            rememberCheckbox.checked = true;
-            clearSavedBtn.style.display = 'block';
-            return true;
-          }
-        }
-        return false;
-      }
-
-      // 保存密钥
-      function saveToken(token) {
-        if (rememberCheckbox.checked) {
-          localStorage.setItem('st_token', encode(token));
-        } else {
-          localStorage.removeItem('st_token');
-        }
-      }
-
-      // 清除保存的密钥
-      function clearSavedToken() {
-        localStorage.removeItem('st_token');
-        tokenInput.value = '';
-        rememberCheckbox.checked = false;
-        clearSavedBtn.style.display = 'none';
-        showAuthError('已清除保存的密钥', false);
-      }
-
-      // 检查锁定状态
-      function checkLockout() {
-        const lockoutUntil = localStorage.getItem('st_lockout');
-        if (lockoutUntil) {
-          const remaining = parseInt(lockoutUntil) - Date.now();
-          if (remaining > 0) {
-            const seconds = Math.ceil(remaining / 1000);
-            showAuthError(`尝试次数过多，请等待 ${seconds} 秒后重试`, true);
-            return true;
-          } else {
-            localStorage.removeItem('st_lockout');
-            failedAttempts = 0;
-          }
-        }
-        return false;
-      }
-
-      // 记录失败尝试
-      function recordFailedAttempt() {
-        failedAttempts++;
-        if (failedAttempts >= MAX_ATTEMPTS) {
-          const lockoutUntil = Date.now() + LOCKOUT_TIME;
-          localStorage.setItem('st_lockout', lockoutUntil.toString());
-          showAuthError(`尝试次数过多，已锁定 ${LOCKOUT_TIME / 1000} 秒`, true);
-          return true;
-        }
-        return false;
-      }
-
-      // 显示错误信息
-      function showAuthError(message, isError = true) {
-        const authError = document.getElementById('auth-error');
-        authError.textContent = message;
-        authError.style.display = 'block';
-        authError.style.color = isError ? 'var(--danger-color)' : 'var(--success-color)';
-      }
-
-      // 格式化时间
-      function formatTime(date) {
-        const hours = date.getHours().toString().padStart(2, '0');
-        const minutes = date.getMinutes().toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
-      }
-
-      // 连接
-      function connect() {
-        const token = tokenInput.value.trim();
-        const authError = document.getElementById('auth-error');
-
-        // 检查是否锁定
-        if (checkLockout()) {
-          return;
-        }
-
-        if (!token) {
-          showAuthError('请输入密钥');
-          return;
-        }
-
-        authError.style.display = 'none';
-
-        socket = io({
-            auth: { token: token }
-        });
-
-        socket.on('connect_error', (err) => {
-            const isLocked = recordFailedAttempt();
-            if (!isLocked) {
-              showAuthError(`连接失败: ${err.message} (剩余 ${MAX_ATTEMPTS - failedAttempts} 次尝试)`);
-            }
-        });
-
-        socket.on('connect', () => {
-             // 连接成功，重置失败次数
-             failedAttempts = 0;
-             localStorage.removeItem('st_lockout');
-
-             // 保存密钥
-             saveToken(token);
-
-             document.getElementById('auth-container').style.display = 'none';
-             document.getElementById('chat-container').style.display = 'flex';
-             document.getElementById('auth-container').style.display = 'none';
-             document.getElementById('chat-container').style.display = 'flex';
-             appendMessage('已安全连接', 'system');
-             updateStatus(true);
-             
-             // 请求历史记录
-             socket.emit('load history', 50);
-        });
-        
-        // 监听历史记录
-        socket.on('history loaded', (historyMessages) => {
-            if (historyMessages && historyMessages.length > 0) {
-                // 清空当前（或保留system消息？这里选择保留）
-                // 暂时只追加，因为是新连接
-                historyMessages.forEach(msg => {
-                    const type = msg.source === 'mobile' ? 'own' : 'remote';
-                    const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
-                    // 历史消息使用其原始时间戳
-                    appendMessage(msg.text, type, sender, msg.timestamp, msg.attachments);
-                });
-
-                // 滚动到底部
-                const wrapper = document.querySelector('.messages-wrapper');
-                wrapper.scrollTop = wrapper.scrollHeight;
+</head>
+<body>
+    <div id="app" v-cloak>
+        <!-- Auth Screen -->
+        <div v-if="!connected" id="auth-container">
+            <div class="auth-box">
+                <h1 class="auth-title">🔒 Stealth Chat</h1>
+                <p class="auth-subtitle">输入密钥以连接</p>
                 
-                // 添加一条分割线表示"以上是历史记录"? (可选，暂不加)
-            }
-        });
+                <input 
+                    type="password" 
+                    class="auth-input" 
+                    v-model="authToken" 
+                    placeholder="请输入密钥"
+                    @keyup.enter="connect"
+                    autocomplete="off"
+                >
+                
+                <div class="auth-options">
+                    <label class="remember-me">
+                        <input type="checkbox" v-model="rememberMe">
+                        <span>记住密钥</span>
+                    </label>
+                    <a v-if="hasSavedToken" class="clear-saved" @click="clearSavedToken">清除已保存</a>
+                </div>
 
-        socket.on('disconnect', () => {
-            appendMessage('连接已断开', 'system');
-            updateStatus(false);
-            lastMessageTime = 0; // 重置时间记录
-        });
-
-        socket.on('chat message', function(msg) {
-            const type = msg.source === 'mobile' ? 'own' : 'remote';
-            const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
-            // 实时消息使用服务器时间戳(如果有)或当前时间
-            appendMessage(msg.text, type, sender, msg.timestamp || Date.now(), msg.attachments);
-        });
-      }
-
-      // 发送消息
-      function sendMessage() {
-        const text = input.value.trim();
-        if (text && socket.connected) {
-          socket.emit('chat message', { text: text, source: 'mobile' });
-          // appendMessage(text, 'own', 'Me', Date.now()); // 不需要手动添加，socket.on会收到广播
-          input.value = '';
-          input.style.height = 'auto';
-          input.focus();
-        }
-      }
-
-      // 断开连接
-      function disconnect() {
-        if (socket) {
-          socket.disconnect();
-          document.getElementById('auth-container').style.display = 'flex';
-          document.getElementById('chat-container').style.display = 'none';
-          messages.innerHTML = '<div class="empty-state" id="empty-state"><div class="empty-icon">💬</div><div class="empty-text">暂无消息</div></div>';
-          messageCount = 0;
-        }
-      }
-
-      // 添加消息
-      function appendMessage(text, type, sender = null, timestamp = null, attachments = null) {
-        // 移除空状态
-        if (messageCount === 0 && emptyState) {
-            if (emptyState.parentNode) {
-                emptyState.parentNode.removeChild(emptyState);
-            }
-        }
-
-        // 处理时间分割线
-        if (timestamp && type !== 'system') {
-            const timeDiff = timestamp - lastMessageTime;
-            // 如果间隔超过 5 分钟 (300000ms)，或者没有上一条消息时间(且不是第一条自动消息)，显示分割线
-            if (lastMessageTime === 0 || timeDiff > 300000) {
-                const date = new Date(timestamp);
-                const timeStr = formatTime(date);
-                // 如果是不同日期，显示日期+时间 (可选优化)
-
-                const divider = document.createElement('li');
-                divider.className = 'time-divider';
-                divider.innerHTML = `<span>${timeStr}</span>`;
-                messages.appendChild(divider);
-            }
-            lastMessageTime = timestamp;
-        }
-
-        const item = document.createElement('li');
-        item.className = `message-item ${type}`;
-
-        if (type === 'system') {
-          item.innerHTML = `
-            <div class="message-content">
-              <div class="message-bubble">${escapeHtml(text)}</div>
+                <button class="auth-button" @click="connect">连接</button>
+                
+                <div v-if="errorMsg" class="auth-error" style="display: block">{{ errorMsg }}</div>
+                
+                <div class="auth-warning">
+                    <strong>安全提示：</strong>切勿在公共设备上保存密钥，建议定期更换密钥。
+                </div>
             </div>
-          `;
-        } else {
-          // 使用传入的时间戳或当前时间
-          const date = timestamp ? new Date(timestamp) : new Date();
-          const time = formatTime(date);
+        </div>
 
-          // Render image attachments or linkify text
-          let messageContent;
-          if (attachments && attachments.length > 0) {
-            messageContent = '';
-            attachments.forEach(att => {
-              if (att.type === 'image') {
-                const imageUrl = att.data || att.url;
-                messageContent += `<img src="${imageUrl}" class="message-image" onclick="showImagePreview('${imageUrl}')" alt="Image" />`;
-              }
-            });
-          } else {
-            messageContent = linkifyImages(escapeHtml(text));
-          }
-
-          item.innerHTML = `
-            <div class="message-content">
-              <div class="message-meta">
-                ${type === 'remote' ? `<span class="message-sender">${escapeHtml(sender)}</span>` : ''}
-                <span class="message-time">${time}</span>
-                ${type === 'own' ? `<span class="message-sender">${escapeHtml(sender)}</span>` : ''}
-              </div>
-              <div class="message-bubble">${messageContent}</div>
+        <!-- Chat Screen -->
+        <div v-else id="chat-container" style="display: flex">
+            <div class="chat-header">
+                <div class="chat-title">
+                    <div class="status-indicator" :style="{ background: socketConnected ? 'var(--success-color)' : 'var(--text-secondary)' }"></div>
+                    <h1>Stealth Chat</h1>
+                </div>
+                <div class="chat-info">
+                    <div class="online-count">
+                        <span class="online-dot"></span>
+                        <span>{{ socketConnected ? '在线' : '离线' }}</span>
+                    </div>
+                    <button class="send-button" @click="disconnect" style="padding: 8px 16px; font-size: 13px;">断开</button>
+                </div>
             </div>
-          `;
-        }
 
-        messages.appendChild(item);
-        messageCount++;
+            <div class="messages-wrapper" ref="messagesContainer">
+                <ul id="messages">
+                    <div v-if="messages.length === 0" class="empty-state">
+                        <div class="empty-icon">💬</div>
+                        <div class="empty-text">暂无消息</div>
+                    </div>
 
-        // 滚动到底部
-        const wrapper = document.querySelector('.messages-wrapper');
-        wrapper.scrollTop = wrapper.scrollHeight;
+                    <template v-for="(msg, index) in messages" :key="index">
+                        <!-- Time Divider -->
+                        <div v-if="showTimeDivider(msg, messages[index-1])" class="time-divider">
+                            <span>{{ formatDividerDate(msg.timestamp) }}</span>
+                        </div>
 
-        // 如果页面不可见，更新标题提示
-        if (document.hidden && type !== 'system') {
-          document.title = `(新消息) Stealth Chat`;
-        }
+                        <!-- Message Item -->
+                        <li :class="['message-item', msg.type]">
+                            <div class="message-content">
+                                <div class="message-bubble">
+                                    <div v-if="msg.attachments" v-for="att in msg.attachments" :key="att.filename">
+                                         <img 
+                                            v-if="att.type === 'image'" 
+                                            :src="getImageSrc(att)" 
+                                            class="message-image" 
+                                            @click="openImage(getImageSrc(att))"
+                                         >
+                                    </div>
+                                    <div v-html="parseMarkdown(msg.text)"></div>
+                                </div>
+                                <div class="message-meta">
+                                    <span v-if="msg.type !== 'own'" class="message-sender">{{ msg.sender }}</span>
+                                    <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
+                                </div>
+                            </div>
+                        </li>
+                    </template>
+                </ul>
+            </div>
 
-        return item; // Return the element for potential cleanup
-      }
+            <div class="input-container">
+                <form id="form" @submit.prevent="sendMessage">
+                    <textarea
+                        id="input"
+                        v-model="inputText"
+                        rows="1"
+                        placeholder="输入消息..."
+                        @keydown.enter.exact.prevent="sendMessage"
+                        @input="autoResize"
+                        ref="inputArea"
+                    ></textarea>
+                    <button type="submit" class="send-button" :disabled="!inputText.trim()">发送</button>
+                </form>
+            </div>
+        </div>
+    </div>
 
-      // Convert image URLs to clickable links
-      function linkifyImages(text) {
-        const imageUrlPattern = /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|svg)(\?[^\s]*)?/gi;
-        return text.replace(imageUrlPattern, (url) => {
-          return `<a href="${url}" target="_blank" class="image-link">${url}</a>`;
-        });
-      }
+    <script>
+        const { createApp, ref, reactive, computed, watch, nextTick, onMounted } = Vue;
 
-      // 更新连接状态
-      function updateStatus(isConnected) {
-        if (isConnected) {
-          statusIndicator.style.background = 'var(--success-color)';
-          statusIndicator.style.boxShadow = '0 0 8px var(--success-color)';
-        } else {
-          statusIndicator.style.background = 'var(--danger-color)';
-          statusIndicator.style.boxShadow = '0 0 8px var(--danger-color)';
-        }
-      }
+        const app = createApp({
+            setup() {
+                const connected = ref(false);
+                const socketConnected = ref(false);
+                const authToken = ref('');
+                const rememberMe = ref(false);
+                const errorMsg = ref('');
+                const hasSavedToken = ref(false);
+                const messages = reactive([]);
+                const inputText = ref('');
+                const messagesContainer = ref(null);
+                const inputArea = ref(null);
+                let socket = null;
 
-      // 转义 HTML
-      function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-      }
+                // --- Auth Logic ---
+                const loadSavedToken = () => {
+                    const saved = localStorage.getItem('st_token');
+                    if (saved) {
+                        try {
+                            authToken.value = atob(saved); // Simple decode
+                            rememberMe.value = true;
+                            hasSavedToken.value = true;
+                        } catch(e) {}
+                    }
+                };
 
-      // 显示图片预览（点击图片放大）
-      function showImagePreview(imageUrl) {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(0, 0, 0, 0.9);
-          z-index: 10000;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-        `;
+                const saveToken = () => {
+                    if (rememberMe.value) {
+                        localStorage.setItem('st_token', btoa(authToken.value));
+                        hasSavedToken.value = true;
+                    } else {
+                        localStorage.removeItem('st_token');
+                        hasSavedToken.value = false;
+                    }
+                };
 
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        img.style.cssText = `
-          max-width: 90%;
-          max-height: 90%;
-          border-radius: 8px;
-        `;
+                const clearSavedToken = () => {
+                    localStorage.removeItem('st_token');
+                    authToken.value = '';
+                    rememberMe.value = false;
+                    hasSavedToken.value = false;
+                };
 
-        overlay.appendChild(img);
-        overlay.onclick = () => document.body.removeChild(overlay);
+                const connect = () => {
+                    if (!authToken.value) {
+                        errorMsg.value = "请输入密钥";
+                        return;
+                    }
+                    
+                    // Init Socket
+                    socket = io({
+                        auth: { token: authToken.value }
+                    });
 
-        document.body.appendChild(overlay);
-      }
+                    socket.on('connect', () => {
+                        connected.value = true;
+                        socketConnected.value = true;
+                        errorMsg.value = '';
+                        saveToken();
+                        socket.emit('load history', 50);
+                        appendSystemMessage('已安全连接');
+                    });
 
-      // 页面可见性变化
-      document.addEventListener('visibilitychange', function() {
-        if (!document.hidden) {
-          document.title = 'Stealth Chat';
-        }
-      });
+                    socket.on('connect_error', (err) => {
+                        errorMsg.value = "连接失败: " + err.message;
+                        socketConnected.value = false;
+                    });
 
-      // 复选框变化
-      rememberCheckbox.addEventListener('change', function() {
-        if (this.checked) {
-          clearSavedBtn.style.display = 'none';
-        } else {
-          localStorage.removeItem('st_token');
-          clearSavedBtn.style.display = 'none';
-        }
-      });
+                    socket.on('disconnect', () => {
+                        socketConnected.value = false;
+                        appendSystemMessage('连接已断开');
+                    });
 
-      // 表单提交事件（只添加一次）
-      form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        sendMessage();
-      });
+                    socket.on('chat message', (msg) => {
+                        appendMessage(msg);
+                        scrollToBottom();
+                    });
+                    
+                    socket.on('history loaded', (history) => {
+                        if(history) {
+                            history.forEach(appendMessage);
+                            scrollToBottom();
+                        }
+                    });
+                };
 
-      // 输入框自动调整高度（只添加一次）
-      input.addEventListener('input', function() {
-        this.style.height = 'auto';
-        const newHeight = Math.min(this.scrollHeight, 120);
-        this.style.height = newHeight + 'px';
+                const disconnect = () => {
+                    if (socket) socket.disconnect();
+                    connected.value = false;
+                    messages.splice(0); // Clear messages
+                };
 
-        // 当内容超过最大高度时显示滚动条
-        if (this.scrollHeight > 120) {
-          this.style.overflowY = 'auto';
-        } else {
-          this.style.overflowY = 'hidden';
-        }
-      });
+                // --- Chat Logic ---
+                const appendMessage = (msg) => {
+                    // Normalize message structure
+                    const type = msg.source === 'mobile' ? 'own' : (msg.source === 'system' ? 'system' : 'remote');
+                    const sender = msg.source === 'mobile' ? 'Me' : 'VSCode';
+                    messages.push({
+                        text: msg.text,
+                        type,
+                        sender,
+                        timestamp: msg.timestamp || Date.now(),
+                        attachments: msg.attachments
+                    });
+                };
 
-      // Enter 发送，Shift+Enter 换行（只添加一次）
-      input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          sendMessage();
-        }
-      });
+                const appendSystemMessage = (text) => {
+                     messages.push({
+                        text,
+                        type: 'system',
+                        sender: 'System',
+                        timestamp: Date.now()
+                    });
+                };
 
-      // 粘贴图片事件监听（只添加一次）
-      input.addEventListener('paste', async function(e) {
-        const items = e.clipboardData?.items;
-        if (!items) return;
+                const sendMessage = () => {
+                    if (!inputText.value.trim() || !socketConnected.value) return;
+                    
+                    socket.emit('chat message', {
+                        text: inputText.value,
+                        source: 'mobile'
+                    });
+                    
+                    inputText.value = '';
+                    nextTick(() => {
+                        if(inputArea.value) {
+                            inputArea.value.style.height = 'auto';
+                        }
+                        scrollToBottom();
+                    });
+                };
 
-        for (let item of items) {
-          if (item.type.indexOf('image') !== -1) {
-            e.preventDefault();
+                // --- UI Utilities ---
+                const scrollToBottom = () => {
+                    nextTick(() => {
+                        if (messagesContainer.value) {
+                           messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+                        }
+                    });
+                };
 
-            const file = item.getAsFile();
-            if (!file) continue;
+                const autoResize = (e) => {
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                };
 
-            // 显示上传中提示
-            const loadingItem = appendMessage('[图片上传中...]', 'system');
+                const parseMarkdown = (text) => {
+                    if(!text) return '';
+                    // Simple link parser
+                    return text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="image-link">$1</a>');
+                };
 
-            try {
-              // 转为 Base64
-              const reader = new FileReader();
-              reader.onload = function(event) {
-                const base64Full = event.target.result;
-                const base64Data = base64Full.split(',')[1];
+                const formatTime = (ts) => {
+                    const date = new Date(ts);
+                    return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                };
+                
+                const formatDividerDate = (ts) => {
+                    const date = new Date(ts);
+                    const now = new Date();
+                    if (date.toDateString() === now.toDateString()) {
+                        return formatTime(ts);
+                    }
+                    return `${date.getMonth()+1}-${date.getDate()} ${formatTime(ts)}`;
+                };
 
-                // 发送图片消息
-                socket.emit('chat message', {
-                  text: '[图片]',
-                  source: 'mobile',
-                  attachments: [{
-                    type: 'image',
-                    data: base64Data,
-                    filename: file.name || 'paste.png',
-                    size: file.size,
-                    mimeType: file.type
-                  }]
+                const showTimeDivider = (current, prev) => {
+                    if (!prev) return true;
+                    return (current.timestamp - prev.timestamp) > 5 * 60 * 1000;
+                };
+
+                const getImageSrc = (att) => {
+                    if (att.url) return att.url;
+                    if (att.data) return `data:image/png;base64,${att.data}`;
+                    return '';
+                };
+                
+                const openImage = (src) => window.open(src);
+
+                onMounted(() => {
+                    loadSavedToken();
                 });
 
-                // 移除加载提示
-                if (loadingItem && loadingItem.parentNode) {
-                  loadingItem.parentNode.removeChild(loadingItem);
-                }
-              };
-              reader.onerror = function() {
-                if (loadingItem && loadingItem.parentNode) {
-                  loadingItem.parentNode.removeChild(loadingItem);
-                }
-                appendMessage('[图片上传失败]', 'system');
-              };
-              reader.readAsDataURL(file);
-            } catch (error) {
-              console.error('Failed to process image:', error);
-              if (loadingItem && loadingItem.parentNode) {
-                loadingItem.parentNode.removeChild(loadingItem);
-              }
-              appendMessage('[图片处理失败]', 'system');
+                return {
+                    connected, socketConnected, authToken, rememberMe, errorMsg, hasSavedToken,
+                    messages, inputText, messagesContainer, inputArea,
+                    connect, disconnect, sendMessage, clearSavedToken,
+                    autoResize, parseMarkdown, formatTime, showTimeDivider, formatDividerDate, 
+                    getImageSrc, openImage
+                };
             }
+        });
 
-            break; // Only process first image
-          }
-        }
-      });
-
-      // 初始化：加载保存的密钥并尝试自动连接
-      if (loadSavedToken()) {
-        connect();
-      } else {
-        // 自动聚焦输入框（仅桌面端，且未自动连接时）
-        if (window.innerWidth > 768) {
-          tokenInput.focus();
-        }
-      }
-
-      // Enter 键连接
-      tokenInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          connect();
-        }
-      });
+        app.mount('#app');
     </script>
-  </body>
+</body>
 </html>
