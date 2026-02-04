@@ -71,6 +71,12 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically reveal output channel and mark as read when new message arrives"
+        },
+        "tsLint.displayMode": {
+          "type": "string",
+          "enum": ["bubble", "log"],
+          "default": "bubble",
+          "description": "Output format for service messages (bubble: standard, log: compact log format)"
         }
       }
     },

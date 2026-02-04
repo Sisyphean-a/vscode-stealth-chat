@@ -25,6 +25,8 @@
   let lastMessageTimestamp = 0;
   /** @type {Array<{data: string, filename: string, size: number}>} */
   let pendingAttachments = [];
+  /** @type {'bubble' | 'log'} */
+  let displayMode = 'bubble';
 
   // ============================================================================
   // Event Listeners
@@ -113,6 +115,9 @@
       case 'updateStatus':
         console.log('[WebView] Updating status to:', message.payload.connected);
         updateStatus(message.payload.connected);
+        break;
+      case 'setDisplayMode':
+        setDisplayMode(message.payload.mode);
         break;
       case 'clearMessages':
         clearMessages();
@@ -233,6 +238,18 @@
    * @returns {HTMLElement}
    */
   function createMessageElement(msg) {
+    if (displayMode === 'log') {
+      return createLogMessageElement(msg);
+    }
+    return createBubbleMessageElement(msg);
+  }
+
+  /**
+   * Create bubble-style message element (original style)
+   * @param {any} msg
+   * @returns {HTMLElement}
+   */
+  function createBubbleMessageElement(msg) {
     // Create wrapper
     const wrapper = document.createElement('div');
     wrapper.className = 'message-wrapper ' + (msg.source === 'vscode' ? 'own' : 'remote');
@@ -288,6 +305,139 @@
     wrapper.appendChild(bubble);
 
     return wrapper;
+  }
+
+  /**
+   * Create log-style message element
+   * @param {any} msg
+   * @returns {HTMLElement}
+   */
+  function createLogMessageElement(msg) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper ' + (msg.source === 'vscode' ? 'own' : 'remote');
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble ' + (msg.source === 'vscode' ? 'own' : 'remote');
+
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-entry';
+
+    // Timestamp: [HH:MM:SS]
+    const timestamp = document.createElement('span');
+    timestamp.className = 'log-timestamp';
+    const msgTime = new Date(msg.timestamp || Date.now());
+    timestamp.textContent = '[' + formatLogTime(msgTime) + ']';
+
+    // Source: INFO (mobile) or OUT (vscode)
+    const source = document.createElement('span');
+    source.className = 'log-source ' + (msg.source === 'vscode' ? 'out' : 'info');
+    source.textContent = msg.source === 'vscode' ? 'OUT  ' : 'INFO ';
+
+    // Content
+    const content = document.createElement('span');
+    content.className = 'log-content';
+
+    // Handle attachments
+    if (msg.attachments && msg.attachments.length > 0) {
+      msg.attachments.forEach(/** @param {any} att */ (att) => {
+        if (att.type === 'image') {
+          let imageUrl = att.data || att.url;
+          if (imageUrl && imageUrl.startsWith('/uploads/')) {
+            const serverUrl = 'http://localhost:3000';
+            imageUrl = serverUrl + imageUrl;
+          }
+
+          const imgTag = createImageTag(att.filename || 'image.png', imageUrl);
+          content.appendChild(imgTag);
+          content.appendChild(document.createTextNode(' '));
+        }
+      });
+
+      if (msg.text) {
+        const textSpan = document.createElement('span');
+        textSpan.innerHTML = linkifyImages(escapeHtml(msg.text));
+        content.appendChild(textSpan);
+      }
+    } else {
+      content.innerHTML = linkifyImages(escapeHtml(msg.text));
+    }
+
+    logEntry.appendChild(timestamp);
+    logEntry.appendChild(source);
+    logEntry.appendChild(content);
+    bubble.appendChild(logEntry);
+    wrapper.appendChild(bubble);
+
+    return wrapper;
+  }
+
+  /**
+   * Create clickable image tag with hover preview
+   * @param {string} filename
+   * @param {string} imageUrl
+   * @returns {HTMLElement}
+   */
+  function createImageTag(filename, imageUrl) {
+    const tag = document.createElement('span');
+    tag.className = 'img-tag';
+    tag.dataset.imgUrl = imageUrl;
+    tag.textContent = '[IMG:' + filename + ']';
+
+    // Create tooltip for hover preview
+    const tooltip = document.createElement('span');
+    tooltip.className = 'img-preview-tooltip';
+
+    // Lazy load image on first hover
+    let imageLoaded = false;
+    tag.addEventListener('mouseenter', () => {
+      if (!imageLoaded) {
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.alt = 'Preview';
+        tooltip.appendChild(img);
+        imageLoaded = true;
+      }
+    });
+
+    // Click to open full preview
+    tag.addEventListener('click', () => {
+      // @ts-ignore
+      window.showImagePreview(imageUrl);
+    });
+
+    tag.appendChild(tooltip);
+    return tag;
+  }
+
+  /**
+   * Set display mode and re-render messages
+   * @param {'bubble' | 'log'} mode
+   */
+  function setDisplayMode(mode) {
+    if (displayMode === mode) return;
+    displayMode = mode;
+    document.body.dataset.displayMode = mode;
+
+    // Re-render all messages
+    if (messagesContainer) {
+      const messages = [];
+      // Collect message data from existing elements (simplified approach)
+      // In practice, we'd store the original message data
+      // For now, we trigger a history reload
+      vscode.postMessage({ type: 'ready' });
+    }
+  }
+
+  /**
+   * Format time for log mode [HH:MM:SS]
+   * @param {Date} date
+   * @returns {string}
+   */
+  function formatLogTime(date) {
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    return hours + ':' + minutes + ':' + seconds;
   }
 
   // ============================================================================

@@ -123,6 +123,18 @@ export function activate(context: vscode.ExtensionContext) {
         socket?.disconnect();
         connectToServer(newServerUrl, newSecret, newForceWebsocket);
       }
+
+      // Handle displayMode changes
+      if (e.affectsConfiguration("tsLint.displayMode")) {
+        const newConfig = vscode.workspace.getConfiguration("tsLint");
+        const displayMode = newConfig.get<string>("displayMode") || "bubble";
+        if (webviewView) {
+          webviewView.webview.postMessage({
+            type: "setDisplayMode",
+            payload: { mode: displayMode },
+          });
+        }
+      }
     },
   );
 
@@ -186,6 +198,14 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
           view.webview.postMessage({
             type: "updateStatus",
             payload: { connected: socket?.connected || false },
+          });
+
+          // Send current display mode
+          const displayModeConfig = vscode.workspace.getConfiguration("tsLint");
+          const currentDisplayMode = displayModeConfig.get<string>("displayMode") || "bubble";
+          view.webview.postMessage({
+            type: "setDisplayMode",
+            payload: { mode: currentDisplayMode },
           });
 
           // Send cached messages to WebView

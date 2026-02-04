@@ -7,11 +7,12 @@
 body {
   font-family: var(--vscode-font-family);
   color: var(--vscode-foreground);
-  background-color: var(--vscode-editor-background);
+  background-color: var(--vscode-sideBar-background);
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-left: 1px solid var(--vscode-sideBar-border);
 }
 
 /* Status bar */
@@ -289,4 +290,130 @@ body {
 
 #messages-container::-webkit-scrollbar-thumb:hover {
   background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
+/* ============================================================================
+   Log Mode Styles
+   ============================================================================ */
+
+body[data-display-mode="log"] #messages-container {
+  padding: 8px 12px;
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+body[data-display-mode="log"] #empty-state {
+  text-align: left;
+  padding: 20px 0;
+  font-family: var(--vscode-editor-font-family), monospace;
+}
+
+body[data-display-mode="log"] .message-wrapper {
+  flex-direction: row;
+  align-items: flex-start;
+  margin-bottom: 2px;
+}
+
+body[data-display-mode="log"] .message-wrapper.own,
+body[data-display-mode="log"] .message-wrapper.remote {
+  align-items: flex-start;
+}
+
+body[data-display-mode="log"] .message-time {
+  display: none;
+}
+
+body[data-display-mode="log"] .message-bubble {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  max-width: 100%;
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  color: var(--vscode-editor-foreground);
+}
+
+body[data-display-mode="log"] .message-bubble.own,
+body[data-display-mode="log"] .message-bubble.remote {
+  background: transparent;
+  border: none;
+  color: var(--vscode-editor-foreground);
+}
+
+/* Log entry structure */
+body[data-display-mode="log"] .log-entry {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+body[data-display-mode="log"] .log-timestamp {
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+body[data-display-mode="log"] .log-source {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+body[data-display-mode="log"] .log-source.info {
+  color: var(--vscode-terminal-ansiBlue);
+}
+
+body[data-display-mode="log"] .log-source.out {
+  color: var(--vscode-terminal-ansiGreen);
+}
+
+body[data-display-mode="log"] .log-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Image tag in log mode */
+body[data-display-mode="log"] .img-tag {
+  position: relative;
+  display: inline;
+  color: var(--vscode-terminal-ansiYellow);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+body[data-display-mode="log"] .img-tag:hover {
+  text-decoration: underline;
+}
+
+/* Image preview tooltip */
+body[data-display-mode="log"] .img-preview-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  z-index: 1000;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+body[data-display-mode="log"] .img-tag:hover .img-preview-tooltip {
+  display: block;
+}
+
+body[data-display-mode="log"] .img-preview-tooltip img {
+  max-width: 200px;
+  max-height: 150px;
+  display: block;
+  border-radius: 2px;
+}
+
+/* Hide time dividers in log mode */
+body[data-display-mode="log"] .time-divider {
+  display: none;
 }
