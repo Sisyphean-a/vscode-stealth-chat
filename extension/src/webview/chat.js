@@ -23,6 +23,8 @@
   // State
   let autoScrollEnabled = true;
   let lastMessageTimestamp = 0;
+  /** @type {Array<{data: string, filename: string, size: number}>} */
+  let pendingAttachments = [];
 
   // ============================================================================
   // Event Listeners
@@ -47,6 +49,23 @@
       if (messageInput) {
         messageInput.style.height = 'auto';
         messageInput.style.height = messageInput.scrollHeight + 'px';
+      }
+    });
+
+    // Paste event for image attachment
+    messageInput.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            handleImageFile(file);
+          }
+          break;
+        }
       }
     });
   }
@@ -107,19 +126,32 @@
 
   function sendMessage() {
     if (!messageInput) return;
-    
+
     const text = messageInput.value.trim();
-    if (!text) return;
-    
+    // Allow sending if there's text OR attachments
+    if (!text && pendingAttachments.length === 0) return;
+
+    // Build attachments array for sending
+    const attachments = pendingAttachments.map(att => ({
+      type: 'image',
+      data: att.data,
+      filename: att.filename,
+      size: att.size
+    }));
+
     // Send message to extension
     vscode.postMessage({
       type: 'sendMessage',
-      payload: { text }
+      payload: {
+        text: text || '',
+        attachments: attachments.length > 0 ? attachments : undefined
+      }
     });
-    
-    // Clear input and reset height
+
+    // Clear input and attachments
     messageInput.value = '';
     messageInput.style.height = 'auto';
+    clearPendingAttachments();
   }
 
   /**
@@ -159,6 +191,9 @@
     // Create message bubble
     const messageEl = createMessageElement(msg);
     messagesContainer.appendChild(messageEl);
+
+    // Bind click events to image links (CSP compliant)
+    bindImageLinkEvents(messageEl);
 
     // Auto scroll if enabled
     if (autoScrollEnabled) {
@@ -213,33 +248,40 @@
     bubble.className = 'message-bubble ' + (msg.source === 'vscode' ? 'own' : 'remote');
 
     // Render image attachments or linkify text
-    /** @type {string} */
-    let html;
     if (msg.attachments && msg.attachments.length > 0) {
-      html = '';
       msg.attachments.forEach(/** @param {any} att */ (att) => {
         if (att.type === 'image') {
-          // Get server URL from window location (assuming WebView is served from same origin)
-          // For VS Code WebView, we need to handle both inline data URLs and server URLs
           let imageUrl = att.data || att.url;
 
-          // If it's a relative URL, we need to convert it to absolute
-          // Note: In VS Code WebView, we'll need to use asWebviewUri for local resources
+          // If it's a relative URL, convert to absolute
           if (imageUrl && imageUrl.startsWith('/uploads/')) {
-            // This will be handled by server URL configuration
-            // For now, assume we can access server directly
             const serverUrl = 'http://localhost:3000'; // TODO: Make this configurable
             imageUrl = serverUrl + imageUrl;
           }
 
-          html += `<img src="${imageUrl}" class="message-image" onclick="showImagePreview('${imageUrl}')" alt="Image" style="max-width: 100%; max-height: 300px; border-radius: 8px; cursor: pointer; display: block; margin-top: 8px;" />`;
+          // Create image element using DOM methods (CSP compliant)
+          const img = document.createElement('img');
+          img.src = imageUrl;
+          img.className = 'message-image';
+          img.alt = 'Image';
+          img.style.cssText = 'max-width: 100%; max-height: 300px; border-radius: 8px; cursor: pointer; display: block; margin-top: 8px;';
+          img.addEventListener('click', () => {
+            // @ts-ignore
+            window.showImagePreview(imageUrl);
+          });
+          bubble.appendChild(img);
         }
       });
-    } else {
-      html = linkifyImages(escapeHtml(msg.text));
-    }
 
-    bubble.innerHTML = html;
+      // Add text if present
+      if (msg.text) {
+        const textDiv = document.createElement('div');
+        textDiv.innerHTML = linkifyImages(escapeHtml(msg.text));
+        bubble.appendChild(textDiv);
+      }
+    } else {
+      bubble.innerHTML = linkifyImages(escapeHtml(msg.text));
+    }
 
     // Append elements
     wrapper.appendChild(timeEl);
@@ -281,7 +323,25 @@
   function linkifyImages(text) {
     const imageUrlPattern = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp))/gi;
     return text.replace(imageUrlPattern, (url) => {
-      return `<a href="#" class="image-link" data-image-url="${url}" onclick="showImagePreview('${url}'); return false;">[图片]</a>`;
+      // Use data attribute instead of inline onclick for CSP compliance
+      return `<a href="#" class="image-link" data-image-url="${escapeHtml(url)}">[图片]</a>`;
+    });
+  }
+
+  /**
+   * Bind click events to image links after they are added to DOM
+   * @param {HTMLElement} container
+   */
+  function bindImageLinkEvents(container) {
+    container.querySelectorAll('.image-link[data-image-url]').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const url = /** @type {HTMLElement} */ (link).dataset.imageUrl;
+        if (url) {
+          // @ts-ignore
+          window.showImagePreview(url);
+        }
+      });
     });
   }
 
@@ -321,6 +381,81 @@
   }
 
   // ============================================================================
+  // Attachment Handling
+  // ============================================================================
+
+  /**
+   * @param {File} file
+   */
+  function handleImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = /** @type {string} */ (e.target?.result);
+      if (dataUrl) {
+        pendingAttachments.push({
+          data: dataUrl,
+          filename: file.name || 'image.png',
+          size: file.size
+        });
+        renderAttachmentPreview();
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function renderAttachmentPreview() {
+    let previewContainer = document.getElementById('attachment-preview');
+
+    if (!previewContainer) {
+      previewContainer = document.createElement('div');
+      previewContainer.id = 'attachment-preview';
+      const inputContainer = document.getElementById('input-container');
+      if (inputContainer) {
+        inputContainer.insertBefore(previewContainer, inputContainer.firstChild);
+      }
+    }
+
+    if (pendingAttachments.length === 0) {
+      previewContainer.style.display = 'none';
+      previewContainer.innerHTML = '';
+      return;
+    }
+
+    previewContainer.style.display = 'flex';
+    // Clear and rebuild using DOM methods for safety
+    previewContainer.innerHTML = '';
+
+    pendingAttachments.forEach((att, index) => {
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'attachment-item';
+      itemDiv.dataset.index = String(index);
+
+      const img = document.createElement('img');
+      img.src = att.data;
+      img.alt = att.filename;
+      itemDiv.appendChild(img);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-attachment';
+      removeBtn.dataset.index = String(index);
+      removeBtn.title = '移除';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', () => {
+        pendingAttachments.splice(index, 1);
+        renderAttachmentPreview();
+      });
+      itemDiv.appendChild(removeBtn);
+
+      previewContainer.appendChild(itemDiv);
+    });
+  }
+
+  function clearPendingAttachments() {
+    pendingAttachments = [];
+    renderAttachmentPreview();
+  }
+
+  // ============================================================================
   // Image Preview
   // ============================================================================
 
@@ -329,26 +464,11 @@
    */
   // @ts-ignore - Dynamically adding global function for onclick handlers
   window.showImagePreview = function(url) {
-    let preview = document.querySelector('.image-preview');
-    
-    if (!preview) {
-      preview = document.createElement('div');
-      preview.className = 'image-preview';
-      preview.innerHTML = `<img src="${url}" alt="Preview">`;
-      preview.addEventListener('click', () => {
-        if (preview) {
-          preview.classList.remove('show');
-        }
-      });
-      document.body.appendChild(preview);
-    } else {
-      const img = preview.querySelector('img');
-      if (img) {
-        img.src = url;
-      }
-    }
-    
-    preview.classList.add('show');
+    // Send message to extension to open image in a new editor tab
+    vscode.postMessage({
+      type: 'openImage',
+      payload: { url }
+    });
   };
 
   // ============================================================================

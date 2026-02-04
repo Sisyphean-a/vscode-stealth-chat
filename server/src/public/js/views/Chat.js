@@ -8,15 +8,15 @@ export default {
             <div class="auth-box">
                 <h1 class="auth-title">Stealth Chat</h1>
                 <p class="auth-subtitle">请输入密钥开始聊天</p>
-                
-                <input 
-                    type="password" 
-                    class="auth-input" 
-                    v-model="authToken" 
-                    placeholder="应用密钥" 
+
+                <input
+                    type="password"
+                    class="auth-input"
+                    v-model="authToken"
+                    placeholder="应用密钥"
                     @keyup.enter="connect"
                 >
-                
+
                 <div class="auth-options">
                     <label class="checkbox-wrapper">
                         <input type="checkbox" v-model="rememberMe">
@@ -51,7 +51,7 @@ export default {
                     <div v-if="showTimeDivider(msg, messages[index-1])" class="time-divider">
                         <span>{{ formatDividerDate(msg.timestamp) }}</span>
                     </div>
-                    
+
                     <div :class="['message-row', msg.type]">
                         <div v-if="msg.sender !== '我' && msg.type !== 'system'" class="avatar">{{ msg.sender[0] }}</div>
                         <div class="message-content">
@@ -67,18 +67,38 @@ export default {
             </main>
 
             <footer class="chat-input-area">
-                <form @submit.prevent="sendMessage" class="input-form">
-                    <textarea 
-                        v-model="inputText" 
-                        rows="1" 
-                        placeholder="发送消息..." 
+                <!-- Pending Images Preview -->
+                <div v-if="pendingImages.length > 0" class="pending-images">
+                    <div v-for="(img, index) in pendingImages" :key="index" class="pending-item">
+                        <img :src="img.data" alt="待发送图片">
+                        <button class="remove-pending" @click="removePendingImage(index)">×</button>
+                    </div>
+                </div>
+                <form @submit.prevent="sendMessage" class="input-form" @paste="handlePaste">
+                    <button type="button" class="attach-btn" @click="triggerFileInput" title="添加图片">+</button>
+                    <input type="file" ref="fileInput" accept="image/*" style="display: none" @change="handleFileSelect" multiple>
+                    <textarea
+                        v-model="inputText"
+                        rows="1"
+                        placeholder="发送消息... (可粘贴图片)"
                         ref="inputArea"
                         @input="autoResize"
                         @keydown.enter.exact.prevent="sendMessage"
                     ></textarea>
-                    <button type="submit" class="send-btn" :disabled="!inputText.trim()">发送</button>
+                    <button type="submit" class="send-btn" :disabled="!inputText.trim() && pendingImages.length === 0"></button>
                 </form>
             </footer>
+        </div>
+
+        <!-- Image Preview Modal -->
+        <div v-if="previewImage" class="image-modal" @click.self="closePreview">
+            <div class="modal-toolbar">
+                <button class="modal-btn" @click="zoomIn" title="放大">+</button>
+                <button class="modal-btn" @click="zoomOut" title="缩小">−</button>
+                <button class="modal-btn" @click="resetZoom" title="重置">⟲</button>
+                <button class="modal-btn" @click="closePreview" title="关闭">×</button>
+            </div>
+            <img :src="previewImage" :style="{ transform: 'scale(' + previewScale + ')' }" alt="预览">
         </div>
     </div>
     `,
@@ -94,7 +114,15 @@ export default {
         const inputText = ref('')
         const messagesContainer = ref(null)
         const inputArea = ref(null)
+        const fileInput = ref(null)
         let socket = null
+
+        // Pending images for sending
+        const pendingImages = reactive([])
+
+        // Image preview state
+        const previewImage = ref(null)
+        const previewScale = ref(1)
 
         // --- Auth Logic ---
         const loadSavedToken = () => {
@@ -130,7 +158,7 @@ export default {
                 errorMsg.value = "请输入密钥"
                 return
             }
-            
+
             // Connect
             socket = io({
                 auth: { token: authToken.value }
@@ -159,7 +187,7 @@ export default {
                 appendMessage(msg)
                 scrollToBottom()
             })
-            
+
             socket.on('history loaded', (history) => {
                 if(history) {
                     history.forEach(appendMessage)
@@ -197,20 +225,107 @@ export default {
         }
 
         const sendMessage = () => {
-            if (!inputText.value.trim() || !socketConnected.value) return
-            
+            if ((!inputText.value.trim() && pendingImages.length === 0) || !socketConnected.value) return
+
+            // Build attachments from pending images
+            const attachments = pendingImages.map(img => ({
+                type: 'image',
+                data: img.data,
+                filename: img.filename,
+                size: img.size
+            }))
+
             socket.emit('chat message', {
                 text: inputText.value,
-                source: 'mobile'
+                source: 'mobile',
+                attachments: attachments.length > 0 ? attachments : undefined
             })
-            
+
             inputText.value = ''
+            pendingImages.splice(0) // Clear pending images
             nextTick(() => {
                 if(inputArea.value) {
                     inputArea.value.style.height = 'auto'
                 }
                 scrollToBottom()
             })
+        }
+
+        // --- Image Handling ---
+        const handlePaste = (e) => {
+            const items = e.clipboardData?.items
+            if (!items) return
+
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    e.preventDefault()
+                    const file = item.getAsFile()
+                    if (file) {
+                        processImageFile(file)
+                    }
+                    break
+                }
+            }
+        }
+
+        const triggerFileInput = () => {
+            if (fileInput.value) {
+                fileInput.value.click()
+            }
+        }
+
+        const handleFileSelect = (e) => {
+            const files = e.target.files
+            if (!files) return
+            for (const file of files) {
+                if (file.type.startsWith('image/')) {
+                    processImageFile(file)
+                }
+            }
+            // Reset input so same file can be selected again
+            e.target.value = ''
+        }
+
+        const processImageFile = (file) => {
+            const reader = new FileReader()
+            reader.onload = (e) => {
+                const dataUrl = e.target?.result
+                if (dataUrl) {
+                    pendingImages.push({
+                        data: dataUrl,
+                        filename: file.name || 'image.png',
+                        size: file.size
+                    })
+                }
+            }
+            reader.readAsDataURL(file)
+        }
+
+        const removePendingImage = (index) => {
+            pendingImages.splice(index, 1)
+        }
+
+        // --- Image Preview ---
+        const openImage = (src) => {
+            previewImage.value = src
+            previewScale.value = 1
+        }
+
+        const closePreview = () => {
+            previewImage.value = null
+            previewScale.value = 1
+        }
+
+        const zoomIn = () => {
+            previewScale.value = Math.min(previewScale.value + 0.25, 3)
+        }
+
+        const zoomOut = () => {
+            previewScale.value = Math.max(previewScale.value - 0.25, 0.5)
+        }
+
+        const resetZoom = () => {
+            previewScale.value = 1
         }
 
         // --- UI Utilities ---
@@ -253,11 +368,9 @@ export default {
 
         const getImageSrc = (att) => {
             if (att.url) return att.url
-            if (att.data) return `data:image/png;base64,${att.data}`
+            if (att.data) return att.data.startsWith('data:') ? att.data : `data:image/png;base64,${att.data}`
             return ''
         }
-        
-        const openImage = (src) => window.open(src)
 
         onMounted(() => {
             loadSavedToken()
@@ -273,10 +386,12 @@ export default {
 
         return {
             connected, socketConnected, authToken, rememberMe, errorMsg, hasSavedToken,
-            messages, inputText, messagesContainer, inputArea,
+            messages, inputText, messagesContainer, inputArea, fileInput,
+            pendingImages, previewImage, previewScale,
             connect, disconnect, sendMessage, clearSavedToken,
-            autoResize, parseMarkdown, formatTime, showTimeDivider, formatDividerDate, 
-            getImageSrc, openImage
+            autoResize, parseMarkdown, formatTime, showTimeDivider, formatDividerDate,
+            getImageSrc, openImage, closePreview, zoomIn, zoomOut, resetZoom,
+            handlePaste, triggerFileInput, handleFileSelect, removePendingImage
         }
     }
 }

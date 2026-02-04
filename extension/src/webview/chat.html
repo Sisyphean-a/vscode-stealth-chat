@@ -21,14 +21,17 @@
     </div>
 
     <div id="input-container">
-      <textarea
-        id="message-input"
-        placeholder="输入消息..."
-        rows="1"
-      ></textarea>
-      <button id="send-button" title="发送 (Enter)">
-        <span>发送</span>
-      </button>
+      <div id="attachment-preview"></div>
+      <div id="input-row">
+        <textarea
+          id="message-input"
+          placeholder="输入消息... (可粘贴图片)"
+          rows="1"
+        ></textarea>
+        <button id="send-button" title="发送 (Enter)">
+          <span>发送</span>
+        </button>
+      </div>
     </div>
 
     <button id="scroll-to-bottom" title="Scroll to bottom">↓</button>

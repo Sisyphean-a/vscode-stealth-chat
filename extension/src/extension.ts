@@ -205,41 +205,54 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
         case "sendMessage":
           // Handle message sent from WebView
           const text = message.payload.text;
-          if (text && text.trim() && socket?.connected) {
-            const config = vscode.workspace.getConfiguration("tsLint");
-            const clickUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+          const attachments = message.payload.attachments;
+          if ((text && text.trim()) || (attachments && attachments.length > 0)) {
+            if (socket?.connected) {
+              const config = vscode.workspace.getConfiguration("tsLint");
+              const clickUrl = config.get<string>("serverUrl") || "http://localhost:3000";
 
-            // Send to server
-            socket.emit("chat message", {
-              text: text.trim(),
-              source: "vscode",
-              clickUrl: clickUrl,
-            });
+              // Send to server
+              socket.emit("chat message", {
+                text: text?.trim() || "",
+                source: "vscode",
+                clickUrl: clickUrl,
+                attachments: attachments,
+              });
 
-            // Show in Output Channel
-            const timestamp = getCurrentTimestamp();
-            outputChannel.appendLine(
-              `[Info - ${timestamp}] Sent: ${text.trim()}`,
-            );
+              // Show in Output Channel
+              const timestamp = getCurrentTimestamp();
+              const displayText = attachments && attachments.length > 0
+                ? `[图片${text?.trim() ? ` + ${text.trim()}` : ""}]`
+                : text.trim();
+              outputChannel.appendLine(
+                `[Info - ${timestamp}] Sent: ${displayText}`,
+              );
 
-            // Echo back to WebView
-            webviewView?.webview.postMessage({
-              type: "addMessage",
-              payload: {
-                text: text.trim(),
+              // Echo back to WebView
+              webviewView?.webview.postMessage({
+                type: "addMessage",
+                payload: {
+                  text: text?.trim() || "",
+                  source: "vscode",
+                  timestamp: Date.now(),
+                  attachments: attachments,
+                },
+              });
+
+              // Add to cache
+              cachedMessages.push({
+                text: text?.trim() || "",
                 source: "vscode",
                 timestamp: Date.now(),
-              },
-            });
-
-            // Add to cache
-            cachedMessages.push({
-              text: text.trim(),
-              source: "vscode",
-              timestamp: Date.now(),
-            });
-            console.log('[sendMessage] Added to cache, total:', cachedMessages.length);
+                attachments: attachments,
+              });
+              console.log('[sendMessage] Added to cache, total:', cachedMessages.length);
+            }
           }
+          break;
+        case "openImage":
+          // Open image in a new WebView panel
+          openImagePreview(message.payload.url, this._extensionUri);
           break;
       }
     });
@@ -478,6 +491,149 @@ function formatTimestamp(date: Date): string {
   const minutes = date.getMinutes().toString().padStart(2, "0");
   const seconds = date.getSeconds().toString().padStart(2, "0");
   return `${hours}:${minutes}:${seconds}`;
+}
+
+function openImagePreview(imageUrl: string, extensionUri: vscode.Uri): void {
+  const panel = vscode.window.createWebviewPanel(
+    "imagePreview",
+    "Image Preview",
+    vscode.ViewColumn.One,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    }
+  );
+
+  const nonce = getNonce();
+
+  panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+  <title>Image Preview</title>
+  <style nonce="${nonce}">
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--vscode-editor-background);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      overflow: auto;
+    }
+    .toolbar {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      gap: 8px;
+      z-index: 100;
+    }
+    .toolbar button {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .toolbar button:hover {
+      opacity: 0.9;
+    }
+    img {
+      max-width: 100%;
+      max-height: 90vh;
+      object-fit: contain;
+      transition: transform 0.2s ease;
+      cursor: grab;
+    }
+    img:active {
+      cursor: grabbing;
+    }
+    .zoom-info {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="zoom-in" title="放大 (+)">+</button>
+    <button id="zoom-out" title="缩小 (-)">−</button>
+    <button id="reset" title="重置 (0)">⟲</button>
+  </div>
+  <img id="preview-img" src="${imageUrl}" alt="Preview">
+  <div class="zoom-info" id="zoom-info">100%</div>
+  <script nonce="${nonce}">
+    const img = document.getElementById('preview-img');
+    const zoomInfo = document.getElementById('zoom-info');
+    let scale = 1;
+
+    function updateZoom() {
+      img.style.transform = 'scale(' + scale + ')';
+      zoomInfo.textContent = Math.round(scale * 100) + '%';
+    }
+
+    document.getElementById('zoom-in').addEventListener('click', () => {
+      scale = Math.min(scale + 0.25, 5);
+      updateZoom();
+    });
+
+    document.getElementById('zoom-out').addEventListener('click', () => {
+      scale = Math.max(scale - 0.25, 0.25);
+      updateZoom();
+    });
+
+    document.getElementById('reset').addEventListener('click', () => {
+      scale = 1;
+      updateZoom();
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '+' || e.key === '=') {
+        scale = Math.min(scale + 0.25, 5);
+        updateZoom();
+      } else if (e.key === '-') {
+        scale = Math.max(scale - 0.25, 0.25);
+        updateZoom();
+      } else if (e.key === '0') {
+        scale = 1;
+        updateZoom();
+      }
+    });
+
+    // Mouse wheel zoom
+    document.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          scale = Math.min(scale + 0.1, 5);
+        } else {
+          scale = Math.max(scale - 0.1, 0.25);
+        }
+        updateZoom();
+      }
+    }, { passive: false });
+  </script>
+</body>
+</html>`;
 }
 
 export function deactivate() {
