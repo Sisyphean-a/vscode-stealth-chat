@@ -128,8 +128,15 @@ export default {
                     </div>
                 </div>
                 <form @submit.prevent="sendMessage" class="input-form" @paste="handlePaste">
-                    <button type="button" class="attach-btn" @click="triggerFileInput" title="添加图片">+</button>
+                    <button type="button" class="attach-btn" @click="triggerFileInput" title="从相册选择">+</button>
+                    <button type="button" class="camera-btn" @click="triggerCameraInput" title="拍照">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+                            <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                        </svg>
+                    </button>
                     <input type="file" ref="fileInput" accept="image/*" style="display: none" @change="handleFileSelect" multiple>
+                    <input type="file" ref="cameraInput" accept="image/*" capture="environment" style="display: none" @change="handleFileSelect">
                     <textarea
                         v-model="inputText"
                         rows="1"
@@ -224,6 +231,7 @@ export default {
         const messagesContainer = ref(null)
         const inputArea = ref(null)
         const fileInput = ref(null)
+        const cameraInput = ref(null)
 
         // UI 状态
         const showConnectionMenu = ref(false)
@@ -440,6 +448,12 @@ export default {
             }
         }
 
+        const triggerCameraInput = () => {
+            if (cameraInput.value) {
+                cameraInput.value.click()
+            }
+        }
+
         // --- Image Preview (使用 composables) ---
         const { openImage, closePreview, zoomIn, zoomOut, resetZoom } = imagePreview
 
@@ -479,7 +493,7 @@ export default {
 
         return {
             connected, socketConnected, isConnecting, authToken, rememberMe, errorMsg, hasSavedToken,
-            messages, inputText, messagesContainer, inputArea, fileInput,
+            messages, inputText, messagesContainer, inputArea, fileInput, cameraInput,
             pendingImages, previewImage, previewScale,
             // 多连接管理
             connections, activeConnectionId, showConnectionMenu, showConnectionManager, showConnectionEditor,
@@ -491,7 +505,7 @@ export default {
             connect, disconnect, sendMessage, clearSavedToken,
             autoResize, parseMarkdown, formatTime, showTimeDivider, formatDividerDate,
             getImageSrc, openImage, closePreview, zoomIn, zoomOut, resetZoom,
-            handlePaste, triggerFileInput, handleFileSelect, removePendingImage
+            handlePaste, triggerFileInput, triggerCameraInput, handleFileSelect, removePendingImage
         }
     }
 }

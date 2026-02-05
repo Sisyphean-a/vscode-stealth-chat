@@ -811,6 +811,31 @@ textarea:focus {
     color: var(--primary-color);
 }
 
+/* Camera Button */
+.camera-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+
+.camera-btn:hover {
+    background: var(--border-color);
+    color: var(--primary-color);
+}
+
+.camera-btn svg {
+    pointer-events: none;
+}
+
 /* Image Preview Modal */
 .image-modal {
     position: fixed;
