@@ -14,6 +14,13 @@ let socket: Socket | undefined;
 let unreadCount = 0;
 let historyLoaded = false;
 
+// 连接配置接口
+interface Connection {
+  name: string;
+  serverUrl?: string;
+  token: string;
+}
+
 // 缓存配置
 const CACHE_MAX_SIZE = 200;
 
@@ -47,6 +54,43 @@ function isMessageDuplicate(msg: { text: string; source: string; timestamp: numb
     keysToDelete.forEach(k => processedMessageKeys.delete(k));
   }
   return false;
+}
+
+// 清除对话状态（切换连接时调用）
+function clearConversationState(): void {
+  cachedMessages = [];
+  processedMessageKeys.clear();
+  historyLoaded = false;
+  unreadCount = 0;
+  outputChannel.clear();
+
+  if (webviewView) {
+    webviewView.webview.postMessage({ type: 'clearMessages' });
+  }
+  updateStatusBar();
+}
+
+// 获取当前活动连接配置
+function getActiveConnection(): Connection & { serverUrl: string } {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const connections = config.get<Connection[]>("connections") || [];
+  const activeName = config.get<string>("activeConnection");
+
+  if (connections.length > 0) {
+    const found = connections.find(c => c.name === activeName) || connections[0];
+    return {
+      name: found.name,
+      serverUrl: found.serverUrl || config.get<string>("serverUrl") || "http://localhost:3000",
+      token: found.token,
+    };
+  }
+
+  // 回退到旧配置
+  return {
+    name: "Default",
+    serverUrl: config.get<string>("serverUrl") || "http://localhost:3000",
+    token: config.get<string>("secret") || "ChangeMeInProduction",
+  };
 }
 
 // 添加消息到缓存（带去重和大小限制）
@@ -116,12 +160,11 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Get configuration
   const config = vscode.workspace.getConfiguration("tsLint");
-  const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
-  const secret = config.get<string>("secret") || "ChangeMeInProduction";
+  const conn = getActiveConnection();
   const forceWebsocket = config.get<boolean>("forceWebsocket") || false;
 
   // Connect to Socket.io server
-  connectToServer(serverUrl, secret, forceWebsocket);
+  connectToServer(conn.serverUrl, conn.token, forceWebsocket);
 
   // Register WebView Provider for sidebar
   const provider = new ChatViewProvider(context.extensionUri);
@@ -135,6 +178,35 @@ export function activate(context: vscode.ExtensionContext) {
     () => {
       vscode.commands.executeCommand("tsLintChat.chatView.focus");
       clearUnreadStatus();
+    }
+  );
+
+  // Register command: Switch connection
+  const switchCommand = vscode.commands.registerCommand(
+    "tsLintService.switchConnection",
+    async () => {
+      const config = vscode.workspace.getConfiguration("tsLint");
+      const connections = config.get<Connection[]>("connections") || [];
+
+      if (connections.length === 0) {
+        vscode.window.showInformationMessage("No rule sets configured. Add connections in settings.");
+        return;
+      }
+
+      const currentActive = config.get<string>("activeConnection");
+      const items = connections.map(c => ({
+        label: c.name,
+        description: c.serverUrl || config.get<string>("serverUrl") || "http://localhost:3000",
+        picked: c.name === currentActive,
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select Rule Set",
+      });
+
+      if (selected && selected.label !== currentActive) {
+        await config.update("activeConnection", selected.label, true);
+      }
     }
   );
 
@@ -190,19 +262,21 @@ export function activate(context: vscode.ExtensionContext) {
       if (
         e.affectsConfiguration("tsLint.serverUrl") ||
         e.affectsConfiguration("tsLint.secret") ||
+        e.affectsConfiguration("tsLint.activeConnection") ||
+        e.affectsConfiguration("tsLint.connections") ||
         e.affectsConfiguration("tsLint.forceWebsocket")
       ) {
         const newConfig = vscode.workspace.getConfiguration("tsLint");
-        const newServerUrl =
-          newConfig.get<string>("serverUrl") || "http://localhost:3000";
-        const newSecret =
-          newConfig.get<string>("secret") || "ChangeMeInProduction";
         const newForceWebsocket =
           newConfig.get<boolean>("forceWebsocket") || false;
 
-        // Reconnect with new URL
+        // 清除旧对话状态
+        clearConversationState();
+
+        // 获取新连接配置并重连
+        const newConn = getActiveConnection();
         socket?.disconnect();
-        connectToServer(newServerUrl, newSecret, newForceWebsocket);
+        connectToServer(newConn.serverUrl, newConn.token, newForceWebsocket);
       }
 
       // Handle displayMode changes
@@ -222,6 +296,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     focusCommand,
+    switchCommand,
     sendCommand,
     configChangeDisposable,
     outputChannel,
@@ -378,8 +453,9 @@ function connectToServer(
   forceWebsocket: boolean,
 ): void {
   try {
+    const conn = getActiveConnection();
     // 显示"正在连接"状态
-    statusBarItem.text = "$(sync~spin) TS-Lint";
+    statusBarItem.text = `$(sync~spin) ${conn.name}`;
     statusBarItem.tooltip = "正在连接服务器...";
 
     // 通知 WebView 正在连接
@@ -587,9 +663,12 @@ function handleIncomingMessage(
 }
 
 function updateStatusBar(): void {
+  const conn = getActiveConnection();
+  const name = conn.name;
+
   if (unreadCount > 0) {
-    statusBarItem.text = `${STATUS_BAR_ALERT_TEXT} (${unreadCount})`;
-    statusBarItem.command = "tsLintService.focus";
+    statusBarItem.text = `$(alert) ${name} (${unreadCount})`;
+    statusBarItem.command = "tsLintService.switchConnection";
     statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground",
     );
@@ -597,8 +676,8 @@ function updateStatusBar(): void {
       "statusBarItem.warningForeground",
     );
   } else {
-    statusBarItem.text = STATUS_BAR_DEFAULT_TEXT;
-    statusBarItem.command = "tsLintService.focus";
+    statusBarItem.text = `$(check) ${name}`;
+    statusBarItem.command = "tsLintService.switchConnection";
     statusBarItem.backgroundColor = undefined;
     statusBarItem.color = undefined;
   }
