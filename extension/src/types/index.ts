@@ -31,3 +31,15 @@ export interface SocketCallbacks {
   onHistoryLoaded?: (messages: ChatMessage[]) => void;
   onMoreHistoryLoaded?: (messages: ChatMessage[], hasMore: boolean) => void;
 }
+
+export interface GlobalSettings {
+  serverUrl: string;
+  forceWebsocket: boolean;
+  autoReveal: boolean;
+  displayMode: 'bubble' | 'log';
+}
+
+export interface SettingsMessage {
+  type: string;
+  payload?: unknown;
+}

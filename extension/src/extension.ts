@@ -9,6 +9,7 @@ import * as socketService from "./services/socketService";
 import * as messageCache from "./services/messageCache";
 import * as statusBar from "./ui/statusBar";
 import { ChatViewProvider, getWebviewView } from "./providers/chatViewProvider";
+import { SettingsViewProvider } from "./providers/settingsViewProvider";
 
 const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 let outputChannel: vscode.OutputChannel;
@@ -34,6 +35,12 @@ export function activate(context: vscode.ExtensionContext) {
   const provider = new ChatViewProvider(context.extensionUri, outputChannel);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("tsLintChat.chatView", provider)
+  );
+
+  // 注册 Settings WebView Provider
+  const settingsProvider = new SettingsViewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("tsLintChat.settingsView", settingsProvider)
   );
 
   // 注册命令

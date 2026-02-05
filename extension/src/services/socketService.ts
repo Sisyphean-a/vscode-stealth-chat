@@ -173,3 +173,41 @@ export function resetLastDisplayedDate(): void {
 export function loadMoreHistory(beforeTimestamp: number): void {
   socket?.emit("load more history", { limit: 50, beforeTimestamp });
 }
+
+/**
+ * 测试连接
+ */
+export function testConnection(
+  serverUrl: string,
+  token: string
+): Promise<{ success: boolean; message: string; latency?: number }> {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+    const testSocket = io(serverUrl, {
+      auth: { token },
+      transports: ["websocket", "polling"],
+      reconnection: false,
+      timeout: 10000,
+    });
+
+    const cleanup = () => {
+      testSocket.disconnect();
+    };
+
+    testSocket.on("connect", () => {
+      const latency = Date.now() - startTime;
+      cleanup();
+      resolve({ success: true, message: "连接成功", latency });
+    });
+
+    testSocket.on("connect_error", (error: Error) => {
+      cleanup();
+      resolve({ success: false, message: `连接失败: ${error.message}` });
+    });
+
+    setTimeout(() => {
+      cleanup();
+      resolve({ success: false, message: "连接超时" });
+    }, 10000);
+  });
+}
