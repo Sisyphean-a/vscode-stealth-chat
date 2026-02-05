@@ -130,22 +130,37 @@ function saveMessage(text, source, timestamp, appId = 'default') {
  * 获取最近的消息
  * @param {number} limit 返回消息数量
  * @param {string} appId 应用ID
+ * @param {number} beforeTimestamp 获取此时间戳之前的消息（用于加载更多）
  * @returns {Array} 消息数组
  */
-function getRecentMessages(limit = 50, appId = 'default') {
+function getRecentMessages(limit = 50, appId = 'default', beforeTimestamp = null) {
   if (!isInitialized || !db) {
     return [];
   }
 
   try {
-    const stmt = db.prepare(`
-            SELECT text, source, timestamp
-            FROM messages
-            WHERE app_id = ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-        `);
-    stmt.bind([appId, limit]);
+    let sql, params;
+    if (beforeTimestamp) {
+      sql = `
+        SELECT text, source, timestamp
+        FROM messages
+        WHERE app_id = ? AND timestamp < ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `;
+      params = [appId, beforeTimestamp, limit];
+    } else {
+      sql = `
+        SELECT text, source, timestamp
+        FROM messages
+        WHERE app_id = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `;
+      params = [appId, limit];
+    }
+    const stmt = db.prepare(sql);
+    stmt.bind(params);
 
     const messages = [];
     while (stmt.step()) {

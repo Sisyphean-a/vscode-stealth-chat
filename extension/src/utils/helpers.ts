@@ -39,6 +39,23 @@ export function formatTimestamp(date: Date): string {
 }
 
 /**
+ * 格式化日期为 YYYY-MM-DD
+ */
+export function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * 获取日期字符串（不含时间，用于比较）
+ */
+export function getDateKey(timestamp: number): string {
+  return formatDate(new Date(timestamp));
+}
+
+/**
  * 获取当前活动连接配置
  */
 export function getActiveConnection(): Connection & { serverUrl: string } {

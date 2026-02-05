@@ -96,6 +96,13 @@ export default {
             </header>
 
             <main class="message-list" ref="messagesContainer">
+                <!-- 加载更多按钮 -->
+                <div v-if="messages.length > 0 && hasMoreHistory" class="load-more-wrapper">
+                    <button class="load-more-btn" @click="loadMore" :disabled="isLoadingMore">
+                        {{ isLoadingMore ? '加载中...' : '加载更多' }}
+                    </button>
+                </div>
+
                 <div v-if="messages.length === 0" class="empty-state">
                     <span>暂无消息</span>
                 </div>
@@ -217,7 +224,7 @@ export default {
         const imagePreview = useImagePreview()
 
         // 从 composables 解构常用状态
-        const { connected, socketConnected, isConnecting, errorMsg } = socketManager
+        const { connected, socketConnected, isConnecting, isLoadingMore, hasMoreHistory, errorMsg } = socketManager
         const { connections, activeConnectionId } = connManager
         const { pendingImages } = imageHandler
         const { previewImage, previewScale } = imagePreview
@@ -288,6 +295,7 @@ export default {
             saveActiveConnection()
             messages.splice(0)
             socketManager.disconnect()
+            socketManager.resetLoadMoreState()
 
             const conn = getActiveConnection()
             if (conn) {
@@ -457,6 +465,35 @@ export default {
         // --- Image Preview (使用 composables) ---
         const { openImage, closePreview, zoomIn, zoomOut, resetZoom } = imagePreview
 
+        // --- 加载更多历史消息 ---
+        const loadMore = () => {
+            if (messages.length === 0) return
+
+            const oldestTimestamp = messages[0].timestamp
+            const oldScrollHeight = messagesContainer.value?.scrollHeight || 0
+
+            socketManager.loadMoreHistory(oldestTimestamp, (olderMessages) => {
+                if (olderMessages && olderMessages.length > 0) {
+                    const newMessages = olderMessages.map(msg => ({
+                        text: msg.text,
+                        type: msg.source === 'mobile' ? 'own' : (msg.source === 'system' ? 'system' : 'remote'),
+                        sender: msg.source === 'mobile' ? '我' : 'VSCode',
+                        timestamp: msg.timestamp,
+                        attachments: msg.attachments
+                    }))
+                    messages.unshift(...newMessages)
+
+                    // 保持滚动位置
+                    nextTick(() => {
+                        if (messagesContainer.value) {
+                            const newScrollHeight = messagesContainer.value.scrollHeight
+                            messagesContainer.value.scrollTop = newScrollHeight - oldScrollHeight
+                        }
+                    })
+                }
+            })
+        }
+
         // --- UI Utilities ---
         const scrollToBottom = () => {
             nextTick(() => {
@@ -492,7 +529,8 @@ export default {
         })
 
         return {
-            connected, socketConnected, isConnecting, authToken, rememberMe, errorMsg, hasSavedToken,
+            connected, socketConnected, isConnecting, isLoadingMore, hasMoreHistory,
+            authToken, rememberMe, errorMsg, hasSavedToken,
             messages, inputText, messagesContainer, inputArea, fileInput, cameraInput,
             pendingImages, previewImage, previewScale,
             // 多连接管理
@@ -502,7 +540,7 @@ export default {
             openAddConnection, openEditConnection, saveConnectionEditor, closeConnectionEditor, openConnectionManager,
             connectWithNewToken,
             // 原有方法
-            connect, disconnect, sendMessage, clearSavedToken,
+            connect, disconnect, sendMessage, clearSavedToken, loadMore,
             autoResize, parseMarkdown, formatTime, showTimeDivider, formatDividerDate,
             getImageSrc, openImage, closePreview, zoomIn, zoomOut, resetZoom,
             handlePaste, triggerFileInput, triggerCameraInput, handleFileSelect, removePendingImage

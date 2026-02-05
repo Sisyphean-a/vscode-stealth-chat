@@ -5,11 +5,12 @@ import { io, Socket } from "socket.io-client";
 import { ChatMessage, SocketCallbacks } from "../types";
 import * as messageCache from "./messageCache";
 import * as statusBar from "../ui/statusBar";
-import { getActiveConnection, getCurrentTimestamp, formatTimestamp } from "../utils/helpers";
+import { getActiveConnection, getCurrentTimestamp, formatTimestamp, getDateKey } from "../utils/helpers";
 
 let socket: Socket | undefined;
 let outputChannel: import("vscode").OutputChannel | undefined;
 let historyLoaded = false;
+let lastDisplayedDate: string = "";
 
 /**
  * 设置输出通道
@@ -68,8 +69,17 @@ export function connectToServer(
         messageCache.mergeHistory(messages);
         const timestamp = getCurrentTimestamp();
         outputChannel?.appendLine(`[Info - ${timestamp}] Loading ${messages.length} historical messages...`);
+
+        lastDisplayedDate = "";
         messages.forEach((msg) => {
           const msgTime = new Date(msg.timestamp);
+          const msgDate = getDateKey(msg.timestamp);
+
+          if (msgDate !== lastDisplayedDate) {
+            outputChannel?.appendLine(`[Info - 00:00:00] ═══════════ ${msgDate} ═══════════`);
+            lastDisplayedDate = msgDate;
+          }
+
           const formattedTime = formatTimestamp(msgTime);
           const prefix = msg.source === "mobile" ? "Process" : "Sent";
           outputChannel?.appendLine(`[Info - ${formattedTime}] ${prefix}: ${msg.text}`);
@@ -130,4 +140,22 @@ export function isHistoryLoaded(): boolean {
  */
 export function setHistoryLoaded(): void {
   historyLoaded = true;
+}
+
+/**
+ * 检查并显示日期分隔符（如果日期变化）
+ */
+export function checkAndShowDateSeparator(timestamp: number): void {
+  const msgDate = getDateKey(timestamp);
+  if (msgDate !== lastDisplayedDate) {
+    outputChannel?.appendLine(`[Info - 00:00:00] ═══════════ ${msgDate} ═══════════`);
+    lastDisplayedDate = msgDate;
+  }
+}
+
+/**
+ * 重置日期显示状态
+ */
+export function resetLastDisplayedDate(): void {
+  lastDisplayedDate = "";
 }

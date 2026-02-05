@@ -124,6 +124,15 @@ function initSocket(httpServer) {
       socket.emit("history loaded", messages);
     });
 
+    // Handle load more history request
+    socket.on("load more history", ({ limit = 50, beforeTimestamp }) => {
+      console.log(
+        `[Socket] Loading more history (limit: ${limit}, before: ${beforeTimestamp}) for ${socket.id} (App: ${app.name})`,
+      );
+      const messages = db.getRecentMessages(limit, appId, beforeTimestamp);
+      socket.emit("more history loaded", { messages, hasMore: messages.length === limit });
+    });
+
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
     });

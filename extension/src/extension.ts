@@ -79,7 +79,10 @@ function connectWithCallbacks(serverUrl: string, token: string, forceWebsocket: 
 function handleIncomingMessage(msg: any): void {
   if (!messageCache.addToCache(msg)) return;
 
-  const timestamp = getCurrentTimestamp();
+  socketService.checkAndShowDateSeparator(msg.timestamp);
+
+  const msgTime = new Date(msg.timestamp);
+  const timestamp = `${msgTime.getHours().toString().padStart(2, "0")}:${msgTime.getMinutes().toString().padStart(2, "0")}:${msgTime.getSeconds().toString().padStart(2, "0")}`;
   outputChannel.appendLine(`[Info - ${timestamp}] Process: ${msg.text}`);
 
   const config = vscode.workspace.getConfiguration("tsLint");
@@ -98,6 +101,7 @@ function handleIncomingMessage(msg: any): void {
 function handleConnectionChange(): void {
   messageCache.clearCache();
   socketService.resetHistoryLoaded();
+  socketService.resetLastDisplayedDate();
   outputChannel.clear();
 
   getWebviewView()?.webview.postMessage({ type: "clearMessages" });

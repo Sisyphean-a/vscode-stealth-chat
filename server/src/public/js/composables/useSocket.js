@@ -8,9 +8,12 @@ export function useSocket() {
     const connected = ref(false)
     const socketConnected = ref(false)
     const isConnecting = ref(false)
+    const isLoadingMore = ref(false)
+    const hasMoreHistory = ref(true)
     const errorMsg = ref('')
 
     let socket = null
+    let moreHistoryCallback = null
 
     /**
      * 连接到服务器
@@ -54,7 +57,14 @@ export function useSocket() {
         })
 
         socket.on('history loaded', (history) => {
+            hasMoreHistory.value = history && history.length >= 50
             callbacks.onHistoryLoaded?.(history)
+        })
+
+        socket.on('more history loaded', ({ messages, hasMore }) => {
+            isLoadingMore.value = false
+            hasMoreHistory.value = hasMore
+            moreHistoryCallback?.(messages)
         })
 
         return socket
@@ -88,14 +98,39 @@ export function useSocket() {
      */
     const getSocket = () => socket
 
+    /**
+     * 加载更多历史消息
+     */
+    const loadMoreHistory = (beforeTimestamp, callback) => {
+        if (!socket?.connected || isLoadingMore.value || !hasMoreHistory.value) {
+            return false
+        }
+        isLoadingMore.value = true
+        moreHistoryCallback = callback
+        socket.emit('load more history', { limit: 50, beforeTimestamp })
+        return true
+    }
+
+    /**
+     * 重置加载更多状态
+     */
+    const resetLoadMoreState = () => {
+        hasMoreHistory.value = true
+        isLoadingMore.value = false
+    }
+
     return {
         connected,
         socketConnected,
         isConnecting,
+        isLoadingMore,
+        hasMoreHistory,
         errorMsg,
         connect,
         disconnect,
         emit,
-        getSocket
+        getSocket,
+        loadMoreHistory,
+        resetLoadMoreState
     }
 }
