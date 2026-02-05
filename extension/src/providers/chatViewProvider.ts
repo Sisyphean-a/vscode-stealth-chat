@@ -60,6 +60,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case "sendMessage":
           this.handleSendMessage(message.payload);
           break;
+        case "loadMoreHistory":
+          this.handleLoadMoreHistory(message.payload);
+          break;
         case "openImage":
           openImagePreview(message.payload.url);
           break;
@@ -83,11 +86,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const cached = messageCache.getCachedMessages();
     if (cached.length > 0) {
+      // 缓存中有消息，直接发送（包括历史加载后缓存的）
       view.webview.postMessage({ type: "loadHistory", payload: cached });
     } else if (socketService.isConnected() && !socketService.isHistoryLoaded()) {
+      // 无缓存且未加载过历史，请求服务器
       socketService.getSocket()?.emit("load history", 50);
       socketService.setHistoryLoaded();
     }
+  }
+
+  private handleLoadMoreHistory(payload: { beforeTimestamp: number }): void {
+    if (!socketService.isConnected()) return;
+    socketService.loadMoreHistory(payload.beforeTimestamp);
   }
 
   private handleSendMessage(payload: any): void {

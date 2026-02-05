@@ -68,9 +68,19 @@ function connectWithCallbacks(serverUrl: string, token: string, forceWebsocket: 
       handleIncomingMessage(msg);
     },
     onHistoryLoaded: (messages) => {
+      socketService.setHistoryLoaded();
+      const webview = getWebviewView();
+      if (webview) {
+        webview.webview.postMessage({
+          type: "loadHistory",
+          payload: messages,
+        });
+      }
+    },
+    onMoreHistoryLoaded: (messages, hasMore) => {
       getWebviewView()?.webview.postMessage({
-        type: "loadHistory",
-        payload: messages,
+        type: "prependHistory",
+        payload: { messages, hasMore },
       });
     },
   });

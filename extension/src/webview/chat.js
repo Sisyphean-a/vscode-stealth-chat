@@ -30,6 +30,17 @@
   /** @type {string} */
   let serverUrl = 'http://localhost:3000';
 
+  // IME 组合状态追踪
+  let isComposing = false;
+  /** @type {any[]} */
+  let pendingMessages = [];
+
+  // 加载更多历史状态
+  let isLoadingMore = false;
+  let hasMoreHistory = true;
+  /** @type {number | null} */
+  let oldestTimestamp = null;
+
   // 图片大小限制 (5MB)
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -57,6 +68,17 @@
         messageInput.style.height = 'auto';
         messageInput.style.height = messageInput.scrollHeight + 'px';
       }
+    });
+
+    // IME 组合事件监听 - 防止输入被打断
+    messageInput.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+
+    messageInput.addEventListener('compositionend', () => {
+      isComposing = false;
+      // 处理在 IME 组合期间积累的消息
+      flushPendingMessages();
     });
 
     // Paste event for image attachment
@@ -93,7 +115,7 @@
       if (!messagesContainer) return;
       const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
       const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-      
+
       if (isAtBottom) {
         autoScrollEnabled = true;
         if (scrollToBottomBtn) {
@@ -101,6 +123,11 @@
         }
       } else {
         autoScrollEnabled = false;
+      }
+
+      // 检测滚动到顶部，触发加载更多
+      if (scrollTop < 50 && hasMoreHistory && !isLoadingMore && oldestTimestamp) {
+        loadMoreHistory();
       }
     });
   }
@@ -112,10 +139,18 @@
 
     switch (message.type) {
       case 'addMessage':
-        appendMessage(message.payload);
+        // 如果正在 IME 组合，延迟处理消息
+        if (isComposing) {
+          pendingMessages.push(message.payload);
+        } else {
+          appendMessage(message.payload);
+        }
         break;
       case 'loadHistory':
         loadHistory(message.payload);
+        break;
+      case 'prependHistory':
+        prependHistory(message.payload.messages, message.payload.hasMore);
         break;
       case 'updateStatus':
         console.log('[WebView] Updating status to:', message.payload.connected);
@@ -175,8 +210,88 @@
     messages.forEach(msg => {
       appendMessage(msg, true);
     });
+    // 更新最早时间戳
+    if (messages.length > 0) {
+      oldestTimestamp = messages[0].timestamp;
+      hasMoreHistory = true;
+    }
     // Scroll to bottom when loading history (first time or reconnect)
     scrollToBottom(true);
+  }
+
+  /**
+   * 请求加载更多历史
+   */
+  function loadMoreHistory() {
+    if (isLoadingMore || !hasMoreHistory || !oldestTimestamp) return;
+
+    isLoadingMore = true;
+    showLoadingIndicator();
+
+    vscode.postMessage({
+      type: 'loadMoreHistory',
+      payload: { beforeTimestamp: oldestTimestamp }
+    });
+  }
+
+  /**
+   * @param {any[]} messages
+   * @param {boolean} hasMore
+   */
+  function prependHistory(messages, hasMore) {
+    isLoadingMore = false;
+    hasMoreHistory = hasMore;
+    hideLoadingIndicator();
+
+    if (!messagesContainer || messages.length === 0) return;
+
+    // 记录当前滚动位置
+    const prevScrollHeight = messagesContainer.scrollHeight;
+
+    // 按时间排序
+    const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+
+    // 更新最早时间戳
+    if (sorted.length > 0) {
+      oldestTimestamp = sorted[0].timestamp;
+    }
+
+    // 在顶部插入消息
+    const firstChild = messagesContainer.firstChild;
+    sorted.forEach(msg => {
+      const messageEl = createMessageElement(msg);
+      bindImageLinkEvents(messageEl);
+      messagesContainer.insertBefore(messageEl, firstChild);
+    });
+
+    // 保持滚动位置
+    const newScrollHeight = messagesContainer.scrollHeight;
+    messagesContainer.scrollTop = newScrollHeight - prevScrollHeight;
+  }
+
+  /**
+   * 显示加载指示器
+   */
+  function showLoadingIndicator() {
+    if (!messagesContainer) return;
+    let indicator = document.getElementById('loading-indicator');
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'loading-indicator';
+      indicator.className = 'loading-indicator';
+      indicator.textContent = '加载中...';
+    }
+    messagesContainer.insertBefore(indicator, messagesContainer.firstChild);
+  }
+
+  /**
+   * 隐藏加载指示器
+   */
+  function hideLoadingIndicator() {
+    const indicator = document.getElementById('loading-indicator');
+    if (indicator) {
+      indicator.remove();
+    }
   }
 
   /**
@@ -223,6 +338,19 @@
     if (!messagesContainer) return;
     messagesContainer.innerHTML = '<div id="empty-state">No messages yet</div>';
     lastMessageTimestamp = 0;
+  }
+
+  /**
+   * 处理在 IME 组合期间积累的消息
+   */
+  function flushPendingMessages() {
+    if (pendingMessages.length === 0) return;
+
+    // 使用 requestAnimationFrame 确保在下一帧渲染
+    requestAnimationFrame(() => {
+      pendingMessages.forEach(msg => appendMessage(msg));
+      pendingMessages = [];
+    });
   }
 
   // ============================================================================

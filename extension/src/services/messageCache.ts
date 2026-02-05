@@ -91,6 +91,30 @@ export function clearCache(): void {
 }
 
 /**
+ * 在缓存前面添加历史消息（用于加载更多）
+ */
+export function prependHistory(messages: ChatMessage[]): void {
+  const newMessages: ChatMessage[] = [];
+  for (const msg of messages) {
+    const key = getMessageKey(msg);
+    if (!processedMessageKeys.has(key)) {
+      processedMessageKeys.add(key);
+      newMessages.push(msg);
+    }
+  }
+  newMessages.sort((a, b) => a.timestamp - b.timestamp);
+  cachedMessages = [...newMessages, ...cachedMessages].slice(-CACHE_MAX_SIZE);
+}
+
+/**
+ * 获取最早消息的时间戳
+ */
+export function getOldestTimestamp(): number | null {
+  if (cachedMessages.length === 0) return null;
+  return cachedMessages[0].timestamp;
+}
+
+/**
  * 获取缓存的消息
  */
 export function getCachedMessages(): ChatMessage[] {

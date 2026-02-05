@@ -29,4 +29,5 @@ export interface SocketCallbacks {
   onConnectError?: (error: Error) => void;
   onMessage?: (msg: ChatMessage) => void;
   onHistoryLoaded?: (messages: ChatMessage[]) => void;
+  onMoreHistoryLoaded?: (messages: ChatMessage[], hasMore: boolean) => void;
 }

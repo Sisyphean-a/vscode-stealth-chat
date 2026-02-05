@@ -89,6 +89,13 @@ export function connectToServer(
       }
     });
 
+    socket.on("more history loaded", (data: { messages: ChatMessage[]; hasMore: boolean }) => {
+      if (data.messages.length > 0) {
+        messageCache.prependHistory(data.messages);
+      }
+      callbacks.onMoreHistoryLoaded?.(data.messages, data.hasMore);
+    });
+
     socket.on("chat message", (data: ChatMessage) => {
       if (data.source === "mobile") {
         callbacks.onMessage?.(data);
@@ -158,4 +165,11 @@ export function checkAndShowDateSeparator(timestamp: number): void {
  */
 export function resetLastDisplayedDate(): void {
   lastDisplayedDate = "";
+}
+
+/**
+ * 加载更多历史消息
+ */
+export function loadMoreHistory(beforeTimestamp: number): void {
+  socket?.emit("load more history", { limit: 50, beforeTimestamp });
 }
