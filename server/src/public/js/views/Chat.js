@@ -1,5 +1,14 @@
 const { ref, reactive, nextTick, onMounted, onUnmounted, watchEffect } = Vue;
 
+// 导入 composables
+import { useSocket } from '../composables/useSocket.js'
+import { useConnections } from '../composables/useConnections.js'
+import { useImageHandler } from '../composables/useImageHandler.js'
+import { useImagePreview } from '../composables/useImagePreview.js'
+
+// 导入工具函数
+import { formatTime, formatDividerDate, showTimeDivider, parseMarkdown, getImageSrc } from '../utils/formatters.js'
+
 export default {
     template: `
     <div class="chat-wrapper" style="height: 100%; display: flex; flex-direction: column;">
@@ -194,44 +203,35 @@ export default {
     </div>
     `,
     setup() {
-        // State
-        const connected = ref(false)
-        const socketConnected = ref(false)
-        const isConnecting = ref(false)
+        // 使用 Composables
+        const socketManager = useSocket()
+        const connManager = useConnections()
+        const imageHandler = useImageHandler()
+        const imagePreview = useImagePreview()
+
+        // 从 composables 解构常用状态
+        const { connected, socketConnected, isConnecting, errorMsg } = socketManager
+        const { connections, activeConnectionId } = connManager
+        const { pendingImages } = imageHandler
+        const { previewImage, previewScale } = imagePreview
+
+        // 本地状态
         const authToken = ref('')
         const rememberMe = ref(false)
-        const errorMsg = ref('')
         const hasSavedToken = ref(false)
         const messages = reactive([])
         const inputText = ref('')
         const messagesContainer = ref(null)
         const inputArea = ref(null)
         const fileInput = ref(null)
-        let socket = null
 
-        // Pending images for sending
-        const pendingImages = reactive([])
-
-        // 多连接管理
-        const connections = reactive([])
-        const activeConnectionId = ref('')
+        // UI 状态
         const showConnectionMenu = ref(false)
         const showConnectionManager = ref(false)
         const showConnectionEditor = ref(false)
         const editingConnection = ref(null)
         const newConnectionName = ref('')
         const newConnectionToken = ref('')
-
-        // localStorage keys
-        const CONNECTIONS_KEY = 'st_connections'
-        const ACTIVE_CONN_KEY = 'st_active_conn'
-
-        // 图片大小限制 (5MB)
-        const MAX_IMAGE_SIZE = 5 * 1024 * 1024
-
-        // Image preview state
-        const previewImage = ref(null)
-        const previewScale = ref(1)
 
         // --- Auth Logic ---
         const loadSavedToken = () => {
@@ -262,82 +262,14 @@ export default {
             hasSavedToken.value = false
         }
 
-        // --- 多连接管理 ---
-        const generateId = () => Math.random().toString(36).substring(2, 10)
-
-        const loadConnections = () => {
-            const saved = localStorage.getItem(CONNECTIONS_KEY)
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved)
-                    connections.splice(0, connections.length, ...parsed)
-                } catch(e) {}
-            }
-            // 兼容旧版单 token 格式
-            if (connections.length === 0) {
-                const oldToken = localStorage.getItem('st_token')
-                if (oldToken) {
-                    try {
-                        const token = atob(oldToken)
-                        connections.push({
-                            id: generateId(),
-                            name: '默认对话',
-                            token: token
-                        })
-                        saveConnections()
-                    } catch(e) {}
-                }
-            }
-            // 加载活动连接
-            const activeId = localStorage.getItem(ACTIVE_CONN_KEY)
-            if (activeId && connections.find(c => c.id === activeId)) {
-                activeConnectionId.value = activeId
-            } else if (connections.length > 0) {
-                activeConnectionId.value = connections[0].id
-            }
-        }
-
-        const saveConnections = () => {
-            localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(connections))
-        }
-
-        const saveActiveConnection = () => {
-            localStorage.setItem(ACTIVE_CONN_KEY, activeConnectionId.value)
-        }
-
-        const getActiveConnection = () => {
-            return connections.find(c => c.id === activeConnectionId.value)
-        }
-
-        const addConnection = (name, token) => {
-            const conn = {
-                id: generateId(),
-                name: name || '新对话',
-                token: token
-            }
-            connections.push(conn)
-            saveConnections()
-            return conn
-        }
-
-        const updateConnection = (id, name, token) => {
-            const conn = connections.find(c => c.id === id)
-            if (conn) {
-                conn.name = name
-                conn.token = token
-                saveConnections()
-            }
-        }
+        // --- 多连接管理（使用 composables）---
+        const { loadConnections, saveActiveConnection, getActiveConnection, addConnection, updateConnection } = connManager
 
         const deleteConnection = (id) => {
-            const index = connections.findIndex(c => c.id === id)
-            if (index !== -1) {
-                connections.splice(index, 1)
-                saveConnections()
-                // 如果删除的是当前活动连接，切换到第一个
-                if (activeConnectionId.value === id && connections.length > 0) {
-                    switchConnection(connections[0].id)
-                }
+            const wasActive = activeConnectionId.value === id
+            connManager.deleteConnection(id)
+            if (wasActive && connections.length > 0) {
+                switchConnection(connections[0].id)
             }
         }
 
@@ -346,25 +278,14 @@ export default {
 
             activeConnectionId.value = connId
             saveActiveConnection()
-
-            // 清空当前消息
             messages.splice(0)
+            socketManager.disconnect()
 
-            // 断开旧连接
-            if (socket) {
-                socket.disconnect()
-                socket = null
-            }
-            connected.value = false
-            socketConnected.value = false
-
-            // 使用新 token 重连
             const conn = getActiveConnection()
             if (conn) {
                 authToken.value = conn.token
                 connect()
             }
-
             showConnectionMenu.value = false
         }
 
@@ -429,56 +350,33 @@ export default {
 
         const connect = () => {
             if (!authToken.value) {
-                errorMsg.value = "请输入密钥"
+                socketManager.errorMsg.value = "请输入密钥"
                 return
             }
 
-            // 显示连接中状态
-            isConnecting.value = true
-            errorMsg.value = ''
-
-            // Connect
-            socket = io({
-                auth: { token: authToken.value }
-            })
-
-            socket.on('connect', () => {
-                connected.value = true
-                socketConnected.value = true
-                isConnecting.value = false
-                errorMsg.value = ''
-                saveToken()
-                socket.emit('load history', 50)
-                appendSystemMessage('已安全连接')
-            })
-
-            socket.on('connect_error', (err) => {
-                isConnecting.value = false
-                errorMsg.value = "连接失败: " + err.message
-                socketConnected.value = false
-            })
-
-            socket.on('disconnect', () => {
-                socketConnected.value = false
-                appendSystemMessage('连接已断开')
-            })
-
-            socket.on('chat message', (msg) => {
-                appendMessage(msg)
-                scrollToBottom()
-            })
-
-            socket.on('history loaded', (history) => {
-                if(history) {
-                    history.forEach(appendMessage)
+            socketManager.connect(authToken.value, {
+                onConnect: () => {
+                    saveToken()
+                    appendSystemMessage('已安全连接')
+                },
+                onDisconnect: () => {
+                    appendSystemMessage('连接已断开')
+                },
+                onMessage: (msg) => {
+                    appendMessage(msg)
                     scrollToBottom()
+                },
+                onHistoryLoaded: (history) => {
+                    if (history) {
+                        history.forEach(appendMessage)
+                        scrollToBottom()
+                    }
                 }
             })
         }
 
         const disconnect = () => {
-            if (socket) socket.disconnect()
-            connected.value = false
+            socketManager.disconnect()
             messages.splice(0)
         }
 
@@ -515,14 +413,14 @@ export default {
                 size: img.size
             }))
 
-            socket.emit('chat message', {
+            socketManager.emit('chat message', {
                 text: inputText.value,
                 source: 'mobile',
                 attachments: attachments.length > 0 ? attachments : undefined
             })
 
             inputText.value = ''
-            pendingImages.splice(0) // Clear pending images
+            imageHandler.clearPendingImages()
             nextTick(() => {
                 if(inputArea.value) {
                     inputArea.value.style.height = 'auto'
@@ -531,22 +429,10 @@ export default {
             })
         }
 
-        // --- Image Handling ---
-        const handlePaste = (e) => {
-            const items = e.clipboardData?.items
-            if (!items) return
-
-            for (const item of items) {
-                if (item.type.startsWith('image/')) {
-                    e.preventDefault()
-                    const file = item.getAsFile()
-                    if (file) {
-                        processImageFile(file)
-                    }
-                    break
-                }
-            }
-        }
+        // --- Image Handling (使用 composables) ---
+        const handlePaste = (e) => imageHandler.handlePaste(e, appendSystemMessage)
+        const handleFileSelect = (e) => imageHandler.handleFileSelect(e, appendSystemMessage)
+        const removePendingImage = (index) => imageHandler.removePendingImage(index)
 
         const triggerFileInput = () => {
             if (fileInput.value) {
@@ -554,66 +440,8 @@ export default {
             }
         }
 
-        const handleFileSelect = (e) => {
-            const files = e.target.files
-            if (!files) return
-            for (const file of files) {
-                if (file.type.startsWith('image/')) {
-                    processImageFile(file)
-                }
-            }
-            // Reset input so same file can be selected again
-            e.target.value = ''
-        }
-
-        const processImageFile = (file) => {
-            // 检查文件大小
-            if (file.size > MAX_IMAGE_SIZE) {
-                const sizeMB = (file.size / 1024 / 1024).toFixed(2)
-                appendSystemMessage(`图片过大 (${sizeMB}MB)，请选择小于 5MB 的图片`)
-                return
-            }
-
-            const reader = new FileReader()
-            reader.onload = (e) => {
-                const dataUrl = e.target?.result
-                if (dataUrl) {
-                    pendingImages.push({
-                        data: dataUrl,
-                        filename: file.name || 'image.png',
-                        size: file.size
-                    })
-                }
-            }
-            reader.readAsDataURL(file)
-        }
-
-        const removePendingImage = (index) => {
-            pendingImages.splice(index, 1)
-        }
-
-        // --- Image Preview ---
-        const openImage = (src) => {
-            previewImage.value = src
-            previewScale.value = 1
-        }
-
-        const closePreview = () => {
-            previewImage.value = null
-            previewScale.value = 1
-        }
-
-        const zoomIn = () => {
-            previewScale.value = Math.min(previewScale.value + 0.25, 3)
-        }
-
-        const zoomOut = () => {
-            previewScale.value = Math.max(previewScale.value - 0.25, 0.5)
-        }
-
-        const resetZoom = () => {
-            previewScale.value = 1
-        }
+        // --- Image Preview (使用 composables) ---
+        const { openImage, closePreview, zoomIn, zoomOut, resetZoom } = imagePreview
 
         // --- UI Utilities ---
         const scrollToBottom = () => {
@@ -629,35 +457,7 @@ export default {
             e.target.style.height = e.target.scrollHeight + 'px'
         }
 
-        const parseMarkdown = (text) => {
-            if(!text) return ''
-            return text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="image-link">$1</a>')
-        }
-
-        const formatTime = (ts) => {
-            const date = new Date(ts)
-            return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`
-        }
-
-        const formatDividerDate = (ts) => {
-            const date = new Date(ts)
-            const now = new Date()
-            if (date.toDateString() === now.toDateString()) {
-                return formatTime(ts)
-            }
-            return `${date.getMonth()+1}-${date.getDate()} ${formatTime(ts)}`
-        }
-
-        const showTimeDivider = (current, prev) => {
-            if (!prev) return true
-            return (current.timestamp - prev.timestamp) > 5 * 60 * 1000
-        }
-
-        const getImageSrc = (att) => {
-            if (att.url) return att.url
-            if (att.data) return att.data.startsWith('data:') ? att.data : `data:image/png;base64,${att.data}`
-            return ''
-        }
+        // 格式化函数已从 ../utils/formatters.js 导入
 
         onMounted(() => {
             loadConnections()
@@ -674,7 +474,7 @@ export default {
         })
 
         onUnmounted(() => {
-            if (socket) socket.disconnect()
+            socketManager.disconnect()
         })
 
         return {

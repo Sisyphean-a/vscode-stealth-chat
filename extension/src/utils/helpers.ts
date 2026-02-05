@@ -1,0 +1,64 @@
+/**
+ * 工具函数
+ */
+import * as vscode from "vscode";
+import { Connection } from "../types";
+
+/**
+ * 生成随机 nonce 字符串
+ */
+export function getNonce(): string {
+  let text = "";
+  const possible =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}
+
+/**
+ * 获取当前时间戳字符串 HH:MM:SS
+ */
+export function getCurrentTimestamp(): string {
+  const now = new Date();
+  const hours = now.getHours().toString().padStart(2, "0");
+  const minutes = now.getMinutes().toString().padStart(2, "0");
+  const seconds = now.getSeconds().toString().padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+/**
+ * 格式化 Date 对象为时间戳字符串
+ */
+export function formatTimestamp(date: Date): string {
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+/**
+ * 获取当前活动连接配置
+ */
+export function getActiveConnection(): Connection & { serverUrl: string } {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const connections = config.get<Connection[]>("connections") || [];
+  const activeName = config.get<string>("activeConnection");
+
+  if (connections.length > 0) {
+    const found = connections.find((c) => c.name === activeName) || connections[0];
+    return {
+      name: found.name,
+      serverUrl: found.serverUrl || config.get<string>("serverUrl") || "http://localhost:3000",
+      token: found.token,
+    };
+  }
+
+  // 回退到旧配置
+  return {
+    name: "Default",
+    serverUrl: config.get<string>("serverUrl") || "http://localhost:3000",
+    token: config.get<string>("secret") || "ChangeMeInProduction",
+  };
+}
