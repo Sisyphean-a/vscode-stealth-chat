@@ -33,6 +33,7 @@ export default {
                 </div>
                 <div class="nav-actions">
                     <span class="uptime-badge">运行时间: {{ formatUptime(stats.uptime) }}</span>
+                    <el-button plain size="small" @click="openPasswordDialog" class="pwd-btn">修改密码</el-button>
                     <el-button plain size="small" @click="logout" class="logout-btn">退出</el-button>
                 </div>
             </div>
@@ -145,6 +146,27 @@ export default {
                     </span>
                 </template>
             </el-dialog>
+
+            <!-- Password Dialog -->
+            <el-dialog v-model="pwdDialogVisible" title="修改管理员密码" width="400px" class="glass-dialog">
+                <el-form :model="pwdForm" label-width="80px" class="edit-form">
+                    <el-form-item label="当前密码">
+                        <el-input v-model="pwdForm.currentPassword" type="password" placeholder="请输入当前密码" show-password class="modal-input"></el-input>
+                    </el-form-item>
+                    <el-form-item label="新密码">
+                        <el-input v-model="pwdForm.newPassword" type="password" placeholder="至少 6 位" show-password class="modal-input"></el-input>
+                    </el-form-item>
+                    <el-form-item label="确认密码">
+                        <el-input v-model="pwdForm.confirmPassword" type="password" placeholder="再次输入新密码" show-password class="modal-input"></el-input>
+                    </el-form-item>
+                </el-form>
+                <template #footer>
+                    <span class="dialog-footer">
+                        <el-button @click="pwdDialogVisible = false" class="cancel-btn">取消</el-button>
+                        <el-button type="primary" @click="submitPassword" :loading="pwdLoading" class="save-btn">确认修改</el-button>
+                    </span>
+                </template>
+            </el-dialog>
         </div>
     </div>
     `,
@@ -160,6 +182,11 @@ export default {
         const dialogVisible = ref(false)
         const isEdit = ref(false)
         const form = reactive({ id: '', name: '', token: '', gotifyToken: '' })
+
+        // Password Dialog
+        const pwdDialogVisible = ref(false)
+        const pwdLoading = ref(false)
+        const pwdForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 
         // Logic
         const login = async () => {
@@ -299,6 +326,55 @@ export default {
             return `${hours}小时 ${min % 60}分`
         }
 
+        const openPasswordDialog = () => {
+            pwdForm.currentPassword = ''
+            pwdForm.newPassword = ''
+            pwdForm.confirmPassword = ''
+            pwdDialogVisible.value = true
+        }
+
+        const submitPassword = async () => {
+            if (!pwdForm.currentPassword) {
+                ElMessage.warning('请输入当前密码')
+                return
+            }
+            if (pwdForm.newPassword.length < 6) {
+                ElMessage.warning('新密码长度至少 6 位')
+                return
+            }
+            if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+                ElMessage.warning('两次输入的密码不一致')
+                return
+            }
+
+            pwdLoading.value = true
+            try {
+                const res = await fetch('/api/admin/password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token.value}`
+                    },
+                    body: JSON.stringify({
+                        currentPassword: pwdForm.currentPassword,
+                        newPassword: pwdForm.newPassword
+                    })
+                })
+                const data = await res.json()
+                if (res.ok) {
+                    ElMessage.success('密码已更新，请重新登录')
+                    pwdDialogVisible.value = false
+                    logout()
+                } else {
+                    ElMessage.error(data.error || '修改失败')
+                }
+            } catch (e) {
+                ElMessage.error('网络错误')
+            } finally {
+                pwdLoading.value = false
+            }
+        }
+
         onMounted(() => {
             if (token.value) {
                 fetchStatus()
@@ -308,7 +384,8 @@ export default {
         return {
             password, token, loading, errorMsg, stats,
             login, logout, formatUptime, deleteApp, copyToken,
-            dialogVisible, isEdit, form, openDialog, submitForm, generateToken
+            dialogVisible, isEdit, form, openDialog, submitForm, generateToken,
+            pwdDialogVisible, pwdLoading, pwdForm, openPasswordDialog, submitPassword
         }
     }
 }

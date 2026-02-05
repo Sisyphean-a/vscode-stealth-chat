@@ -2,19 +2,17 @@ const express = require('express');
 const router = express.Router();
 const config = require('../config');
 const db = require('../db');
-const { initSocket } = require('../socket'); // We might need this to reload namespaces if we were using namespaces, but we are using Rooms in Main namespace. Config changes affect next auth attempt immediately.
+const settings = require('../settings');
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
-
-// Middleware to check admin password
+// Middleware to check session token
 const authMiddleware = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const token = authHeader.split(' ')[1]; // "Bearer <password>"
-    if (token !== ADMIN_PASSWORD) {
+    const token = authHeader.split(' ')[1]; // "Bearer <token>"
+    if (!settings.verifyToken(token)) {
         return res.status(403).json({ error: 'Forbidden' });
     }
     next();
@@ -23,8 +21,9 @@ const authMiddleware = (req, res, next) => {
 // Login check
 router.post('/login', (req, res) => {
     const { password } = req.body;
-    if (password === ADMIN_PASSWORD) {
-        res.json({ success: true, token: password });
+    if (settings.verifyPassword(password)) {
+        const token = settings.generateToken();
+        res.json({ success: true, token });
     } else {
         res.status(401).json({ error: 'Invalid password' });
     }
@@ -75,6 +74,29 @@ router.delete('/apps/:id', (req, res) => {
         res.json({ success: true });
     } else {
         res.status(404).json({ error: 'App not found' });
+    }
+});
+
+// Change Admin Password
+router.post('/password', (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: '请提供当前密码和新密码' });
+    }
+
+    if (newPassword.length < 6) {
+        return res.status(400).json({ error: '新密码长度至少 6 位' });
+    }
+
+    if (!settings.verifyPassword(currentPassword)) {
+        return res.status(401).json({ error: '当前密码错误' });
+    }
+
+    if (settings.setPassword(newPassword)) {
+        res.json({ success: true, message: '密码已更新，请重新登录' });
+    } else {
+        res.status(500).json({ error: '保存密码失败' });
     }
 });
 
