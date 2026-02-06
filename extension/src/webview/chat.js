@@ -271,13 +271,26 @@
    */
   function loadHistory(messages) {
     clearMessages();
+    let lastDate = "";
     messages.forEach(msg => {
+      // 按日期插入分隔符
+      if (msg.timestamp && messagesContainer) {
+        const msgDate = new Date(msg.timestamp).toLocaleDateString();
+        if (msgDate !== lastDate) {
+          const divider = createTimeDivider(msg.timestamp);
+          messagesContainer.appendChild(divider);
+          lastDate = msgDate;
+        }
+        lastMessageTimestamp = msg.timestamp;
+      }
       appendMessage(msg, true);
     });
     // 更新最早时间戳
     if (messages.length > 0) {
       oldestTimestamp = messages[0].timestamp;
-      hasMoreHistory = true;
+      hasMoreHistory = messages.length >= 50;
+    } else {
+      hasMoreHistory = false;
     }
     // Scroll to bottom when loading history (first time or reconnect)
     scrollToBottom(true);
@@ -320,13 +333,40 @@
       oldestTimestamp = sorted[0].timestamp;
     }
 
-    // 在顶部插入消息
+    // 找到当前第一条消息元素（跳过 empty-state 和 loading-indicator）
     const firstChild = messagesContainer.firstChild;
+
+    // 获取当前已有的第一条消息的日期，用于判断是否需要在衔接处插入分隔符
+    const existingFirstMsg = /** @type {HTMLElement | null} */ (messagesContainer.querySelector('.message-wrapper'));
+    const existingFirstDate = existingFirstMsg?.dataset.timestamp
+      ? new Date(Number(existingFirstMsg.dataset.timestamp)).toLocaleDateString()
+      : null;
+
+    // 在顶部插入消息和日期分隔符
+    let lastDate = "";
+    const fragment = document.createDocumentFragment();
     sorted.forEach(msg => {
+      if (msg.timestamp) {
+        const msgDate = new Date(msg.timestamp).toLocaleDateString();
+        if (msgDate !== lastDate) {
+          fragment.appendChild(createTimeDivider(msg.timestamp));
+          lastDate = msgDate;
+        }
+      }
       const messageEl = createMessageElement(msg);
       bindImageLinkEvents(messageEl);
-      messagesContainer.insertBefore(messageEl, firstChild);
+      fragment.appendChild(messageEl);
     });
+
+    // 如果新消息最后一天和已有消息第一天相同，移除已有的那个日期分隔符
+    if (lastDate && existingFirstDate && lastDate === existingFirstDate) {
+      const firstDivider = messagesContainer.querySelector('.time-divider');
+      if (firstDivider) {
+        firstDivider.remove();
+      }
+    }
+
+    messagesContainer.insertBefore(fragment, firstChild);
 
     // 保持滚动位置
     const newScrollHeight = messagesContainer.scrollHeight;
@@ -370,10 +410,13 @@
       emptyState.style.display = 'none';
     }
 
-    // Add time divider if needed (more than 5 minutes gap)
+    // Add date divider if date changed
     if (!skipDivider && msg.timestamp) {
-      const timeDiff = msg.timestamp - lastMessageTimestamp;
-      if (timeDiff > 5 * 60 * 1000 || lastMessageTimestamp === 0) {
+      const lastDate = lastMessageTimestamp > 0
+        ? new Date(lastMessageTimestamp).toLocaleDateString()
+        : "";
+      const msgDate = new Date(msg.timestamp).toLocaleDateString();
+      if (msgDate !== lastDate) {
         const divider = createTimeDivider(msg.timestamp);
         messagesContainer.appendChild(divider);
       }
@@ -429,7 +472,13 @@
     const div = document.createElement('div');
     div.className = 'time-divider';
     const time = new Date(timestamp);
-    div.innerHTML = `<span>${formatTime(time)}</span>`;
+    const label = formatDateLabel(time);
+
+    if (displayMode === 'log') {
+      div.innerHTML = `<span>══ ${label} ══</span>`;
+    } else {
+      div.innerHTML = `<span>${label}</span>`;
+    }
     return div;
   }
 
@@ -438,10 +487,13 @@
    * @returns {HTMLElement}
    */
   function createMessageElement(msg) {
-    if (displayMode === 'log') {
-      return createLogMessageElement(msg);
+    const el = displayMode === 'log'
+      ? createLogMessageElement(msg)
+      : createBubbleMessageElement(msg);
+    if (msg.timestamp) {
+      el.dataset.timestamp = String(msg.timestamp);
     }
-    return createBubbleMessageElement(msg);
+    return el;
   }
 
   /**
@@ -650,6 +702,31 @@
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
     return hours + ':' + minutes;
+  }
+
+  /**
+   * @param {Date} date
+   * @returns {string}
+   */
+  function formatDateLabel(date) {
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const dateStr = date.toLocaleDateString();
+    if (dateStr === today.toLocaleDateString()) {
+      return "今天";
+    }
+    if (dateStr === yesterday.toLocaleDateString()) {
+      return "昨天";
+    }
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    if (year === today.getFullYear()) {
+      return `${month}-${day}`;
+    }
+    return `${year}-${month}-${day}`;
   }
 
   /**
