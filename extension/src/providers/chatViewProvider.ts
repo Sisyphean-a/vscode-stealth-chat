@@ -6,6 +6,7 @@ import { getChatHtml } from "../webview/chatContent";
 import { getNonce, getCurrentTimestamp } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as messageCache from "../services/messageCache";
+import * as configService from "../services/configService";
 import { openImagePreview } from "../ui/imagePreview";
 
 let webviewView: vscode.WebviewView | undefined;
@@ -65,6 +66,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case "openImage":
           openImagePreview(message.payload.url);
+          break;
+        case "getConfig":
+          this.sendConfig(view);
+          break;
+        case "saveGlobalSettings":
+          this.handleSaveGlobalSettings(view, message.payload);
+          break;
+        case "saveConnection":
+          this.handleSaveConnection(view, message.payload);
+          break;
+        case "deleteConnection":
+          this.handleDeleteConnection(view, message.payload);
+          break;
+        case "setActiveConnection":
+          this.handleSetActiveConnection(view, message.payload);
+          break;
+        case "testConnection":
+          this.handleTestConnection(view, message.payload);
           break;
       }
     });
@@ -128,5 +147,100 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     };
     webviewView?.webview.postMessage({ type: "addMessage", payload: msg });
     messageCache.addToCache(msg);
+  }
+
+  private sendConfig(view: vscode.WebviewView): void {
+    view.webview.postMessage({
+      type: "configLoaded",
+      payload: {
+        globalSettings: configService.getGlobalSettings(),
+        connections: configService.getConnections(),
+        activeConnection: configService.getActiveConnectionName(),
+      },
+    });
+  }
+
+  private async handleSaveGlobalSettings(
+    view: vscode.WebviewView,
+    payload: any
+  ): Promise<void> {
+    try {
+      await configService.saveGlobalSettings(payload);
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: true, message: "Settings saved" },
+      });
+    } catch (error) {
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: false, message: "Failed to save settings" },
+      });
+    }
+  }
+
+  private async handleSaveConnection(
+    view: vscode.WebviewView,
+    payload: any
+  ): Promise<void> {
+    try {
+      await configService.saveConnection(payload.connection, payload.originalName);
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: true, message: "Connection saved" },
+      });
+    } catch (error) {
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: false, message: "Failed to save connection" },
+      });
+    }
+  }
+
+  private async handleDeleteConnection(
+    view: vscode.WebviewView,
+    payload: any
+  ): Promise<void> {
+    try {
+      await configService.deleteConnection(payload.name);
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: true, message: "Connection deleted" },
+      });
+    } catch (error) {
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: false, message: "Failed to delete connection" },
+      });
+    }
+  }
+
+  private async handleSetActiveConnection(
+    view: vscode.WebviewView,
+    payload: any
+  ): Promise<void> {
+    try {
+      await configService.setActiveConnection(payload.name);
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: true, message: "Active connection changed" },
+      });
+    } catch (error) {
+      view.webview.postMessage({
+        type: "operationResult",
+        payload: { success: false, message: "Failed to change connection" },
+      });
+    }
+  }
+
+  private async handleTestConnection(
+    view: vscode.WebviewView,
+    payload: any
+  ): Promise<void> {
+    const { name, serverUrl, token } = payload;
+    const result = await socketService.testConnection(serverUrl, token);
+    view.webview.postMessage({
+      type: "testResult",
+      payload: { name, ...result },
+    });
   }
 }

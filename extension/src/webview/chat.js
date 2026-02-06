@@ -19,6 +19,12 @@
   const sendButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('send-button'));
   /** @type {HTMLButtonElement | null} */
   const scrollToBottomBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('scroll-to-bottom'));
+  /** @type {HTMLButtonElement | null} */
+  const settingsBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('settings-btn'));
+  /** @type {HTMLElement | null} */
+  const settingsView = document.getElementById('settings-view');
+  /** @type {HTMLButtonElement | null} */
+  const settingsBackBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('settings-back-btn'));
 
   // State
   let autoScrollEnabled = true;
@@ -43,6 +49,28 @@
 
   // 图片大小限制 (5MB)
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+  // Settings state
+  /** @type {any[]} */
+  let connections = [];
+  let activeConnection = "";
+  /** @type {any} */
+  let editingConnection = null;
+
+  // Settings DOM elements
+  const serverUrlInput = /** @type {HTMLInputElement | null} */ (document.getElementById("serverUrl"));
+  const autoRevealCheckbox = /** @type {HTMLInputElement | null} */ (document.getElementById("autoReveal"));
+  const displayModeSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("displayMode"));
+  const saveGlobalBtn = document.getElementById("saveGlobalBtn");
+  const connectionList = document.getElementById("connectionList");
+  const addConnectionBtn = document.getElementById("addConnectionBtn");
+  const modal = document.getElementById("modal");
+  const modalTitle = document.getElementById("modalTitle");
+  const connNameInput = /** @type {HTMLInputElement | null} */ (document.getElementById("connName"));
+  const connServerUrlInput = /** @type {HTMLInputElement | null} */ (document.getElementById("connServerUrl"));
+  const connTokenInput = /** @type {HTMLInputElement | null} */ (document.getElementById("connToken"));
+  const modalCancelBtn = document.getElementById("modalCancelBtn");
+  const modalSaveBtn = document.getElementById("modalSaveBtn");
 
   // ============================================================================
   // Event Listeners
@@ -109,6 +137,33 @@
     });
   }
 
+  // Settings button - show settings view
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      showSettingsView();
+      vscode.postMessage({ type: "getConfig" });
+    });
+  }
+
+  // Settings back button - hide settings view
+  if (settingsBackBtn) {
+    settingsBackBtn.addEventListener('click', hideSettingsView);
+  }
+
+  // Settings form event listeners
+  if (saveGlobalBtn) {
+    saveGlobalBtn.addEventListener("click", saveGlobalSettings);
+  }
+  if (addConnectionBtn) {
+    addConnectionBtn.addEventListener("click", () => openModal());
+  }
+  if (modalCancelBtn) {
+    modalCancelBtn.addEventListener("click", closeModal);
+  }
+  if (modalSaveBtn) {
+    modalSaveBtn.addEventListener("click", saveConnectionHandler);
+  }
+
   // Detect manual scroll
   if (messagesContainer) {
     messagesContainer.addEventListener('scroll', () => {
@@ -164,6 +219,15 @@
         break;
       case 'clearMessages':
         clearMessages();
+        break;
+      case 'configLoaded':
+        loadConfig(message.payload);
+        break;
+      case 'operationResult':
+        handleOperationResult(message.payload);
+        break;
+      case 'testResult':
+        handleTestResult(message.payload);
         break;
     }
   });
@@ -336,7 +400,7 @@
 
   function clearMessages() {
     if (!messagesContainer) return;
-    messagesContainer.innerHTML = '<div id="empty-state">No messages yet</div>';
+    messagesContainer.innerHTML = '<div id="empty-state">暂无消息</div>';
     lastMessageTimestamp = 0;
   }
 
@@ -644,13 +708,13 @@
    */
   function updateStatus(connected) {
     if (!statusIndicator || !statusText) return;
-    
+
     if (connected) {
       statusIndicator.className = 'status-connected';
-      statusText.textContent = 'Connected';
+      statusText.textContent = '已连接';
     } else {
       statusIndicator.className = 'status-disconnected';
-      statusText.textContent = 'Disconnected';
+      statusText.textContent = '已断开';
     }
   }
 
@@ -764,6 +828,205 @@
       payload: { url }
     });
   };
+
+  // ============================================================================
+  // Settings View Functions
+  // ============================================================================
+
+  function showSettingsView() {
+    if (!settingsView) return;
+    settingsView.classList.remove('hidden');
+    requestAnimationFrame(() => {
+      settingsView.classList.add('visible');
+    });
+  }
+
+  function hideSettingsView() {
+    if (!settingsView) return;
+    settingsView.classList.remove('visible');
+    setTimeout(() => {
+      settingsView.classList.add('hidden');
+    }, 200);
+  }
+
+  /**
+   * @param {any} payload
+   */
+  function loadConfig(payload) {
+    const { globalSettings, connections: conns, activeConnection: active } = payload;
+
+    // Global settings
+    if (serverUrlInput) serverUrlInput.value = globalSettings.serverUrl || "";
+    const transportRadio = document.querySelector(`input[name="transport"][value="${globalSettings.forceWebsocket ? "websocket" : "auto"}"]`);
+    if (transportRadio) /** @type {HTMLInputElement} */ (transportRadio).checked = true;
+    if (autoRevealCheckbox) autoRevealCheckbox.checked = globalSettings.autoReveal || false;
+    if (displayModeSelect) displayModeSelect.value = globalSettings.displayMode || "bubble";
+
+    // Connections
+    connections = conns || [];
+    activeConnection = active || "";
+    renderConnections();
+  }
+
+  function renderConnections() {
+    if (!connectionList) return;
+    connectionList.innerHTML = connections.map((conn) => `
+      <div class="connection-item ${conn.name === activeConnection ? "active" : ""}" data-name="${escapeHtml(conn.name)}">
+        <input type="radio" name="activeConn" class="connection-radio"
+          ${conn.name === activeConnection ? "checked" : ""}>
+        <div class="connection-info">
+          <div class="connection-name">${escapeHtml(conn.name)}</div>
+          <div class="connection-url">${escapeHtml(conn.serverUrl || "默认")}</div>
+        </div>
+        <div class="connection-actions">
+          <button class="btn btn-small btn-secondary" data-action="test" data-name="${escapeHtml(conn.name)}">验证</button>
+          <button class="btn btn-small btn-secondary" data-action="edit" data-name="${escapeHtml(conn.name)}">编辑</button>
+          <button class="btn btn-small btn-secondary" data-action="delete" data-name="${escapeHtml(conn.name)}">删除</button>
+        </div>
+      </div>
+    `).join("");
+
+    // Bind events
+    connectionList.querySelectorAll('.connection-radio').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const item = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest('.connection-item'));
+        if (item) selectConnection(item.dataset.name || '');
+      });
+    });
+
+    connectionList.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const target = /** @type {HTMLElement} */ (e.target);
+        const action = target.dataset.action;
+        const name = target.dataset.name || '';
+        if (action === 'test') testConn(name);
+        else if (action === 'edit') editConn(name);
+        else if (action === 'delete') deleteConn(name);
+      });
+    });
+  }
+
+  function saveGlobalSettings() {
+    const transportRadio = /** @type {HTMLInputElement | null} */ (document.querySelector('input[name="transport"]:checked'));
+    vscode.postMessage({
+      type: "saveGlobalSettings",
+      payload: {
+        serverUrl: serverUrlInput?.value || '',
+        forceWebsocket: transportRadio?.value === "websocket",
+        autoReveal: autoRevealCheckbox?.checked || false,
+        displayMode: displayModeSelect?.value || 'bubble',
+      },
+    });
+  }
+
+  /**
+   * @param {any} conn
+   */
+  function openModal(conn = null) {
+    editingConnection = conn;
+    if (modalTitle) modalTitle.textContent = conn ? "编辑规则集" : "添加规则集";
+    if (connNameInput) connNameInput.value = conn?.name || "";
+    if (connServerUrlInput) connServerUrlInput.value = conn?.serverUrl || "";
+    if (connTokenInput) connTokenInput.value = conn?.token || "";
+    if (modal) modal.classList.remove("hidden");
+  }
+
+  function closeModal() {
+    if (modal) modal.classList.add("hidden");
+    editingConnection = null;
+  }
+
+  function saveConnectionHandler() {
+    const name = connNameInput?.value.trim() || '';
+    const token = connTokenInput?.value.trim() || '';
+    if (!name || !token) return;
+
+    vscode.postMessage({
+      type: "saveConnection",
+      payload: {
+        connection: {
+          name,
+          serverUrl: connServerUrlInput?.value.trim() || undefined,
+          token,
+        },
+        originalName: editingConnection?.name,
+      },
+    });
+    closeModal();
+  }
+
+  /**
+   * @param {string} name
+   */
+  function selectConnection(name) {
+    vscode.postMessage({ type: "setActiveConnection", payload: { name } });
+  }
+
+  /**
+   * @param {string} name
+   */
+  function editConn(name) {
+    const conn = connections.find((c) => c.name === name);
+    if (conn) openModal(conn);
+  }
+
+  /**
+   * @param {string} name
+   */
+  function deleteConn(name) {
+    if (confirm(`确定删除规则集 "${name}"?`)) {
+      vscode.postMessage({ type: "deleteConnection", payload: { name } });
+    }
+  }
+
+  /**
+   * @param {string} name
+   */
+  function testConn(name) {
+    const conn = connections.find((c) => c.name === name);
+    if (conn) {
+      vscode.postMessage({
+        type: "testConnection",
+        payload: {
+          name,
+          serverUrl: conn.serverUrl || serverUrlInput?.value || '',
+          token: conn.token,
+        },
+      });
+    }
+  }
+
+  /**
+   * @param {any} payload
+   */
+  function handleOperationResult(payload) {
+    if (payload.success) {
+      vscode.postMessage({ type: "getConfig" });
+    }
+  }
+
+  /**
+   * @param {any} payload
+   */
+  function handleTestResult(payload) {
+    const { name, success, latency } = payload;
+    const item = document.querySelector(`.connection-item[data-name="${name}"]`);
+    if (!item) return;
+
+    // Remove existing badge
+    const existing = item.querySelector(".status-badge");
+    if (existing) existing.remove();
+
+    // Add new badge
+    const badge = document.createElement("span");
+    badge.className = `status-badge ${success ? "success" : "error"}`;
+    badge.textContent = success ? `${latency}ms` : "失败";
+    const infoEl = item.querySelector(".connection-info");
+    if (infoEl) infoEl.appendChild(badge);
+
+    // Auto remove after 5s
+    setTimeout(() => badge.remove(), 5000);
+  }
 
   // ============================================================================
   // Initialization

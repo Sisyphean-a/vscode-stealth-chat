@@ -34,11 +34,6 @@
           "type": "webview",
           "id": "tsLintChat.chatView",
           "name": "Service Monitor"
-        },
-        {
-          "type": "webview",
-          "id": "tsLintChat.settingsView",
-          "name": "Rule Configuration"
         }
       ]
     },
