@@ -29,6 +29,29 @@ export async function saveGlobalSettings(settings: GlobalSettings): Promise<void
 }
 
 /**
+ * 确保默认连接配置存在
+ * 当 connections 为空时，基于旧配置自动创建默认连接
+ */
+export async function ensureDefaultConnection(): Promise<void> {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const connections = config.get<Connection[]>("connections") || [];
+  if (connections.length > 0) {
+    return;
+  }
+
+  const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+  const token = config.get<string>("secret") || "ChangeMeInProduction";
+  const defaultConn: Connection = {
+    name: "本地默认",
+    serverUrl,
+    token,
+  };
+
+  await config.update("connections", [defaultConn], true);
+  await config.update("activeConnection", defaultConn.name, true);
+}
+
+/**
  * 获取连接列表
  */
 export function getConnections(): Connection[] {

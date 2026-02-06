@@ -9,11 +9,12 @@ import * as socketService from "./services/socketService";
 import * as messageCache from "./services/messageCache";
 import * as statusBar from "./ui/statusBar";
 import { ChatViewProvider, getWebviewView } from "./providers/chatViewProvider";
+import { ensureDefaultConnection } from "./services/configService";
 
 const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 let outputChannel: vscode.OutputChannel;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   // 创建输出通道
   outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
   socketService.setOutputChannel(outputChannel);
@@ -21,6 +22,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 创建状态栏
   const statusBarItem = statusBar.createStatusBar();
   context.subscriptions.push(statusBarItem);
+
+  // 确保默认连接配置存在
+  await ensureDefaultConnection();
 
   // 获取配置并连接
   const config = vscode.workspace.getConfiguration("tsLint");
@@ -142,7 +146,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
       const connections = config.get<Connection[]>("connections") || [];
 
       if (connections.length === 0) {
-        vscode.window.showInformationMessage("No rule sets configured.");
+        vscode.window.showInformationMessage("未配置任何连接。");
         return;
       }
 
@@ -154,7 +158,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
       }));
 
       const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: "Select Rule Set",
+        placeHolder: "选择连接配置",
       });
 
       if (selected && selected.label !== currentActive) {

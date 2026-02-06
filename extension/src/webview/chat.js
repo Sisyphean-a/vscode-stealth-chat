@@ -924,7 +924,7 @@
    */
   function openModal(conn = null) {
     editingConnection = conn;
-    if (modalTitle) modalTitle.textContent = conn ? "编辑规则集" : "添加规则集";
+    if (modalTitle) modalTitle.textContent = conn ? "编辑连接配置" : "添加连接配置";
     if (connNameInput) connNameInput.value = conn?.name || "";
     if (connServerUrlInput) connServerUrlInput.value = conn?.serverUrl || "";
     if (connTokenInput) connTokenInput.value = conn?.token || "";
@@ -974,7 +974,7 @@
    * @param {string} name
    */
   function deleteConn(name) {
-    if (confirm(`确定删除规则集 "${name}"?`)) {
+    if (confirm(`确定删除连接配置 "${name}"?`)) {
       vscode.postMessage({ type: "deleteConnection", payload: { name } });
     }
   }

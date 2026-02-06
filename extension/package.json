@@ -50,7 +50,7 @@
       },
       {
         "command": "tsLintService.switchConnection",
-        "title": "Switch Rule Set",
+        "title": "Switch Connection",
         "category": "TS-Lint"
       }
     ],
@@ -86,11 +86,11 @@
         "tsLint.connections": {
           "type": "array",
           "default": [],
-          "description": "Rule set configurations",
+          "description": "Connection configurations",
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string", "description": "Rule set name" },
+              "name": { "type": "string", "description": "Connection name" },
               "serverUrl": { "type": "string", "description": "Server URL" },
               "token": { "type": "string", "description": "Authentication token" }
             },
@@ -100,7 +100,7 @@
         "tsLint.activeConnection": {
           "type": "string",
           "default": "",
-          "description": "Active rule set name"
+          "description": "Active connection name"
         }
       }
     },
