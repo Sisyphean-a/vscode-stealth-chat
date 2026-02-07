@@ -1,8 +1,27 @@
+# 开发文件
 .vscode/**
 .vscode-test/**
 src/**
-!src/webview/**
+out/**
+node_modules/**
 .gitignore
-yarn.lock
+.gitattributes
+.editorconfig
 
-out/**/*.map
+# 构建相关
+tsconfig.json
+esbuild.js
+*.map
+
+# 文档和配置
+*.md
+.eslintrc.json
+.prettierrc
+
+# 其他
+yarn.lock
+package-lock.json
+.DS_Store
+
+# 保留必要的 webview 资源
+!src/webview/**

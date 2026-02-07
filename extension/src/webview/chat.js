@@ -292,6 +292,8 @@
     } else {
       hasMoreHistory = false;
     }
+    // 更新空状态显示
+    updateEmptyState();
     // Scroll to bottom when loading history (first time or reconnect)
     scrollToBottom(true);
   }
@@ -378,6 +380,12 @@
    */
   function showLoadingIndicator() {
     if (!messagesContainer) return;
+    
+    // 隐藏空状态提示
+    if (emptyState) {
+      emptyState.style.display = 'none';
+    }
+    
     let indicator = document.getElementById('loading-indicator');
     if (!indicator) {
       indicator = document.createElement('div');
@@ -396,6 +404,9 @@
     if (indicator) {
       indicator.remove();
     }
+    
+    // 如果没有消息,显示空状态提示
+    updateEmptyState();
   }
 
   /**
@@ -445,6 +456,30 @@
     if (!messagesContainer) return;
     messagesContainer.innerHTML = '<div id="empty-state">暂无消息</div>';
     lastMessageTimestamp = 0;
+    oldestTimestamp = null;
+    hasMoreHistory = true;
+  }
+
+  /**
+   * 更新空状态显示
+   */
+  function updateEmptyState() {
+    if (!messagesContainer) return;
+    
+    // 动态获取 emptyState 元素(因为 clearMessages 会重新创建它)
+    const currentEmptyState = document.getElementById('empty-state');
+    if (!currentEmptyState) return;
+    
+    // 检查是否有实际消息(排除 empty-state 和 loading-indicator)
+    const hasMessages = Array.from(messagesContainer.children).some(
+      child => child.id !== 'empty-state' && child.id !== 'loading-indicator'
+    );
+    
+    // 检查是否正在加载
+    const isLoading = document.getElementById('loading-indicator') !== null;
+    
+    // 只有在没有消息且不在加载时才显示空状态
+    currentEmptyState.style.display = (!hasMessages && !isLoading) ? 'block' : 'none';
   }
 
   /**
