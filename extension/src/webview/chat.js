@@ -49,6 +49,7 @@
   let hasMoreHistory = true;
   /** @type {number | null} */
   let oldestTimestamp = null;
+  let isFirstLoad = true;
 
   // 图片大小限制 (5MB)
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -234,7 +235,10 @@
     hideLoadMoreButton();
     if (hasMoreHistory) showLoadMoreButton();
     updateEmptyState();
-    scrollToBottom(true);
+    if (isFirstLoad) {
+      scrollToBottom(true);
+      isFirstLoad = false;
+    }
   }
 
   function loadMoreHistory() {
@@ -264,7 +268,6 @@
       return;
     }
 
-    const prevScrollHeight = messagesContainer.scrollHeight;
     const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
     if (sorted.length > 0) {
@@ -297,10 +300,11 @@
       if (firstDivider) firstDivider.remove();
     }
 
+    const prevScrollHeight = messagesContainer.scrollHeight;
     messagesContainer.insertBefore(fragment, firstChild);
+    if (hasMore) showLoadMoreButton();
     const newScrollHeight = messagesContainer.scrollHeight;
     messagesContainer.scrollTop = newScrollHeight - prevScrollHeight;
-    if (hasMore) showLoadMoreButton();
   }
 
   function showLoadMoreButton() {
@@ -363,6 +367,7 @@
     lastMessageTimestamp = 0;
     oldestTimestamp = null;
     hasMoreHistory = true;
+    isFirstLoad = true;
   }
 
   function updateEmptyState() {

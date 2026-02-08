@@ -46,7 +46,9 @@ export function connectToServer(
       outputChannel?.appendLine(`[Info - ${timestamp}] TS-Lint Service connected`);
       statusBar.setTooltip("TS-Lint Service 已连接");
       statusBar.updateStatusBar();
-      socket?.emit("load history", 50);
+      if (!historyLoaded) {
+        socket?.emit("load history", 50);
+      }
       callbacks.onConnect?.();
     });
 
