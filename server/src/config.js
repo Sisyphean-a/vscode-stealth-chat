@@ -7,7 +7,7 @@ const CONFIG_FILE = path.join(DATA_DIR, 'apps.json');
 
 // Legacy/Env Defaults
 const GLOBAL_GOTIFY_URL = process.env.GOTIFY_URL || 'http://gotify:80/message';
-const CLICK_URL = process.env.CLICK_URL || "http://localhost:3000";
+const CLICK_URL = process.env.CLICK_URL || "https://chat.sisyphean.top";
 
 // In-memory cache
 let appsCache = [];
@@ -116,7 +116,9 @@ function addApp(appData) {
         name: appData.name || appData.id,
         token: appData.token,
         gotifyToken: appData.gotifyToken || '',
-        gotifyUrl: appData.gotifyUrl || GLOBAL_GOTIFY_URL
+        gotifyUrl: appData.gotifyUrl || GLOBAL_GOTIFY_URL,
+        gotifyPriority: appData.gotifyPriority ?? 10,
+        clickUrl: appData.clickUrl || ''
     };
 
     appsCache.push(newApp);

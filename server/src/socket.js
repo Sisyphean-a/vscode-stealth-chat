@@ -96,14 +96,15 @@ function initSocket(httpServer) {
           // 重新读取最新配置，避免使用连接时缓存的旧对象（Admin 面板更新后 token 可能已变）
           const latestApp = config.findAppById(appId) || app;
           console.log(`[Socket] Message from VS Code (App: ${latestApp.name}), triggering Gotify...`);
-          const targetUrl = msg.clickUrl || CLICK_URL;
+          const targetUrl = latestApp.clickUrl || msg.clickUrl || CLICK_URL;
+          const priority = latestApp.gotifyPriority ?? 10;
           const pushText = finalMessage.attachments
             ? "[图片]"
             : finalMessage.text;
 
           // Pass app config to Gotify service (异步等待)
           try {
-            await sendNotification("New Reply", pushText, 8, targetUrl, latestApp);
+            await sendNotification("New Reply", pushText, priority, targetUrl, latestApp);
           } catch (notifyErr) {
             console.error('[Socket] Gotify push failed:', notifyErr.message);
           }

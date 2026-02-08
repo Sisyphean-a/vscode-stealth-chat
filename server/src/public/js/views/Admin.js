@@ -138,6 +138,12 @@ export default {
                     <el-form-item label="Gotify">
                         <el-input v-model="form.gotifyToken" placeholder="Gotify Token (可选)" class="modal-input"></el-input>
                     </el-form-item>
+                    <el-form-item label="推送级别">
+                        <el-input-number v-model="form.gotifyPriority" :min="0" :max="10" :step="1" controls-position="right" style="width: 100%"></el-input-number>
+                    </el-form-item>
+                    <el-form-item label="点击URL">
+                        <el-input v-model="form.clickUrl" placeholder="推送点击跳转地址 (可选)" class="modal-input"></el-input>
+                    </el-form-item>
                 </el-form>
                 <template #footer>
                     <span class="dialog-footer">
@@ -181,7 +187,7 @@ export default {
         // Dialog
         const dialogVisible = ref(false)
         const isEdit = ref(false)
-        const form = reactive({ id: '', name: '', token: '', gotifyToken: '' })
+        const form = reactive({ id: '', name: '', token: '', gotifyToken: '', gotifyPriority: 10, clickUrl: '' })
 
         // Password Dialog
         const pwdDialogVisible = ref(false)
@@ -249,13 +255,19 @@ export default {
         const openDialog = (row) => {
             if (row) {
                 isEdit.value = true
-                Object.assign(form, row)
+                Object.assign(form, {
+                    gotifyPriority: 10,
+                    clickUrl: '',
+                    ...row
+                })
             } else {
                 isEdit.value = false
                 form.id = ''
                 form.name = ''
                 form.token = ''
                 form.gotifyToken = ''
+                form.gotifyPriority = 10
+                form.clickUrl = ''
             }
             dialogVisible.value = true
         }
