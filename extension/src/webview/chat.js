@@ -129,10 +129,6 @@
       } else {
         autoScrollEnabled = false;
       }
-
-      if (scrollTop < 50 && hasMoreHistory && !isLoadingMore && oldestTimestamp) {
-        loadMoreHistory();
-      }
     });
   }
 
@@ -234,15 +230,19 @@
     } else {
       hasMoreHistory = false;
     }
+    isLoadingMore = false;
+    hideLoadMoreButton();
+    if (hasMoreHistory) showLoadMoreButton();
     updateEmptyState();
     scrollToBottom(true);
   }
 
   function loadMoreHistory() {
-    if (isLoadingMore || !hasMoreHistory || !oldestTimestamp) return;
+    if (isLoadingMore || !hasMoreHistory || !oldestTimestamp) {
+      return;
+    }
 
     isLoadingMore = true;
-    showLoadingIndicator();
 
     vscode.postMessage({
       type: 'loadMoreHistory',
@@ -257,9 +257,12 @@
   function prependHistory(messages, hasMore) {
     isLoadingMore = false;
     hasMoreHistory = hasMore;
-    hideLoadingIndicator();
+    hideLoadMoreButton();
 
-    if (!messagesContainer || messages.length === 0) return;
+    if (!messagesContainer || messages.length === 0) {
+      if (hasMore) showLoadMoreButton();
+      return;
+    }
 
     const prevScrollHeight = messagesContainer.scrollHeight;
     const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
@@ -297,25 +300,28 @@
     messagesContainer.insertBefore(fragment, firstChild);
     const newScrollHeight = messagesContainer.scrollHeight;
     messagesContainer.scrollTop = newScrollHeight - prevScrollHeight;
+    if (hasMore) showLoadMoreButton();
   }
 
-  function showLoadingIndicator() {
+  function showLoadMoreButton() {
     if (!messagesContainer) return;
-    if (emptyState) emptyState.style.display = 'none';
-
-    let indicator = document.getElementById('loading-indicator');
-    if (!indicator) {
-      indicator = document.createElement('div');
-      indicator.id = 'loading-indicator';
-      indicator.className = 'loading-indicator';
-      indicator.textContent = '加载中...';
-    }
-    messagesContainer.insertBefore(indicator, messagesContainer.firstChild);
+    hideLoadMoreButton();
+    const btn = document.createElement('div');
+    btn.id = 'load-more-btn';
+    btn.className = 'load-more-btn';
+    btn.textContent = '加载更多历史';
+    btn.addEventListener('click', () => {
+      btn.textContent = '加载中...';
+      btn.classList.add('loading');
+      loadMoreHistory();
+    });
+    messagesContainer.insertBefore(btn, messagesContainer.firstChild);
   }
 
-  function hideLoadingIndicator() {
-    const indicator = document.getElementById('loading-indicator');
-    if (indicator) indicator.remove();
+  function hideLoadMoreButton() {
+    const btn = document.getElementById('load-more-btn');
+    if (btn) {btn.remove();
+  }
     updateEmptyState();
   }
 
@@ -365,9 +371,9 @@
     if (!currentEmptyState) return;
 
     const hasMessages = Array.from(messagesContainer.children).some(
-      child => child.id !== 'empty-state' && child.id !== 'loading-indicator'
+      child => child.id !== 'empty-state' && child.id !== 'load-more-btn'
     );
-    const isLoading = document.getElementById('loading-indicator') !== null;
+    const isLoading = document.getElementById('load-more-btn')?.classList.contains('loading') || false;
     currentEmptyState.style.display = (!hasMessages && !isLoading) ? 'block' : 'none';
   }
 

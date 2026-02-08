@@ -446,12 +446,24 @@ body[data-display-mode="log"] .time-divider span {
   color: var(--vscode-descriptionForeground);
 }
 
-/* Loading indicator */
-.loading-indicator {
+/* Load more button */
+.load-more-btn {
   text-align: center;
-  padding: 12px;
-  color: var(--vscode-descriptionForeground);
+  padding: 8px 12px;
+  margin: 4px auto;
+  color: var(--vscode-textLink-foreground);
   font-size: 12px;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.load-more-btn:hover {
+  opacity: 1;
+}
+
+.load-more-btn.loading {
+  color: var(--vscode-descriptionForeground);
+  cursor: default;
   animation: pulse 1.5s ease-in-out infinite;
 }
 
