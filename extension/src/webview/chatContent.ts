@@ -24,10 +24,16 @@ export function getChatHtml(
     "chat.css",
   );
   const jsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat.js");
+  const utilsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-utils.js");
+  const rendererJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-renderer.js");
+  const settingsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-settings.js");
 
   // Convert to webview URIs
   const styleUri = webview.asWebviewUri(cssPath);
   const scriptUri = webview.asWebviewUri(jsPath);
+  const utilsScriptUri = webview.asWebviewUri(utilsJsPath);
+  const rendererScriptUri = webview.asWebviewUri(rendererJsPath);
+  const settingsScriptUri = webview.asWebviewUri(settingsJsPath);
   const cspSource = webview.cspSource;
 
   // Read HTML template
@@ -37,6 +43,9 @@ export function getChatHtml(
   html = html.replace(/{{nonce}}/g, nonce);
   html = html.replace(/{{cspSource}}/g, cspSource);
   html = html.replace(/{{styleUri}}/g, styleUri.toString());
+  html = html.replace(/{{utilsScriptUri}}/g, utilsScriptUri.toString());
+  html = html.replace(/{{rendererScriptUri}}/g, rendererScriptUri.toString());
+  html = html.replace(/{{settingsScriptUri}}/g, settingsScriptUri.toString());
   html = html.replace(/{{scriptUri}}/g, scriptUri.toString());
 
   return html;
