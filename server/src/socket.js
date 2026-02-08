@@ -93,7 +93,9 @@ function initSocket(httpServer) {
 
         // Handle VS Code -> Mobile Notification
         if (msg.source === "vscode") {
-          console.log(`[Socket] Message from VS Code (App: ${app.name}), triggering Gotify...`);
+          // 重新读取最新配置，避免使用连接时缓存的旧对象（Admin 面板更新后 token 可能已变）
+          const latestApp = config.findAppById(appId) || app;
+          console.log(`[Socket] Message from VS Code (App: ${latestApp.name}), triggering Gotify...`);
           const targetUrl = msg.clickUrl || CLICK_URL;
           const pushText = finalMessage.attachments
             ? "[图片]"
@@ -101,7 +103,7 @@ function initSocket(httpServer) {
 
           // Pass app config to Gotify service (异步等待)
           try {
-            await sendNotification("New Reply", pushText, 8, targetUrl, app);
+            await sendNotification("New Reply", pushText, 8, targetUrl, latestApp);
           } catch (notifyErr) {
             console.error('[Socket] Gotify push failed:', notifyErr.message);
           }
