@@ -11,6 +11,7 @@ const CLICK_URL = config.CLICK_URL;
 function initSocket(httpServer) {
   const io = new Server(httpServer, {
     cors: { origin: "*" },
+    maxHttpBufferSize: 10 * 1024 * 1024, // 10MB, 支持手机拍照大图传输
   });
 
   // Authentication Middleware

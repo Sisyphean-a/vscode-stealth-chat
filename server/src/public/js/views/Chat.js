@@ -422,12 +422,17 @@ export default {
             if ((!inputText.value.trim() && pendingImages.length === 0) || !socketConnected.value) return
 
             // Build attachments from pending images
-            const attachments = pendingImages.map(img => ({
-                type: 'image',
-                data: img.data,
-                filename: img.filename,
-                size: img.size
-            }))
+            const attachments = pendingImages.map(img => {
+                // 从 data URL 中提取正确的 mimeType (如 data:image/jpeg;base64,...)
+                const mimeMatch = img.data.match(/^data:(image\/[^;]+);/)
+                return {
+                    type: 'image',
+                    data: img.data,
+                    filename: img.filename,
+                    size: img.size,
+                    mimeType: mimeMatch ? mimeMatch[1] : 'image/png'
+                }
+            })
 
             socketManager.emit('chat message', {
                 text: inputText.value,
