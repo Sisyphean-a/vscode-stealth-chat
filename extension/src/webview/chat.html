@@ -8,7 +8,9 @@
       content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'nonce-{{nonce}}'; img-src https: data:;"
     />
     <title>TS-Lint Service</title>
-    <link rel="stylesheet" href="{{styleUri}}" />
+    <link rel="stylesheet" href="{{coreStyleUri}}" />
+    <link rel="stylesheet" href="{{bubbleStyleUri}}" />
+    <link rel="stylesheet" href="{{logStyleUri}}" />
   </head>
   <body data-display-mode="bubble">
     <div id="status-bar">

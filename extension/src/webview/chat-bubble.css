@@ -1,0 +1,62 @@
+/* Message wrapper */
+body[data-display-mode="bubble"] .message-wrapper {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+body[data-display-mode="bubble"] .message-wrapper.own {
+  align-items: flex-end;
+}
+
+body[data-display-mode="bubble"] .message-wrapper.remote {
+  align-items: flex-start;
+}
+
+/* Message Time */
+body[data-display-mode="bubble"] .message-time {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+
+/* Message Bubble */
+body[data-display-mode="bubble"] .message-bubble {
+  padding: 6px 10px;
+  border-radius: 12px;
+  max-width: 85%;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  font-size: 13px;
+}
+
+body[data-display-mode="bubble"] .message-bubble.own {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-bottom-right-radius: 4px;
+}
+
+body[data-display-mode="bubble"] .message-bubble.remote {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  color: var(--vscode-editor-foreground);
+  border: 1px solid var(--vscode-widget-border);
+  border-bottom-left-radius: 4px;
+}
+
+/* Time divider */
+body[data-display-mode="bubble"] .time-divider {
+  text-align: center;
+  margin: 16px 0;
+  position: relative;
+}
+
+body[data-display-mode="bubble"] .time-divider span {
+  background: var(--vscode-editor-background);
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  border-radius: 12px;
+  border: 1px solid var(--vscode-widget-border);
+}

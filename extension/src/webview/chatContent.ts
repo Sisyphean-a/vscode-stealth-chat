@@ -23,13 +23,18 @@ export function getChatHtml(
     "webview",
     "chat.css",
   );
+  const coreCssPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-core.css");
+  const bubbleCssPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-bubble.css");
+  const logCssPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-log.css");
   const jsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat.js");
   const utilsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-utils.js");
   const rendererJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-renderer.js");
   const settingsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-settings.js");
 
   // Convert to webview URIs
-  const styleUri = webview.asWebviewUri(cssPath);
+  const coreStyleUri = webview.asWebviewUri(coreCssPath);
+  const bubbleStyleUri = webview.asWebviewUri(bubbleCssPath);
+  const logStyleUri = webview.asWebviewUri(logCssPath);
   const scriptUri = webview.asWebviewUri(jsPath);
   const utilsScriptUri = webview.asWebviewUri(utilsJsPath);
   const rendererScriptUri = webview.asWebviewUri(rendererJsPath);
@@ -42,7 +47,9 @@ export function getChatHtml(
   // Replace placeholders
   html = html.replace(/{{nonce}}/g, nonce);
   html = html.replace(/{{cspSource}}/g, cspSource);
-  html = html.replace(/{{styleUri}}/g, styleUri.toString());
+  html = html.replace(/{{coreStyleUri}}/g, coreStyleUri.toString());
+  html = html.replace(/{{bubbleStyleUri}}/g, bubbleStyleUri.toString());
+  html = html.replace(/{{logStyleUri}}/g, logStyleUri.toString());
   html = html.replace(/{{utilsScriptUri}}/g, utilsScriptUri.toString());
   html = html.replace(/{{rendererScriptUri}}/g, rendererScriptUri.toString());
   html = html.replace(/{{settingsScriptUri}}/g, settingsScriptUri.toString());

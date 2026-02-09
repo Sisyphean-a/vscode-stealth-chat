@@ -50,6 +50,14 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("tsLint.activeConnection")) {
         handleConnectionChange();
+      } else if (e.affectsConfiguration("tsLint.displayMode")) {
+        const config = vscode.workspace.getConfiguration("tsLint");
+        const displayMode = config.get<string>("displayMode") || "bubble";
+        const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+        getWebviewView()?.webview.postMessage({
+          type: "setDisplayMode",
+          payload: { mode: displayMode, serverUrl },
+        });
       }
     })
   );
