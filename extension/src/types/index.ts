@@ -43,3 +43,15 @@ export interface SettingsMessage {
   type: string;
   payload?: unknown;
 }
+
+export type WebviewMessage =
+  | { type: "ready" }
+  | { type: "sendMessage"; payload: { text: string; attachments?: Attachment[] } }
+  | { type: "loadMoreHistory"; payload: { beforeTimestamp: number } }
+  | { type: "openImage"; payload: { url: string } }
+  | { type: "getConfig" }
+  | { type: "saveGlobalSettings"; payload: GlobalSettings }
+  | { type: "saveConnection"; payload: { connection: Connection; originalName?: string } }
+  | { type: "deleteConnection"; payload: { name: string } }
+  | { type: "setActiveConnection"; payload: { name: string } }
+  | { type: "testConnection"; payload: { name: string; serverUrl: string; token: string } };

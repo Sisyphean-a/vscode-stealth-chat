@@ -40,7 +40,13 @@ export async function ensureDefaultConnection(): Promise<void> {
   }
 
   const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
-  const token = config.get<string>("secret") || "ChangeMeInProduction";
+  const token = config.get<string>("secret") || "";
+
+  // 如果没有有效 token，不创建默认连接
+  if (!token || token === "ChangeMeInProduction") {
+    return;
+  }
+
   const defaultConn: Connection = {
     name: "本地默认",
     serverUrl,

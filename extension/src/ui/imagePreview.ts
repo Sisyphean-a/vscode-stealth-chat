@@ -4,22 +4,39 @@
 import * as vscode from "vscode";
 import { getNonce } from "../utils/helpers";
 
+let currentPanel: vscode.WebviewPanel | undefined;
+
+function escapeAttribute(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /**
- * 打开图片预览面板
+ * 打开图片预览面板（复用已有面板）
  */
 export function openImagePreview(imageUrl: string): void {
-  const panel = vscode.window.createWebviewPanel(
+  if (currentPanel) {
+    const nonce = getNonce();
+    currentPanel.webview.html = getImagePreviewHtml(imageUrl, nonce);
+    currentPanel.reveal(vscode.ViewColumn.One);
+    return;
+  }
+
+  currentPanel = vscode.window.createWebviewPanel(
     "imagePreview",
     "Image Preview",
     vscode.ViewColumn.One,
     {
       enableScripts: true,
-      retainContextWhenHidden: true,
+      retainContextWhenHidden: false,
     }
   );
 
   const nonce = getNonce();
-  panel.webview.html = getImagePreviewHtml(imageUrl, nonce);
+  currentPanel.webview.html = getImagePreviewHtml(imageUrl, nonce);
+
+  currentPanel.onDidDispose(() => {
+    currentPanel = undefined;
+  });
 }
 
 function getImagePreviewHtml(imageUrl: string, nonce: string): string {
@@ -85,7 +102,7 @@ function getImagePreviewHtml(imageUrl: string, nonce: string): string {
     <button id="zoom-out" title="缩小">−</button>
     <button id="reset" title="重置">⟲</button>
   </div>
-  <img id="preview-img" src="${imageUrl}" alt="Preview">
+  <img id="preview-img" src="${escapeAttribute(imageUrl)}" alt="Preview">
   <div class="zoom-info" id="zoom-info">100%</div>
   <script nonce="${nonce}">
     const img = document.getElementById('preview-img');

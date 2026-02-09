@@ -8,6 +8,11 @@ import * as socketService from "../services/socketService";
 import * as messageCache from "../services/messageCache";
 import * as configService from "../services/configService";
 import { openImagePreview } from "../ui/imagePreview";
+import { WebviewMessage } from "../types";
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 let webviewView: vscode.WebviewView | undefined;
 
@@ -53,7 +58,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private setupMessageHandler(view: vscode.WebviewView): void {
-    view.webview.onDidReceiveMessage((message: any) => {
+    view.webview.onDidReceiveMessage((message: WebviewMessage) => {
       switch (message.type) {
         case "ready":
           this.handleReady(view);
@@ -109,8 +114,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       view.webview.postMessage({ type: "loadHistory", payload: cached });
     } else if (socketService.isConnected() && !socketService.isHistoryLoaded()) {
       // 无缓存且未加载过历史，请求服务器
-      socketService.getSocket()?.emit("load history", 50);
-      socketService.setHistoryLoaded();
+      socketService.loadHistory();
+      // setHistoryLoaded 在 extension.ts 的 onHistoryLoaded 回调中调用
     }
   }
 
@@ -119,7 +124,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     socketService.loadMoreHistory(payload.beforeTimestamp);
   }
 
-  private handleSendMessage(payload: any): void {
+  private handleSendMessage(payload: { text: string; attachments?: import("../types").Attachment[] }): void {
     const { text, attachments } = payload;
     if ((!text?.trim() && !attachments?.length) || !socketService.isConnected()) return;
 
@@ -162,7 +167,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async handleSaveGlobalSettings(
     view: vscode.WebviewView,
-    payload: any
+    payload: import("../types").GlobalSettings
   ): Promise<void> {
     try {
       await configService.saveGlobalSettings(payload);
@@ -173,14 +178,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       view.webview.postMessage({
         type: "operationResult",
-        payload: { success: false, message: "Failed to save settings" },
+        payload: { success: false, message: `Failed to save settings: ${getErrorMessage(error)}` },
       });
     }
   }
 
   private async handleSaveConnection(
     view: vscode.WebviewView,
-    payload: any
+    payload: { connection: import("../types").Connection; originalName?: string }
   ): Promise<void> {
     try {
       await configService.saveConnection(payload.connection, payload.originalName);
@@ -191,14 +196,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       view.webview.postMessage({
         type: "operationResult",
-        payload: { success: false, message: "Failed to save connection" },
+        payload: { success: false, message: `Failed to save connection: ${getErrorMessage(error)}` },
       });
     }
   }
 
   private async handleDeleteConnection(
     view: vscode.WebviewView,
-    payload: any
+    payload: { name: string }
   ): Promise<void> {
     try {
       await configService.deleteConnection(payload.name);
@@ -209,14 +214,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       view.webview.postMessage({
         type: "operationResult",
-        payload: { success: false, message: "Failed to delete connection" },
+        payload: { success: false, message: `Failed to delete connection: ${getErrorMessage(error)}` },
       });
     }
   }
 
   private async handleSetActiveConnection(
     view: vscode.WebviewView,
-    payload: any
+    payload: { name: string }
   ): Promise<void> {
     try {
       await configService.setActiveConnection(payload.name);
@@ -227,14 +232,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       view.webview.postMessage({
         type: "operationResult",
-        payload: { success: false, message: "Failed to change connection" },
+        payload: { success: false, message: `Failed to change connection: ${getErrorMessage(error)}` },
       });
     }
   }
 
   private async handleTestConnection(
     view: vscode.WebviewView,
-    payload: any
+    payload: { name: string; serverUrl: string; token: string }
   ): Promise<void> {
     const { name, serverUrl, token } = payload;
     const result = await socketService.testConnection(serverUrl, token);

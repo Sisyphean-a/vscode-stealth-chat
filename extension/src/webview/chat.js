@@ -53,6 +53,7 @@
 
   // 图片大小限制 (5MB)
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+  const HISTORY_PAGE_SIZE = 50;
 
   // ============================================================================
   // Event Listeners
@@ -136,7 +137,6 @@
   // Listen for messages from extension
   window.addEventListener('message', (event) => {
     const message = event.data;
-    console.log('[WebView] Received message:', message.type, message.payload);
 
     switch (message.type) {
       case 'addMessage':
@@ -153,7 +153,6 @@
         prependHistory(message.payload.messages, message.payload.hasMore);
         break;
       case 'updateStatus':
-        console.log('[WebView] Updating status to:', message.payload.connected);
         updateStatus(message.payload.connected);
         break;
       case 'setDisplayMode':
@@ -227,7 +226,7 @@
     });
     if (messages.length > 0) {
       oldestTimestamp = messages[0].timestamp;
-      hasMoreHistory = messages.length >= 50;
+      hasMoreHistory = messages.length >= HISTORY_PAGE_SIZE;
     } else {
       hasMoreHistory = false;
     }
@@ -528,7 +527,5 @@
   // Initialization
   // ============================================================================
 
-  console.log('[WebView] Initializing chat view');
-  console.log('[WebView] Sending ready message');
   vscode.postMessage({ type: 'ready' });
 })();

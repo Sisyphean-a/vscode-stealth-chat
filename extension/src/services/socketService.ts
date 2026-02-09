@@ -12,6 +12,8 @@ let outputChannel: import("vscode").OutputChannel | undefined;
 let historyLoaded = false;
 let lastDisplayedDate: string = "";
 
+const HISTORY_LOAD_LIMIT = 50;
+
 /**
  * 设置输出通道
  */
@@ -47,7 +49,7 @@ export function connectToServer(
       statusBar.setTooltip("TS-Lint Service 已连接");
       statusBar.updateStatusBar();
       if (!historyLoaded) {
-        socket?.emit("load history", 50);
+        socket?.emit("load history", HISTORY_LOAD_LIMIT);
       }
       callbacks.onConnect?.();
     });
@@ -104,7 +106,11 @@ export function connectToServer(
       }
     });
   } catch (error) {
-    // Silent error handling
+    const timestamp = getCurrentTimestamp();
+    const message = error instanceof Error ? error.message : String(error);
+    outputChannel?.appendLine(`[Error - ${timestamp}] Failed to initialize connection: ${message}`);
+    statusBar.setTooltip(`初始化失败: ${message}`);
+    callbacks.onConnectError?.(error instanceof Error ? error : new Error(message));
   }
 }
 
@@ -170,10 +176,17 @@ export function resetLastDisplayedDate(): void {
 }
 
 /**
+ * 加载历史消息
+ */
+export function loadHistory(): void {
+  socket?.emit("load history", HISTORY_LOAD_LIMIT);
+}
+
+/**
  * 加载更多历史消息
  */
 export function loadMoreHistory(beforeTimestamp: number): void {
-  socket?.emit("load more history", { limit: 50, beforeTimestamp });
+  socket?.emit("load more history", { limit: HISTORY_LOAD_LIMIT, beforeTimestamp });
 }
 
 /**

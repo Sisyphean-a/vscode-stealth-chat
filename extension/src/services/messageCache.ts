@@ -9,39 +9,53 @@ let cachedMessages: ChatMessage[] = [];
 const processedMessageKeys = new Set<string>();
 
 /**
+ * 简单字符串哈希（用于去重，非加密用途）
+ */
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+/**
  * 生成消息唯一键（用于去重）
  */
 export function getMessageKey(msg: ChatMessage): string {
-  const textKey = msg.text?.slice(0, 20) || "";
-  return `${msg.timestamp}-${msg.source}-${textKey}`;
+  const textHash = simpleHash(msg.text || "");
+  const attachmentKey = msg.attachments?.length ? `-att${msg.attachments.length}` : "";
+  return `${msg.timestamp}-${msg.source}-${textHash}${attachmentKey}`;
 }
 
 /**
  * 检查消息是否已处理（去重）
  */
 export function isMessageDuplicate(msg: ChatMessage): boolean {
-  const key = getMessageKey(msg);
-  if (processedMessageKeys.has(key)) {
-    return true;
-  }
-  processedMessageKeys.add(key);
-  if (processedMessageKeys.size > CACHE_MAX_SIZE * 2) {
-    const keysToDelete = Array.from(processedMessageKeys).slice(0, CACHE_MAX_SIZE);
-    keysToDelete.forEach((k) => processedMessageKeys.delete(k));
-  }
-  return false;
+  return processedMessageKeys.has(getMessageKey(msg));
 }
 
 /**
  * 添加消息到缓存（带去重和大小限制）
  */
 export function addToCache(msg: ChatMessage): boolean {
-  if (isMessageDuplicate(msg)) {
+  const key = getMessageKey(msg);
+  if (processedMessageKeys.has(key)) {
     return false;
   }
-  cachedMessages.push(msg);
-  if (cachedMessages.length > CACHE_MAX_SIZE) {
-    cachedMessages = cachedMessages.slice(-CACHE_MAX_SIZE);
+  processedMessageKeys.add(key);
+
+  const newMessages = [...cachedMessages, msg];
+  if (newMessages.length > CACHE_MAX_SIZE) {
+    const removed = newMessages.slice(0, newMessages.length - CACHE_MAX_SIZE);
+    for (const m of removed) {
+      processedMessageKeys.delete(getMessageKey(m));
+    }
+    cachedMessages = newMessages.slice(-CACHE_MAX_SIZE);
+  } else {
+    cachedMessages = newMessages;
   }
   return true;
 }
