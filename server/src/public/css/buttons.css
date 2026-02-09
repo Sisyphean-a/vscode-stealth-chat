@@ -1,0 +1,82 @@
+/* Buttons */
+.btn-edit, .btn-delete, .btn-add, .btn-cancel, .btn-save {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.btn-edit {
+    background: var(--input-bg);
+    color: var(--text-primary);
+}
+
+.btn-edit:hover {
+    background: var(--border-color);
+}
+
+.btn-delete {
+    background: rgba(255, 59, 48, 0.1);
+    color: var(--danger-color);
+}
+
+.btn-delete:hover {
+    background: rgba(255, 59, 48, 0.2);
+}
+
+.btn-add {
+    background: var(--input-bg);
+    color: var(--primary-color);
+    width: 100%;
+    padding: 10px;
+}
+
+.btn-add:hover {
+    background: var(--border-color);
+}
+
+.btn-cancel {
+    background: var(--input-bg);
+    color: var(--text-primary);
+}
+
+.btn-save {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-save:disabled {
+    background: var(--border-color);
+    cursor: not-allowed;
+}
+
+/* Form */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    outline: none;
+    transition: all 0.2s;
+}
+
+.form-input:focus {
+    border-color: var(--primary-color);
+    background: #fff;
+}

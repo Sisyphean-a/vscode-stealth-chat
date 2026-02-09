@@ -1,12 +1,13 @@
-const { ref, reactive, onMounted } = Vue;
-const { useRouter } = VueRouter;
-const { ElMessage, ElMessageBox } = ElementPlus;
+import { useAdminApi } from '../composables/useAdminApi.js'
+
+const { ref, reactive, onMounted } = Vue
+const { ElMessage } = ElementPlus
 
 export default {
     template: `
     <div class="admin-wrapper">
         <!-- Login -->
-        <div v-if="!token" class="login-box">
+        <div v-if="!api.token.value" class="login-box">
             <el-card class="login-card" shadow="hover">
                 <template #header>
                     <div class="login-header">
@@ -177,9 +178,10 @@ export default {
     </div>
     `,
     setup() {
+        const api = useAdminApi()
+
         // State
         const password = ref('')
-        const token = ref(localStorage.getItem('admin_token') || '')
         const loading = ref(false)
         const errorMsg = ref('')
         const stats = reactive({ uptime: 0, totalMessages: 0, apps: [] })
@@ -198,58 +200,38 @@ export default {
         const login = async () => {
             loading.value = true
             try {
-                const res = await fetch('/api/admin/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: password.value })
-                })
-                const data = await res.json()
-                if (res.ok) {
-                    token.value = data.token
-                    localStorage.setItem('admin_token', data.token)
-                    errorMsg.value = ''
-                    fetchStatus()
-                } else {
-                    errorMsg.value = '密码错误'
-                }
+                await api.login(password.value)
+                errorMsg.value = ''
+                fetchStatus()
             } catch (e) {
-                errorMsg.value = '网络错误'
+                errorMsg.value = e.message || '网络错误'
             } finally {
                 loading.value = false
             }
         }
 
-        const logout = () => {
-            token.value = ''
-            localStorage.removeItem('admin_token')
-        }
+        const logout = () => api.logout()
 
         const fetchStatus = async () => {
-            if (!token.value) return
+            if (!api.token.value) return
             try {
-                const res = await fetch('/api/admin/status', {
-                    headers: { 'Authorization': `Bearer ${token.value}` }
-                })
-                if (res.status === 401 || res.status === 403) {
-                    logout()
-                    return
-                }
-                const data = await res.json()
+                const data = await api.fetchStatus()
                 stats.uptime = data.uptime
                 stats.totalMessages = data.totalMessages
                 stats.apps = data.apps
             } catch (e) {
-                console.error(e)
+                if (e.message === 'Unauthorized') return
             }
         }
 
         const deleteApp = async (id) => {
-            await fetch(`/api/admin/apps/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token.value}` }
-            })
-            ElMessage.success('已删除')
-            fetchStatus()
+            try {
+                await api.deleteApp(id)
+                ElMessage.success('已删除')
+                fetchStatus()
+            } catch (e) {
+                ElMessage.error('删除失败')
+            }
         }
 
         const openDialog = (row) => {
@@ -273,7 +255,6 @@ export default {
         }
 
         const submitForm = async () => {
-            // 表单验证
             if (!form.id || !form.id.trim()) {
                 ElMessage.warning('请输入频道 ID')
                 return
@@ -287,25 +268,13 @@ export default {
                 return
             }
 
-            const url = isEdit.value ? `/api/admin/apps/${form.id}` : '/api/admin/apps'
-            const method = isEdit.value ? 'PUT' : 'POST'
-
-            const res = await fetch(url, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token.value}`
-                },
-                body: JSON.stringify(form)
-            })
-
-            if (res.ok) {
+            try {
+                await api.saveApp(form, isEdit.value)
                 ElMessage.success(isEdit.value ? '已更新' : '已创建')
                 dialogVisible.value = false
                 fetchStatus()
-            } else {
-                const data = await res.json().catch(() => ({}))
-                ElMessage.error(data.message || '操作失败')
+            } catch (e) {
+                ElMessage.error(e.message)
             }
         }
 
@@ -361,40 +330,25 @@ export default {
 
             pwdLoading.value = true
             try {
-                const res = await fetch('/api/admin/password', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token.value}`
-                    },
-                    body: JSON.stringify({
-                        currentPassword: pwdForm.currentPassword,
-                        newPassword: pwdForm.newPassword
-                    })
-                })
-                const data = await res.json()
-                if (res.ok) {
-                    ElMessage.success('密码已更新，请重新登录')
-                    pwdDialogVisible.value = false
-                    logout()
-                } else {
-                    ElMessage.error(data.error || '修改失败')
-                }
+                await api.changePassword(pwdForm.currentPassword, pwdForm.newPassword)
+                ElMessage.success('密码已更新，请重新登录')
+                pwdDialogVisible.value = false
+                logout()
             } catch (e) {
-                ElMessage.error('网络错误')
+                ElMessage.error(e.message)
             } finally {
                 pwdLoading.value = false
             }
         }
 
         onMounted(() => {
-            if (token.value) {
+            if (api.token.value) {
                 fetchStatus()
             }
         })
 
         return {
-            password, token, loading, errorMsg, stats,
+            api, password, loading, errorMsg, stats,
             login, logout, formatUptime, deleteApp, copyToken,
             dialogVisible, isEdit, form, openDialog, submitForm, generateToken,
             pwdDialogVisible, pwdLoading, pwdForm, openPasswordDialog, submitPassword

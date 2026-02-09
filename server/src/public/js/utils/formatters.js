@@ -3,6 +3,15 @@
  */
 
 /**
+ * HTML 实体转义，防止 XSS
+ */
+export const escapeHtml = (text) => {
+    if (!text) return ''
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }
+    return text.replace(/[&<>"']/g, (c) => map[c])
+}
+
+/**
  * 格式化时间戳为 HH:MM 格式
  */
 export const formatTime = (ts) => {
@@ -35,7 +44,13 @@ export const showTimeDivider = (current, prev) => {
  */
 export const parseMarkdown = (text) => {
     if (!text) return ''
-    return text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="image-link">$1</a>')
+    const escaped = escapeHtml(text)
+    return escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+        if (/^https?:\/\//i.test(url)) {
+            return `<a href="${url}" target="_blank" class="image-link">${label}</a>`
+        }
+        return `[${label}](${url})`
+    })
 }
 
 /**
