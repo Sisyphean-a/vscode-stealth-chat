@@ -37,7 +37,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // 注册 WebView Provider
   const provider = new ChatViewProvider(context.extensionUri, outputChannel);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider("tsLintChat.chatView", provider)
+    vscode.window.registerWebviewViewProvider("tsLintChat.chatView", provider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
   );
 
   // 注册命令

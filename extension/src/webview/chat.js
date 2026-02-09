@@ -258,8 +258,19 @@
    * @param {boolean} hasMore
    */
   function prependHistory(messages, hasMore) {
+    // 1. 禁用自动滚动和平滑滚动，防止视觉跳动
+    autoScrollEnabled = false;
     isLoadingMore = false;
     hasMoreHistory = hasMore;
+    
+    if (messagesContainer) {
+      messagesContainer.style.scrollBehavior = 'auto';
+    }
+
+    // 获取当前滚动高度和位置
+    const oldScrollHeight = messagesContainer ? messagesContainer.scrollHeight : 0;
+    const oldScrollTop = messagesContainer ? messagesContainer.scrollTop : 0;
+
     hideLoadMoreButton();
 
     if (!messagesContainer || messages.length === 0) {
@@ -273,7 +284,8 @@
       oldestTimestamp = sorted[0].timestamp;
     }
 
-    const firstChild = messagesContainer.firstChild;
+    // 锚定元素：当前的第一条消息
+    let anchorMsg = messagesContainer.firstElementChild;
     const existingFirstMsg = /** @type {HTMLElement | null} */ (messagesContainer.querySelector('.message-wrapper'));
     const existingFirstDate = existingFirstMsg?.dataset.timestamp
       ? new Date(Number(existingFirstMsg.dataset.timestamp)).toLocaleDateString()
@@ -294,16 +306,34 @@
       fragment.appendChild(messageEl);
     });
 
+    // 处理日期分割线衔接
     if (lastDate && existingFirstDate && lastDate === existingFirstDate) {
       const firstDivider = messagesContainer.querySelector('.time-divider');
-      if (firstDivider) firstDivider.remove();
+      if (firstDivider) {
+        // 如果要移除的分割线就是锚点元素，则将锚点向后移一位，防止 insertBefore 找不到父节点
+        if (anchorMsg === firstDivider) {
+          anchorMsg = firstDivider.nextElementSibling;
+        }
+        firstDivider.remove();
+      }
     }
 
-    const prevScrollHeight = messagesContainer.scrollHeight;
-    messagesContainer.insertBefore(fragment, firstChild);
+    // 插入新消息到顶部
+    messagesContainer.insertBefore(fragment, anchorMsg);
+
     if (hasMore) showLoadMoreButton();
+
+    // 恢复滚动位置：使锚点元素保持在相对视口相同的位置
     const newScrollHeight = messagesContainer.scrollHeight;
-    messagesContainer.scrollTop = newScrollHeight - prevScrollHeight;
+    const heightDiff = newScrollHeight - oldScrollHeight;
+    messagesContainer.scrollTop = oldScrollTop + heightDiff;
+    
+    // 恢复平滑滚动（如果不立即恢复，建议用 setTimeout 稍微延迟一点，确保渲染完成）
+    setTimeout(() => {
+      if (messagesContainer) {
+        messagesContainer.style.scrollBehavior = '';
+      }
+    }, 50);
   }
 
   function showLoadMoreButton() {
