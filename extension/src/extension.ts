@@ -110,14 +110,19 @@ function handleIncomingMessage(msg: any): void {
   outputChannel.appendLine(`[Info - ${timestamp}] Process: ${msg.text}`);
 
   const config = vscode.workspace.getConfiguration("tsLint");
-  if (config.get<boolean>("autoReveal")) {
-    outputChannel.show(true);
-  }
+  // 移除自动弹出 outputChannel 的逻辑
+  // if (config.get<boolean>("autoReveal")) {
+  //   outputChannel.show(true);
+  // }
 
   const webview = getWebviewView();
-  if (webview?.visible) {
+  // 无论 webview 是否可见，只要存在实例就发送消息（retainContextWhenHidden: true 会保持 DOM 状态）
+  if (webview) {
     webview.webview.postMessage({ type: "addMessage", payload: msg });
-  } else {
+  }
+
+  // 只有当 webview 不可见时才增加未读计数
+  if (!webview?.visible) {
     statusBar.incrementUnread();
   }
 }

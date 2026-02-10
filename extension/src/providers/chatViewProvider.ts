@@ -7,6 +7,7 @@ import { getNonce, getCurrentTimestamp } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as messageCache from "../services/messageCache";
 import * as configService from "../services/configService";
+import * as statusBar from "../ui/statusBar";
 import { openImagePreview } from "../ui/imagePreview";
 import { WebviewMessage } from "../types";
 
@@ -52,6 +53,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         type: "updateStatus",
         payload: { connected: true },
       });
+    }
+
+    // 监听可见性变化，清除未读计数
+    view.onDidChangeVisibility(() => {
+      if (view.visible) {
+        statusBar.clearUnreadStatus();
+      }
+    });
+
+    // 如果当前可见，也清除一次（比如刚打开）
+    if (view.visible) {
+      statusBar.clearUnreadStatus();
     }
 
     this.setupMessageHandler(view);

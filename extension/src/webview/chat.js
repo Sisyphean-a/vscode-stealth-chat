@@ -4,7 +4,10 @@
 
   // Dependencies
   const { bindImageLinkEvents } = window.ChatUtils;
-  const { createTimeDivider, createMessageElement } = window.ChatRenderer;
+  const { createTimeDivider, createTimeGapDivider, createMessageElement } = window.ChatRenderer;
+
+  // Constants
+  const TIME_GAP_THRESHOLD = 10 * 60 * 1000; // 10 minutes
 
   // Initialize settings module
   window.ChatSettings.init(vscode);
@@ -211,15 +214,38 @@
    */
   function loadHistory(messages) {
     clearMessages();
-    let lastDate = "";
+    // Use local tracking for the loop not global lastMessageTimestamp yet
+    // Actually we iterate formatted messages which are time sorted
+    // But we need to update global lastMessageTimestamp at the end
+    // Or just update it as we go.
+    // The original code was using lastMessageTimestamp to track global state? 
+    // Wait, loadHistory clears messages, so lastMessageTimestamp is 0. 
+    // And we iterate messages.
+    // We need to properly track 'lastDate' for date dividers.
+    // And 'lastTimestamp' for gap dividers.
+    
+    // Reset global state
+    lastMessageTimestamp = 0; 
+    
     messages.forEach(msg => {
       if (msg.timestamp && messagesContainer) {
         const msgDate = new Date(msg.timestamp).toLocaleDateString();
-        if (msgDate !== lastDate) {
+        const prevDate = lastMessageTimestamp > 0
+          ? new Date(lastMessageTimestamp).toLocaleDateString()
+          : "";
+
+        if (msgDate !== prevDate) {
           const divider = createTimeDivider(msg.timestamp, displayMode);
           messagesContainer.appendChild(divider);
-          lastDate = msgDate;
+          // Reset last timestamp to current for gap calculation relative to the date divider
+          // Actually, we just need to update lastMessageTimestamp. 
+          // But effectively, date divider "resets" the visual flow.
+        } else if (lastMessageTimestamp > 0 && (msg.timestamp - lastMessageTimestamp > TIME_GAP_THRESHOLD)) {
+          // Same day, but large gap
+          const divider = createTimeGapDivider(msg.timestamp, displayMode);
+          messagesContainer.appendChild(divider);
         }
+        
         lastMessageTimestamp = msg.timestamp;
       }
       appendMessage(msg, true);
@@ -292,14 +318,22 @@
       : null;
 
     let lastDate = "";
+    let prevTimestamp = 0;
     const fragment = document.createDocumentFragment();
     sorted.forEach(msg => {
       if (msg.timestamp) {
         const msgDate = new Date(msg.timestamp).toLocaleDateString();
+        
+        // Check for date change
         if (msgDate !== lastDate) {
           fragment.appendChild(createTimeDivider(msg.timestamp, displayMode));
           lastDate = msgDate;
+          // After a date divider, we consider this a fresh start for gap calculation within this loop
+          // But we need to track local previous timestamp for gap check
+        } else if (prevTimestamp > 0 && (msg.timestamp - prevTimestamp > TIME_GAP_THRESHOLD)) {
+          fragment.appendChild(createTimeGapDivider(msg.timestamp, displayMode));
         }
+        prevTimestamp = msg.timestamp;
       }
       const messageEl = createMessageElement(msg, displayMode);
       bindImageLinkEvents(messageEl);
@@ -368,12 +402,16 @@
     if (emptyState) emptyState.style.display = 'none';
 
     if (!skipDivider && msg.timestamp) {
-      const lastDate = lastMessageTimestamp > 0
+      const lastDateStr = lastMessageTimestamp > 0
         ? new Date(lastMessageTimestamp).toLocaleDateString()
         : "";
       const msgDate = new Date(msg.timestamp).toLocaleDateString();
-      if (msgDate !== lastDate) {
+      
+      if (msgDate !== lastDateStr) {
         const divider = createTimeDivider(msg.timestamp, displayMode);
+        messagesContainer.appendChild(divider);
+      } else if (lastMessageTimestamp > 0 && (msg.timestamp - lastMessageTimestamp > TIME_GAP_THRESHOLD)) {
+        const divider = createTimeGapDivider(msg.timestamp, displayMode);
         messagesContainer.appendChild(divider);
       }
       lastMessageTimestamp = msg.timestamp;

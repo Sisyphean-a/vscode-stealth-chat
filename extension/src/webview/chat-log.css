@@ -100,8 +100,10 @@ body[data-display-mode="log"] .img-preview-tooltip {
   display: none;
   position: absolute;
   left: 0;
-  top: 100%;
-  margin-top: 4px;
+  bottom: 100%;
+  top: auto;
+  margin-bottom: 4px;
+  margin-top: 0;
   z-index: 1000;
   background: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-widget-border);

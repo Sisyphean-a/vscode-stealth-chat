@@ -1,0 +1,13 @@
+/* Time gap divider */
+.time-divider.time-gap {
+  margin: 16px 0;
+  opacity: 0.7;
+}
+
+.time-divider.time-gap span {
+  font-size: 11px;
+  background: var(--vscode-editor-background);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--vscode-descriptionForeground);
+}

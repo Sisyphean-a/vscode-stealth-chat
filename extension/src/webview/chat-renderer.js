@@ -27,6 +27,26 @@ window.ChatRenderer = (function () {
   }
 
   /**
+   * Create a time gap divider element (e.g. 14:30)
+   * @param {number} timestamp
+   * @param {'bubble' | 'log'} displayMode
+   * @returns {HTMLElement}
+   */
+  function createTimeGapDivider(timestamp, displayMode) {
+    const div = document.createElement('div');
+    div.className = 'time-divider time-gap';
+    const time = new Date(timestamp);
+    const label = formatMessageTime(time); // Reuse existing time formatter (HH:MM)
+
+    if (displayMode === 'log') {
+      div.innerHTML = `<span>-- ${label} --</span>`;
+    } else {
+      div.innerHTML = `<span>${label}</span>`;
+    }
+    return div;
+  }
+
+  /**
    * Create a message element (dispatches to bubble or log based on mode)
    * @param {any} msg
    * @param {'bubble' | 'log'} displayMode
@@ -209,6 +229,7 @@ window.ChatRenderer = (function () {
 
   return {
     createTimeDivider,
+    createTimeGapDivider,
     createMessageElement,
     createBubbleMessageElement,
     createLogMessageElement,
