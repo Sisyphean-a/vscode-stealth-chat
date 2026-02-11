@@ -10,7 +10,8 @@ const uploadRoutes = require("./routes/upload");
 const app = express();
 const server = http.createServer(app);
 
-// Parser middleware
+// Parser middleware（上传路径需要更大的 body 限制）
+app.use("/api/upload", express.json({ limit: "10mb" }));
 app.use(express.json());
 
 // Start Server Sequence
