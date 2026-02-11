@@ -5,6 +5,7 @@ const { initSocket } = require("./socket");
 const db = require("./db");
 const { IMAGES_DIR, cleanupOldImages } = require("./utils/imageStorage");
 const adminRoutes = require("./routes/admin");
+const uploadRoutes = require("./routes/upload");
 
 const app = express();
 const server = http.createServer(app);
@@ -24,6 +25,9 @@ app.use(express.json());
 
     // 3. Admin Routes
     app.use("/api/admin", adminRoutes);
+
+    // 3.5. Upload Routes (图片 HTTP 上传)
+    app.use("/api/upload", uploadRoutes);
 
     // 4. Serve static files (Mobile Client & Admin UI)
     app.use(express.static(path.join(__dirname, "public")));

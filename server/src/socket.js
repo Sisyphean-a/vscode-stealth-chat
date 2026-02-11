@@ -40,6 +40,9 @@ function initSocket(httpServer) {
     // Handle chat messages
     socket.on("chat message", async (msg) => {
       try {
+        const hasAttachments = msg.attachments && msg.attachments.length > 0;
+        console.log(`[Socket] Message from ${msg.source} (App: ${app.name}): text=${msg.text ? msg.text.substring(0, 30) : '(empty)'}, attachments=${hasAttachments ? msg.attachments.length : 0}`);
+
         let finalMessage = { ...msg };
         const timestamp = Date.now();
 
@@ -47,32 +50,49 @@ function initSocket(httpServer) {
         if (msg.attachments && msg.attachments.length > 0) {
           const processedAttachments = [];
 
-          for (let attachment of msg.attachments) {
+          for (const attachment of msg.attachments) {
             if (attachment.type === "image") {
-              // Extract base64 data (remove data URL prefix if present)
-              let base64Data = attachment.data;
-              if (base64Data && base64Data.startsWith("data:")) {
-                base64Data = base64Data.split(",")[1];
+              try {
+                // 已通过 HTTP 上传的图片（已有 url 或处理后的 data），直接使用
+                if (attachment.url || (attachment.data && !attachment.data.startsWith("data:"))) {
+                  processedAttachments.push({
+                    type: "image",
+                    data: attachment.data,
+                    url: attachment.url,
+                    filename: attachment.filename,
+                    size: attachment.size,
+                  });
+                  continue;
+                }
+
+                // Fallback: 通过 socket 传输的 base64 图片，服务端处理
+                let base64Data = attachment.data;
+                if (base64Data && base64Data.startsWith("data:")) {
+                  base64Data = base64Data.split(",")[1];
+                }
+
+                const result = processImage(
+                  base64Data,
+                  attachment.mimeType || "image/png",
+                  attachment.filename || "image.png",
+                );
+
+                processedAttachments.push({
+                  type: "image",
+                  data: result.data,
+                  url: result.url,
+                  filename: attachment.filename,
+                  size: result.size,
+                });
+              } catch (imgErr) {
+                console.error(`[Socket] Failed to process image ${attachment.filename}:`, imgErr.message);
               }
-
-              // Process image (returns inline data URL or file URL)
-              const result = processImage(
-                base64Data,
-                attachment.mimeType || "image/png",
-                attachment.filename || "image.png",
-              );
-
-              processedAttachments.push({
-                type: "image",
-                data: result.data, // inline images (Base64)
-                url: result.url, // file images (URL)
-                filename: attachment.filename,
-                size: result.size,
-              });
             }
           }
 
-          finalMessage.attachments = processedAttachments;
+          finalMessage.attachments = processedAttachments.length > 0
+            ? processedAttachments
+            : undefined;
         }
 
         // Save to database (JSON serialize if has attachments)

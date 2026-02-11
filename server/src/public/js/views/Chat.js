@@ -158,32 +158,42 @@ export default {
         const fileInput = ref(null)
         const cameraInput = ref(null)
 
-        const sendMessage = () => {
-            if ((!inputText.value.trim() && pendingImages.length === 0) || !chat.socketConnected.value) return
+        const isSending = ref(false)
 
-            const attachments = pendingImages.map(img => {
-                const mimeMatch = img.data.match(/^data:(image\/[^;]+);/)
-                return {
-                    type: 'image',
-                    data: img.data,
-                    filename: img.filename,
-                    size: img.size,
-                    mimeType: mimeMatch ? mimeMatch[1] : 'image/png'
+        const sendMessage = async () => {
+            if ((!inputText.value.trim() && pendingImages.length === 0) || !chat.socketConnected.value || isSending.value) return
+
+            isSending.value = true
+            try {
+                let attachments
+
+                // 有图片时先通过 HTTP 上传，避免大 base64 走 socket
+                if (pendingImages.length > 0) {
+                    try {
+                        attachments = await imageHandler.uploadAllImages(chat.authToken.value)
+                    } catch (err) {
+                        console.error('[Chat] Image upload failed:', err)
+                        chat.errorMsg.value = '图片上传失败: ' + err.message
+                        isSending.value = false
+                        return
+                    }
                 }
-            })
 
-            chat.emit('chat message', {
-                text: inputText.value,
-                source: 'mobile',
-                attachments: attachments.length > 0 ? attachments : undefined
-            })
+                chat.emit('chat message', {
+                    text: inputText.value,
+                    source: 'mobile',
+                    attachments: attachments && attachments.length > 0 ? attachments : undefined
+                })
 
-            inputText.value = ''
-            imageHandler.clearPendingImages()
-            nextTick(() => {
-                if (inputArea.value) inputArea.value.style.height = 'auto'
-                chat.scrollToBottom()
-            })
+                inputText.value = ''
+                imageHandler.clearPendingImages()
+                nextTick(() => {
+                    if (inputArea.value) inputArea.value.style.height = 'auto'
+                    chat.scrollToBottom()
+                })
+            } finally {
+                isSending.value = false
+            }
         }
 
         const showError = (msg) => { chat.errorMsg.value = msg }

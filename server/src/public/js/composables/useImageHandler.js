@@ -81,11 +81,55 @@ export function useImageHandler(options = {}) {
         pendingImages.splice(0)
     }
 
+    /**
+     * 通过 HTTP 上传单张图片，返回服务端处理后的 attachment 对象
+     */
+    const uploadImage = async (img, token, serverUrl) => {
+        const baseUrl = serverUrl || window.location.origin
+        const res = await fetch(`${baseUrl}/api/upload`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                data: img.data,
+                filename: img.filename,
+                mimeType: img.mimeType
+            })
+        })
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Upload failed' }))
+            throw new Error(err.error || `HTTP ${res.status}`)
+        }
+
+        const result = await res.json()
+        if (!result.success) {
+            throw new Error(result.error || 'Upload failed')
+        }
+        return result.attachment
+    }
+
+    /**
+     * 批量上传所有 pendingImages，返回 attachment 数组
+     */
+    const uploadAllImages = async (token, serverUrl) => {
+        const attachments = []
+        for (const img of pendingImages) {
+            const attachment = await uploadImage(img, token, serverUrl)
+            attachments.push(attachment)
+        }
+        return attachments
+    }
+
     return {
         pendingImages,
         handlePaste,
         handleFileSelect,
         removePendingImage,
-        clearPendingImages
+        clearPendingImages,
+        uploadImage,
+        uploadAllImages
     }
 }

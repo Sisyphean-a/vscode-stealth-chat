@@ -41,6 +41,8 @@
   let displayMode = 'bubble';
   /** @type {string} */
   let serverUrl = 'http://localhost:3000';
+  /** @type {string} */
+  let authToken = '';
 
   // IME 组合状态追踪
   let isComposing = false;
@@ -162,6 +164,9 @@
         if (message.payload.serverUrl) {
           serverUrl = message.payload.serverUrl;
         }
+        if (message.payload.token) {
+          authToken = message.payload.token;
+        }
         setDisplayMode(message.payload.mode);
         break;
       case 'clearMessages':
@@ -183,24 +188,77 @@
   // Message Handling
   // ============================================================================
 
-  function sendMessage() {
+  /**
+   * 通过 HTTP 上传单张图片
+   * @param {{ data: string, filename: string, size: number }} att
+   * @returns {Promise<Object>} 服务端返回的 attachment 对象
+   */
+  async function uploadImageHttp(att) {
+    const res = await fetch(`${serverUrl}/api/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        data: att.data,
+        filename: att.filename
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const result = await res.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Upload failed');
+    }
+    return result.attachment;
+  }
+
+  async function sendMessage() {
     if (!messageInput) return;
 
     const text = messageInput.value.trim();
     if (!text && pendingAttachments.length === 0) return;
 
-    const attachments = pendingAttachments.map(att => ({
-      type: 'image',
-      data: att.data,
-      filename: att.filename,
-      size: att.size
-    }));
+    let attachments;
+
+    // 有图片时先通过 HTTP 上传
+    if (pendingAttachments.length > 0 && authToken) {
+      try {
+        attachments = [];
+        for (const att of pendingAttachments) {
+          const uploaded = await uploadImageHttp(att);
+          attachments.push(uploaded);
+        }
+      } catch (err) {
+        console.error('[WebView] Image upload failed:', err);
+        // fallback: 直接通过 socket 发送 base64
+        attachments = pendingAttachments.map(att => ({
+          type: 'image',
+          data: att.data,
+          filename: att.filename,
+          size: att.size
+        }));
+      }
+    } else if (pendingAttachments.length > 0) {
+      // 没有 token 时 fallback
+      attachments = pendingAttachments.map(att => ({
+        type: 'image',
+        data: att.data,
+        filename: att.filename,
+        size: att.size
+      }));
+    }
 
     vscode.postMessage({
       type: 'sendMessage',
       payload: {
         text: text || '',
-        attachments: attachments.length > 0 ? attachments : undefined
+        attachments: attachments && attachments.length > 0 ? attachments : undefined
       }
     });
 

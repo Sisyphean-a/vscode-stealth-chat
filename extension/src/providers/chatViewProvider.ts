@@ -116,9 +116,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const config = vscode.workspace.getConfiguration("tsLint");
     const displayMode = config.get<string>("displayMode") || "bubble";
     const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+    const secret = config.get<string>("secret") || "";
     view.webview.postMessage({
       type: "setDisplayMode",
-      payload: { mode: displayMode, serverUrl },
+      payload: { mode: displayMode, serverUrl, token: secret },
     });
 
     const cached = messageCache.getCachedMessages();
