@@ -3,7 +3,7 @@
  */
 import * as vscode from "vscode";
 import { getChatHtml } from "../webview/chatContent";
-import { getNonce, getCurrentTimestamp, getActiveConnection } from "../utils/helpers";
+import { getNonce, getActiveConnection } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as messageCache from "../services/messageCache";
 import * as configService from "../services/configService";
@@ -27,8 +27,7 @@ export function setWebviewView(view: vscode.WebviewView | undefined): void {
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   constructor(
-    private readonly _extensionUri: vscode.Uri,
-    private readonly _outputChannel: vscode.OutputChannel
+    private readonly _extensionUri: vscode.Uri
   ) {}
 
   public resolveWebviewView(
@@ -81,6 +80,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case "loadMoreHistory":
           this.handleLoadMoreHistory(message.payload);
+          break;
+        case "loadAroundMessage":
+          this.handleLoadAroundMessage(message.payload);
           break;
         case "openImage":
           openImagePreview(message.payload.url);
@@ -141,8 +143,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     socketService.loadMoreHistory(payload.beforeTimestamp);
   }
 
-  private handleSendMessage(payload: { text: string; attachments?: import("../types").Attachment[] }): void {
-    const { text, attachments } = payload;
+  private handleLoadAroundMessage(payload: { targetMessageId: number }): void {
+    if (!socketService.isConnected()) return;
+    if (!Number.isFinite(payload?.targetMessageId) || payload.targetMessageId <= 0) {
+      return;
+    }
+    socketService.loadAroundMessage(payload.targetMessageId);
+  }
+
+  private handleSendMessage(payload: {
+    text: string;
+    attachments?: import("../types").Attachment[];
+    quote?: import("../types").MessageQuote;
+  }): void {
+    const { text, attachments, quote } = payload;
     if ((!text?.trim() && !attachments?.length) || !socketService.isConnected()) return;
 
     const activeConnection = getActiveConnection();
@@ -153,22 +167,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       source: "vscode",
       clickUrl,
       attachments,
+      quote,
     });
-
-    const timestamp = getCurrentTimestamp();
-    const displayText = attachments?.length
-      ? `[图片${text?.trim() ? ` + ${text.trim()}` : ""}]`
-      : text.trim();
-    this._outputChannel.appendLine(`[Info - ${timestamp}] Sent: ${displayText}`);
-
-    const msg = {
-      text: text?.trim() || "",
-      source: "vscode" as const,
-      timestamp: Date.now(),
-      attachments,
-    };
-    webviewView?.webview.postMessage({ type: "addMessage", payload: msg });
-    messageCache.addToCache(msg);
   }
 
   private sendConfig(view: vscode.WebviewView): void {

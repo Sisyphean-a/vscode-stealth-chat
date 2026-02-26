@@ -1,4 +1,4 @@
-const { ref, nextTick, onMounted, onUnmounted } = Vue
+const { ref, computed, nextTick, onMounted, onUnmounted } = Vue
 
 import { useChatConnection } from '../composables/useChatConnection.js'
 import { useImageHandler } from '../composables/useImageHandler.js'
@@ -9,6 +9,30 @@ import AuthScreen from '../components/AuthScreen.js'
 import ConnectionManager from '../components/ConnectionManager.js'
 import ConnectionEditor from '../components/ConnectionEditor.js'
 import ImagePreviewModal from '../components/ImagePreviewModal.js'
+
+const QUOTE_SNIPPET_MAX_LENGTH = 120
+
+function parsePositiveId(value) {
+    const parsed = Number.parseInt(String(value ?? ''), 10)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function getSourceLabel(source) {
+    return source === 'mobile' ? '我' : 'VSCode'
+}
+
+function buildQuoteSnippet(msg) {
+    const hasAttachments = Array.isArray(msg?.attachments) && msg.attachments.length > 0
+    const text = typeof msg?.text === 'string' ? msg.text.trim() : ''
+    const raw = hasAttachments ? `[图片] ${text}`.trim() : text
+    if (!raw) {
+        return '(空消息)'
+    }
+    if (raw.length <= QUOTE_SNIPPET_MAX_LENGTH) {
+        return raw
+    }
+    return `${raw.slice(0, QUOTE_SNIPPET_MAX_LENGTH - 3)}...`
+}
 
 export default {
     components: { AuthScreen, ConnectionManager, ConnectionEditor, ImagePreviewModal },
@@ -70,19 +94,35 @@ export default {
                     <span>暂无消息</span>
                 </div>
 
-                <template v-for="(msg, index) in messages" :key="msg.timestamp + '-' + index">
+                <template v-for="(msg, index) in messages" :key="msg.id || (msg.timestamp + '-' + index)">
                     <div v-if="showTimeDivider(msg, messages[index-1])" class="time-divider">
                         <span>{{ formatDividerDate(msg.timestamp) }}</span>
                     </div>
-                    <div :class="['message-row', msg.type]">
+                    <div :class="['message-row', msg.type]" :data-message-id="msg.id || ''">
                         <div v-if="msg.sender !== '我' && msg.type !== 'system'" class="avatar">{{ msg.sender[0] }}</div>
                         <div class="message-content">
                             <div class="bubble">
+                                <div
+                                    v-if="msg.quote"
+                                    class="quote-card"
+                                    @click="jumpToQuotedMessage(msg.quote.messageId)"
+                                >
+                                    <span class="quote-card-source">{{ getSourceLabel(msg.quote.source) }}</span>
+                                    <span class="quote-card-text">{{ msg.quote.textSnippet || '(空消息)' }}</span>
+                                </div>
                                 <div v-if="msg.attachments" v-for="att in msg.attachments" :key="att.filename">
                                     <img v-if="att.type === 'image'" :src="getImageSrc(att)" class="chat-img" @click="openImage(getImageSrc(att))">
                                 </div>
                                 <div v-html="parseMarkdown(msg.text)"></div>
                             </div>
+                            <button
+                                v-if="msg.id && msg.type !== 'system'"
+                                type="button"
+                                class="quote-btn"
+                                @click="selectQuote(msg)"
+                            >
+                                引用
+                            </button>
                         </div>
                     </div>
                 </template>
@@ -94,6 +134,10 @@ export default {
                         <img :src="img.data" alt="待发送图片">
                         <button class="remove-pending" @click="removePendingImage(idx)">×</button>
                     </div>
+                </div>
+                <div v-if="quotedMessage" class="quote-draft">
+                    <span class="quote-draft-text">{{ quoteDraftLabel }}</span>
+                    <button class="quote-draft-clear" type="button" @click="clearQuote">×</button>
                 </div>
                 <form @submit.prevent="sendMessage" class="input-form" @paste="handlePaste">
                     <button type="button" class="attach-btn" @click="triggerFileInput" title="从相册选择">+</button>
@@ -157,8 +201,81 @@ export default {
         const inputArea = ref(null)
         const fileInput = ref(null)
         const cameraInput = ref(null)
-
+        const quotedMessage = ref(null)
         const isSending = ref(false)
+
+        const quoteDraftLabel = computed(() => {
+            if (!quotedMessage.value) {
+                return ''
+            }
+            const sender = getSourceLabel(quotedMessage.value.source)
+            const snippet = quotedMessage.value.textSnippet || '(空消息)'
+            return `${sender}: ${snippet}`
+        })
+
+        const clearQuote = () => {
+            quotedMessage.value = null
+        }
+
+        const selectQuote = (msg) => {
+            const messageId = parsePositiveId(msg.id)
+            if (!messageId) {
+                chat.errorMsg.value = '该消息不支持引用'
+                return
+            }
+            quotedMessage.value = {
+                messageId,
+                textSnippet: buildQuoteSnippet(msg),
+                source: msg.source,
+                timestamp: msg.timestamp,
+            }
+        }
+
+        const highlightMessageElement = (messageId) => {
+            const container = chat.messagesContainer.value
+            if (!container) {
+                return false
+            }
+            const target = container.querySelector(`[data-message-id="${messageId}"]`)
+            if (!target) {
+                return false
+            }
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            target.classList.remove('message-highlight')
+            void target.offsetWidth
+            target.classList.add('message-highlight')
+            setTimeout(() => target.classList.remove('message-highlight'), 1200)
+            return true
+        }
+
+        const jumpToQuotedMessage = (targetMessageId) => {
+            const messageId = parsePositiveId(targetMessageId)
+            if (!messageId) {
+                return
+            }
+            if (highlightMessageElement(messageId)) {
+                return
+            }
+            const requestSent = chat.loadAroundMessage(messageId, (payload) => {
+                if (payload?.error) {
+                    chat.errorMsg.value = `定位失败: ${payload.error}`
+                    return
+                }
+                if (Array.isArray(payload?.messages) && payload.messages.length > 0) {
+                    chat.mergeMessages(payload.messages)
+                    nextTick(() => {
+                        if (!highlightMessageElement(messageId)) {
+                            chat.errorMsg.value = '定位失败：目标消息不可见'
+                        }
+                    })
+                    return
+                }
+                chat.errorMsg.value = '定位失败：目标消息不存在'
+            })
+            if (!requestSent) {
+                chat.errorMsg.value = '定位失败：当前未连接'
+            }
+        }
 
         const sendMessage = async () => {
             if ((!inputText.value.trim() && pendingImages.length === 0) || !chat.socketConnected.value || isSending.value) return
@@ -167,7 +284,6 @@ export default {
             try {
                 let attachments
 
-                // 有图片时先通过 HTTP 上传，避免大 base64 走 socket
                 if (pendingImages.length > 0) {
                     try {
                         attachments = await imageHandler.uploadAllImages(chat.authToken.value)
@@ -182,11 +298,13 @@ export default {
                 chat.emit('chat message', {
                     text: inputText.value,
                     source: 'mobile',
-                    attachments: attachments && attachments.length > 0 ? attachments : undefined
+                    attachments: attachments && attachments.length > 0 ? attachments : undefined,
+                    quote: quotedMessage.value || undefined,
                 })
 
                 inputText.value = ''
                 imageHandler.clearPendingImages()
+                clearQuote()
                 nextTick(() => {
                     if (inputArea.value) inputArea.value.style.height = 'auto'
                     chat.scrollToBottom()
@@ -235,10 +353,12 @@ export default {
             ...chat,
             inputText, inputArea, fileInput, cameraInput,
             pendingImages, previewImage, previewScale,
+            quotedMessage, quoteDraftLabel,
             sendMessage, handlePaste, handleFileSelect, removePendingImage,
             triggerFileInput, triggerCameraInput, handleConnectionSave,
             openImage, closePreview, zoomIn, zoomOut, resetZoom,
-            parseMarkdown, formatTime, showTimeDivider, formatDividerDate, getImageSrc
+            selectQuote, clearQuote, jumpToQuotedMessage, getSourceLabel,
+            parseMarkdown, formatTime, showTimeDivider, formatDividerDate, getImageSrc,
         }
     }
 }

@@ -113,6 +113,52 @@ body {
   flex-shrink: 0;
 }
 
+.composer-quote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  background: var(--vscode-input-background);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.composer-quote.hidden {
+  display: none;
+}
+
+#composer-quote-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#composer-quote-clear {
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+#composer-quote-clear:hover {
+  color: var(--vscode-errorForeground);
+}
+
+.message-wrapper.message-highlight {
+  animation: messageHighlightPulse 1.2s ease-out;
+}
+
+@keyframes messageHighlightPulse {
+  0% { box-shadow: 0 0 0 0 var(--vscode-focusBorder); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+
 #input-row {
   display: flex;
   gap: 6px;

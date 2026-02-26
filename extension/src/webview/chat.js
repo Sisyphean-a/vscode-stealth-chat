@@ -8,10 +8,84 @@
   const { createManager: createAttachmentManager } = window.ChatAttachments;
 
   // Constants
-  const TIME_GAP_THRESHOLD = 10 * 60 * 1000; // 10 minutes
+  const TIME_GAP_THRESHOLD = 10 * 60 * 1000;
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+  const HISTORY_PAGE_SIZE = 50;
+  const QUOTE_SNIPPET_MAX_LENGTH = 120;
 
   function normalizeServerUrl(value) {
-    return String(value || '').trim().replace(/\/+$/, '');
+    return String(value || "").trim().replace(/\/+$/, "");
+  }
+
+  function parsePositiveInt(value) {
+    const parsed = Number.parseInt(String(value || ""), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function buildMessageKey(msg) {
+    const messageId = parsePositiveInt(msg?.id);
+    if (messageId) {
+      return `id:${messageId}`;
+    }
+    return `ts:${msg?.timestamp || 0}-src:${msg?.source || "unknown"}-txt:${msg?.text || ""}`;
+  }
+
+  function compareMessages(a, b) {
+    if (a.timestamp === b.timestamp) {
+      const aId = parsePositiveInt(a.id) || 0;
+      const bId = parsePositiveInt(b.id) || 0;
+      return aId - bId;
+    }
+    return a.timestamp - b.timestamp;
+  }
+
+  function sourceLabel(source) {
+    return source === "mobile" ? "我" : "VSCode";
+  }
+
+  function buildQuoteSnippet(msg) {
+    const hasAttachments = Array.isArray(msg?.attachments) && msg.attachments.length > 0;
+    const text = typeof msg?.text === "string" ? msg.text.trim() : "";
+    const raw = hasAttachments ? `[图片] ${text}`.trim() : text;
+    if (!raw) {
+      return "(空消息)";
+    }
+    if (raw.length <= QUOTE_SNIPPET_MAX_LENGTH) {
+      return raw;
+    }
+    return `${raw.slice(0, QUOTE_SNIPPET_MAX_LENGTH - 3)}...`;
+  }
+
+  function buildComposerQuoteLabel(quote) {
+    const sender = sourceLabel(quote.source);
+    const snippet = quote.textSnippet || "(空消息)";
+    return `${sender}: ${snippet}`;
+  }
+
+  /**
+   * Merge messages into store by key and keep order.
+   * @param {any[]} store
+   * @param {any[]} incoming
+   * @returns {any[]}
+   */
+  function mergeMessageStore(store, incoming) {
+    const keyToMessage = new Map();
+    store.forEach((msg) => keyToMessage.set(buildMessageKey(msg), msg));
+    incoming.forEach((msg) => keyToMessage.set(buildMessageKey(msg), msg));
+    return Array.from(keyToMessage.values()).sort(compareMessages);
+  }
+
+  function normalizeIncomingMessages(messages) {
+    if (!Array.isArray(messages)) {
+      return [];
+    }
+    return messages
+      .filter((msg) => msg && typeof msg === "object" && Number.isFinite(Number(msg.timestamp)))
+      .map((msg) => ({
+        ...msg,
+        text: typeof msg.text === "string" ? msg.text : "",
+      }))
+      .sort(compareMessages);
   }
 
   // Initialize settings module
@@ -19,178 +93,370 @@
 
   // DOM elements
   /** @type {HTMLElement | null} */
-  const statusIndicator = document.getElementById('status-indicator');
+  const statusIndicator = document.getElementById("status-indicator");
   /** @type {HTMLElement | null} */
-  const statusText = document.getElementById('status-text');
+  const statusText = document.getElementById("status-text");
   /** @type {HTMLElement | null} */
-  const messagesContainer = document.getElementById('messages-container');
-  /** @type {HTMLElement | null} */
-  const emptyState = document.getElementById('empty-state');
+  const messagesContainer = document.getElementById("messages-container");
   /** @type {HTMLTextAreaElement | null} */
-  const messageInput = /** @type {HTMLTextAreaElement | null} */ (document.getElementById('message-input'));
+  const messageInput = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("message-input"));
   /** @type {HTMLButtonElement | null} */
-  const sendButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('send-button'));
+  const sendButton = /** @type {HTMLButtonElement | null} */ (document.getElementById("send-button"));
   /** @type {HTMLButtonElement | null} */
-  const scrollToBottomBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('scroll-to-bottom'));
+  const scrollToBottomBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("scroll-to-bottom"));
   /** @type {HTMLButtonElement | null} */
-  const settingsBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('settings-btn'));
+  const settingsBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("settings-btn"));
   /** @type {HTMLButtonElement | null} */
-  const settingsBackBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('settings-back-btn'));
+  const settingsBackBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("settings-back-btn"));
+  /** @type {HTMLElement | null} */
+  const composerQuote = document.getElementById("composer-quote");
+  /** @type {HTMLElement | null} */
+  const composerQuoteText = document.getElementById("composer-quote-text");
+  /** @type {HTMLButtonElement | null} */
+  const composerQuoteClear = /** @type {HTMLButtonElement | null} */ (document.getElementById("composer-quote-clear"));
 
   // State
   let autoScrollEnabled = true;
   let lastMessageTimestamp = 0;
   /** @type {'bubble' | 'log'} */
-  let displayMode = 'bubble';
+  let displayMode = "bubble";
   /** @type {string} */
-  let serverUrl = normalizeServerUrl('http://localhost:3000');
+  let serverUrl = normalizeServerUrl("http://localhost:3000");
   /** @type {string} */
-  let authToken = '';
+  let authToken = "";
+  /** @type {any[]} */
+  let messageStore = [];
+  const messageElementIndex = new Map();
 
-  // IME 组合状态追踪
+  // IME state
   let isComposing = false;
   /** @type {any[]} */
   let pendingMessages = [];
 
-  // 加载更多历史状态
+  // History state
   let isLoadingMore = false;
   let hasMoreHistory = true;
   /** @type {number | null} */
   let oldestTimestamp = null;
   let isFirstLoad = true;
 
-  // 图片大小限制 (5MB)
-  const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-  const HISTORY_PAGE_SIZE = 50;
+  // Quote composer state
+  /** @type {any | null} */
+  let selectedQuote = null;
+
   const attachmentManager = createAttachmentManager({
     maxImageSize: MAX_IMAGE_SIZE,
-    getInputContainer: () => document.getElementById('input-container'),
+    getInputContainer: () => document.getElementById("input-container"),
   });
+
+  function setComposerQuote(quote) {
+    selectedQuote = quote;
+    if (!composerQuote || !composerQuoteText) {
+      return;
+    }
+    if (!quote) {
+      composerQuote.classList.add("hidden");
+      composerQuoteText.textContent = "";
+      return;
+    }
+    composerQuoteText.textContent = buildComposerQuoteLabel(quote);
+    composerQuote.classList.remove("hidden");
+  }
+
+  function clearComposerQuote() {
+    setComposerQuote(null);
+  }
+
+  function selectQuoteFromMessage(messageId) {
+    const numericId = parsePositiveInt(messageId);
+    if (!numericId) {
+      console.error("[WebView] Cannot quote message without a valid id");
+      return;
+    }
+    const target = messageStore.find((msg) => parsePositiveInt(msg.id) === numericId);
+    if (!target) {
+      console.error(`[WebView] Cannot find message #${numericId} for quote`);
+      return;
+    }
+    setComposerQuote({
+      messageId: numericId,
+      textSnippet: buildQuoteSnippet(target),
+      source: target.source,
+      timestamp: target.timestamp,
+    });
+  }
+
+  function setOldestTimestampFromStore() {
+    oldestTimestamp = messageStore.length > 0 ? messageStore[0].timestamp : null;
+  }
+
+  function resetRenderState() {
+    lastMessageTimestamp = 0;
+    messageElementIndex.clear();
+  }
+
+  function renderMessage(msg) {
+    if (!messagesContainer) {
+      return;
+    }
+
+    if (msg.timestamp) {
+      const lastDateStr = lastMessageTimestamp > 0
+        ? new Date(lastMessageTimestamp).toLocaleDateString()
+        : "";
+      const currentDate = new Date(msg.timestamp).toLocaleDateString();
+
+      if (currentDate !== lastDateStr) {
+        messagesContainer.appendChild(createTimeDivider(msg.timestamp, displayMode));
+      } else if (lastMessageTimestamp > 0 && (msg.timestamp - lastMessageTimestamp > TIME_GAP_THRESHOLD)) {
+        messagesContainer.appendChild(createTimeGapDivider(msg.timestamp, displayMode));
+      }
+      lastMessageTimestamp = msg.timestamp;
+    }
+
+    const messageEl = createMessageElement(msg, displayMode);
+    messagesContainer.appendChild(messageEl);
+    bindImageLinkEvents(messageEl);
+
+    const messageId = parsePositiveInt(msg.id);
+    if (messageId) {
+      messageElementIndex.set(messageId, messageEl);
+    }
+  }
+
+  function rebuildMessages(options = {}) {
+    if (!messagesContainer) {
+      return;
+    }
+    const { preserveScrollTop = null } = options;
+
+    messagesContainer.innerHTML = "";
+    resetRenderState();
+    hideLoadMoreButton();
+
+    if (hasMoreHistory) {
+      showLoadMoreButton();
+    }
+
+    messageStore.forEach((msg) => renderMessage(msg));
+    updateEmptyState();
+
+    if (typeof preserveScrollTop === "number") {
+      messagesContainer.scrollTop = preserveScrollTop;
+    }
+  }
+
+  function appendMessageToView(msg) {
+    if (!messagesContainer) {
+      return;
+    }
+
+    const oldLength = messageStore.length;
+    messageStore = mergeMessageStore(messageStore, [msg]);
+    const added = messageStore.length > oldLength;
+    if (!added) {
+      return;
+    }
+
+    const isLatest = messageStore[messageStore.length - 1] === msg || compareMessages(msg, messageStore[messageStore.length - 1]) >= 0;
+    if (!isLatest) {
+      rebuildMessages();
+      if (autoScrollEnabled) {
+        scrollToBottom(true);
+      }
+      return;
+    }
+
+    renderMessage(msg);
+    updateEmptyState();
+    if (autoScrollEnabled) {
+      scrollToBottom();
+    } else if (scrollToBottomBtn) {
+      scrollToBottomBtn.style.display = "flex";
+    }
+  }
+
+  function focusMessage(messageId) {
+    const target = messageElementIndex.get(messageId);
+    if (!target) {
+      return false;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.remove("message-highlight");
+    void target.offsetWidth;
+    target.classList.add("message-highlight");
+    setTimeout(() => target.classList.remove("message-highlight"), 1200);
+    return true;
+  }
+
+  function jumpToQuotedMessage(messageId) {
+    const numericId = parsePositiveInt(messageId);
+    if (!numericId) {
+      return;
+    }
+    if (focusMessage(numericId)) {
+      return;
+    }
+    vscode.postMessage({
+      type: "loadAroundMessage",
+      payload: { targetMessageId: numericId },
+    });
+  }
 
   // ============================================================================
   // Event Listeners
   // ============================================================================
 
   if (sendButton) {
-    sendButton.addEventListener('click', sendMessage);
+    sendButton.addEventListener("click", sendMessage);
+  }
+
+  if (composerQuoteClear) {
+    composerQuoteClear.addEventListener("click", clearComposerQuote);
   }
 
   if (messageInput) {
-    messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+    messageInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
       }
     });
 
-    messageInput.addEventListener('input', () => {
-      if (messageInput) {
-        messageInput.style.height = 'auto';
-        messageInput.style.height = messageInput.scrollHeight + 'px';
-      }
+    messageInput.addEventListener("input", () => {
+      messageInput.style.height = "auto";
+      messageInput.style.height = `${messageInput.scrollHeight}px`;
     });
 
-    messageInput.addEventListener('compositionstart', () => {
+    messageInput.addEventListener("compositionstart", () => {
       isComposing = true;
     });
 
-    messageInput.addEventListener('compositionend', () => {
+    messageInput.addEventListener("compositionend", () => {
       isComposing = false;
       flushPendingMessages();
     });
 
-    messageInput.addEventListener('paste', (e) => {
+    messageInput.addEventListener("paste", (e) => {
       const items = e.clipboardData?.items;
-      if (!items) return;
+      if (!items) {
+        return;
+      }
       for (const item of items) {
-        if (item.type.startsWith('image/')) {
+        if (item.type.startsWith("image/")) {
           e.preventDefault();
           const file = item.getAsFile();
-          if (file) handleImageFile(file);
+          if (file) {
+            void handleImageFile(file);
+          }
           break;
         }
       }
     });
   }
 
+  if (messagesContainer) {
+    messagesContainer.addEventListener("scroll", () => {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      if (isAtBottom) {
+        autoScrollEnabled = true;
+        if (scrollToBottomBtn) {
+          scrollToBottomBtn.style.display = "none";
+        }
+      } else {
+        autoScrollEnabled = false;
+      }
+    });
+
+    messagesContainer.addEventListener("click", (e) => {
+      const target = /** @type {HTMLElement} */ (e.target);
+      const quoteAction = target.closest("[data-quote-action='quote']");
+      if (quoteAction) {
+        e.preventDefault();
+        const messageId = parsePositiveInt(quoteAction.dataset.messageId);
+        if (messageId) {
+          selectQuoteFromMessage(messageId);
+        }
+        return;
+      }
+
+      const quotePreviewEl = target.closest("[data-quote-message-id]");
+      if (quotePreviewEl) {
+        e.preventDefault();
+        const quoteMessageId = parsePositiveInt(quotePreviewEl.dataset.quoteMessageId);
+        if (quoteMessageId) {
+          jumpToQuotedMessage(quoteMessageId);
+        }
+      }
+    });
+  }
+
   if (scrollToBottomBtn) {
-    scrollToBottomBtn.addEventListener('click', () => {
+    scrollToBottomBtn.addEventListener("click", () => {
       scrollToBottom(true);
-      if (scrollToBottomBtn) scrollToBottomBtn.style.display = 'none';
+      scrollToBottomBtn.style.display = "none";
     });
   }
 
   if (settingsBtn) {
-    settingsBtn.addEventListener('click', () => {
+    settingsBtn.addEventListener("click", () => {
       window.ChatSettings.show();
       vscode.postMessage({ type: "getConfig" });
     });
   }
 
   if (settingsBackBtn) {
-    settingsBackBtn.addEventListener('click', () => window.ChatSettings.hide());
-  }
-
-  if (messagesContainer) {
-    messagesContainer.addEventListener('scroll', () => {
-      if (!messagesContainer) return;
-      const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-
-      if (isAtBottom) {
-        autoScrollEnabled = true;
-        if (scrollToBottomBtn) scrollToBottomBtn.style.display = 'none';
-      } else {
-        autoScrollEnabled = false;
-      }
-    });
+    settingsBackBtn.addEventListener("click", () => window.ChatSettings.hide());
   }
 
   // Listen for messages from extension
-  window.addEventListener('message', (event) => {
+  window.addEventListener("message", (event) => {
     const message = event.data;
-
     switch (message.type) {
-      case 'addMessage':
+      case "addMessage":
         if (isComposing) {
           pendingMessages.push(message.payload);
         } else {
-          appendMessage(message.payload);
+          appendMessageToView(message.payload);
         }
         break;
-      case 'loadHistory':
+      case "loadHistory":
         loadHistory(message.payload);
         break;
-      case 'prependHistory':
+      case "prependHistory":
         prependHistory(message.payload.messages, message.payload.hasMore);
         break;
-      case 'updateStatus':
+      case "aroundMessagesLoaded":
+        handleAroundMessagesLoaded(message.payload);
+        break;
+      case "updateStatus":
         updateStatus(message.payload.connected);
         break;
-      case 'setDisplayMode':
+      case "setDisplayMode":
         {
           const payload = message.payload || {};
-          if (Object.prototype.hasOwnProperty.call(payload, 'serverUrl')) {
+          if (Object.prototype.hasOwnProperty.call(payload, "serverUrl")) {
             serverUrl = normalizeServerUrl(payload.serverUrl);
           }
-          if (Object.prototype.hasOwnProperty.call(payload, 'token')) {
-            authToken = typeof payload.token === 'string' ? payload.token : '';
+          if (Object.prototype.hasOwnProperty.call(payload, "token")) {
+            authToken = typeof payload.token === "string" ? payload.token : "";
           }
-          if (payload.mode === 'bubble' || payload.mode === 'log') {
+          if (payload.mode === "bubble" || payload.mode === "log") {
             setDisplayMode(payload.mode);
           }
         }
         break;
-      case 'clearMessages':
+      case "clearMessages":
         clearMessages();
         break;
-      case 'configLoaded':
+      case "configLoaded":
         window.ChatSettings.loadConfig(message.payload);
         break;
-      case 'operationResult':
+      case "operationResult":
         window.ChatSettings.handleOperationResult(message.payload);
         break;
-      case 'testResult':
+      case "testResult":
         window.ChatSettings.handleTestResult(message.payload);
         break;
     }
@@ -201,97 +467,60 @@
   // ============================================================================
 
   async function sendMessage() {
-    if (!messageInput) return;
+    if (!messageInput) {
+      return;
+    }
 
     const pendingAttachments = attachmentManager.getPending();
     const text = messageInput.value.trim();
-    if (!text && pendingAttachments.length === 0) return;
+    if (!text && pendingAttachments.length === 0) {
+      return;
+    }
 
     let attachments;
-
     if (pendingAttachments.length > 0) {
       if (!serverUrl) {
-        console.error('[WebView] Image upload failed: missing server URL');
+        console.error("[WebView] Image upload failed: missing server URL");
         return;
       }
       if (!authToken) {
-        console.error('[WebView] Image upload failed: missing auth token');
+        console.error("[WebView] Image upload failed: missing auth token");
         return;
       }
-
       try {
         attachments = await attachmentManager.uploadAll(serverUrl, authToken);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error('[WebView] Image upload failed:', message);
+        console.error("[WebView] Image upload failed:", message);
         return;
       }
     }
 
     vscode.postMessage({
-      type: 'sendMessage',
+      type: "sendMessage",
       payload: {
-        text: text || '',
-        attachments: attachments && attachments.length > 0 ? attachments : undefined
-      }
+        text: text || "",
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
+        quote: selectedQuote || undefined,
+      },
     });
 
-    messageInput.value = '';
-    messageInput.style.height = 'auto';
+    messageInput.value = "";
+    messageInput.style.height = "auto";
     attachmentManager.clear();
+    clearComposerQuote();
   }
 
   /**
    * @param {any[]} messages
    */
   function loadHistory(messages) {
-    clearMessages();
-    // Use local tracking for the loop not global lastMessageTimestamp yet
-    // Actually we iterate formatted messages which are time sorted
-    // But we need to update global lastMessageTimestamp at the end
-    // Or just update it as we go.
-    // The original code was using lastMessageTimestamp to track global state? 
-    // Wait, loadHistory clears messages, so lastMessageTimestamp is 0. 
-    // And we iterate messages.
-    // We need to properly track 'lastDate' for date dividers.
-    // And 'lastTimestamp' for gap dividers.
-    
-    // Reset global state
-    lastMessageTimestamp = 0; 
-    
-    messages.forEach(msg => {
-      if (msg.timestamp && messagesContainer) {
-        const msgDate = new Date(msg.timestamp).toLocaleDateString();
-        const prevDate = lastMessageTimestamp > 0
-          ? new Date(lastMessageTimestamp).toLocaleDateString()
-          : "";
-
-        if (msgDate !== prevDate) {
-          const divider = createTimeDivider(msg.timestamp, displayMode);
-          messagesContainer.appendChild(divider);
-          // Reset last timestamp to current for gap calculation relative to the date divider
-          // Actually, we just need to update lastMessageTimestamp. 
-          // But effectively, date divider "resets" the visual flow.
-        } else if (lastMessageTimestamp > 0 && (msg.timestamp - lastMessageTimestamp > TIME_GAP_THRESHOLD)) {
-          // Same day, but large gap
-          const divider = createTimeGapDivider(msg.timestamp, displayMode);
-          messagesContainer.appendChild(divider);
-        }
-        
-        lastMessageTimestamp = msg.timestamp;
-      }
-      appendMessage(msg, true);
-    });
-    if (messages.length > 0) {
-      oldestTimestamp = messages[0].timestamp;
-      hasMoreHistory = messages.length >= HISTORY_PAGE_SIZE;
-    } else {
-      hasMoreHistory = false;
-    }
+    const normalized = normalizeIncomingMessages(messages);
+    messageStore = normalized;
+    setOldestTimestampFromStore();
+    hasMoreHistory = normalized.length >= HISTORY_PAGE_SIZE;
     isLoadingMore = false;
-    hideLoadMoreButton();
-    if (hasMoreHistory) showLoadMoreButton();
-    updateEmptyState();
+    rebuildMessages();
     if (isFirstLoad) {
       scrollToBottom(true);
       isFirstLoad = false;
@@ -302,12 +531,10 @@
     if (isLoadingMore || !hasMoreHistory || !oldestTimestamp) {
       return;
     }
-
     isLoadingMore = true;
-
     vscode.postMessage({
-      type: 'loadMoreHistory',
-      payload: { beforeTimestamp: oldestTimestamp }
+      type: "loadMoreHistory",
+      payload: { beforeTimestamp: oldestTimestamp },
     });
   }
 
@@ -316,175 +543,108 @@
    * @param {boolean} hasMore
    */
   function prependHistory(messages, hasMore) {
-    // 1. 禁用自动滚动和平滑滚动，防止视觉跳动
-    autoScrollEnabled = false;
-    isLoadingMore = false;
-    hasMoreHistory = hasMore;
-    
-    if (messagesContainer) {
-      messagesContainer.style.scrollBehavior = 'auto';
-    }
-
-    // 获取当前滚动高度和位置
-    const oldScrollHeight = messagesContainer ? messagesContainer.scrollHeight : 0;
-    const oldScrollTop = messagesContainer ? messagesContainer.scrollTop : 0;
-
-    hideLoadMoreButton();
-
-    if (!messagesContainer || messages.length === 0) {
-      if (hasMore) showLoadMoreButton();
+    if (!messagesContainer) {
       return;
     }
+    isLoadingMore = false;
+    hasMoreHistory = hasMore;
 
-    const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+    const oldScrollHeight = messagesContainer.scrollHeight;
+    const oldScrollTop = messagesContainer.scrollTop;
+    messageStore = mergeMessageStore(messageStore, normalizeIncomingMessages(messages));
+    setOldestTimestampFromStore();
+    rebuildMessages();
 
-    if (sorted.length > 0) {
-      oldestTimestamp = sorted[0].timestamp;
-    }
-
-    // 锚定元素：当前的第一条消息
-    let anchorMsg = messagesContainer.firstElementChild;
-    const existingFirstMsg = /** @type {HTMLElement | null} */ (messagesContainer.querySelector('.message-wrapper'));
-    const existingFirstDate = existingFirstMsg?.dataset.timestamp
-      ? new Date(Number(existingFirstMsg.dataset.timestamp)).toLocaleDateString()
-      : null;
-
-    let lastDate = "";
-    let prevTimestamp = 0;
-    const fragment = document.createDocumentFragment();
-    sorted.forEach(msg => {
-      if (msg.timestamp) {
-        const msgDate = new Date(msg.timestamp).toLocaleDateString();
-        
-        // Check for date change
-        if (msgDate !== lastDate) {
-          fragment.appendChild(createTimeDivider(msg.timestamp, displayMode));
-          lastDate = msgDate;
-          // After a date divider, we consider this a fresh start for gap calculation within this loop
-          // But we need to track local previous timestamp for gap check
-        } else if (prevTimestamp > 0 && (msg.timestamp - prevTimestamp > TIME_GAP_THRESHOLD)) {
-          fragment.appendChild(createTimeGapDivider(msg.timestamp, displayMode));
-        }
-        prevTimestamp = msg.timestamp;
-      }
-      const messageEl = createMessageElement(msg, displayMode);
-      bindImageLinkEvents(messageEl);
-      fragment.appendChild(messageEl);
-    });
-
-    // 处理日期分割线衔接
-    if (lastDate && existingFirstDate && lastDate === existingFirstDate) {
-      const firstDivider = messagesContainer.querySelector('.time-divider');
-      if (firstDivider) {
-        // 如果要移除的分割线就是锚点元素，则将锚点向后移一位，防止 insertBefore 找不到父节点
-        if (anchorMsg === firstDivider) {
-          anchorMsg = firstDivider.nextElementSibling;
-        }
-        firstDivider.remove();
-      }
-    }
-
-    // 插入新消息到顶部
-    messagesContainer.insertBefore(fragment, anchorMsg);
-
-    if (hasMore) showLoadMoreButton();
-
-    // 恢复滚动位置：使锚点元素保持在相对视口相同的位置
     const newScrollHeight = messagesContainer.scrollHeight;
     const heightDiff = newScrollHeight - oldScrollHeight;
     messagesContainer.scrollTop = oldScrollTop + heightDiff;
-    
-    // 恢复平滑滚动（如果不立即恢复，建议用 setTimeout 稍微延迟一点，确保渲染完成）
-    setTimeout(() => {
-      if (messagesContainer) {
-        messagesContainer.style.scrollBehavior = '';
-      }
-    }, 50);
+  }
+
+  function handleAroundMessagesLoaded(payload) {
+    if (!payload) {
+      return;
+    }
+    if (payload.error) {
+      console.error(`[WebView] Failed to load quote context: ${payload.error}`);
+      return;
+    }
+    const incoming = normalizeIncomingMessages(payload.messages);
+    if (incoming.length > 0) {
+      messageStore = mergeMessageStore(messageStore, incoming);
+      setOldestTimestampFromStore();
+      rebuildMessages();
+    }
+    const targetMessageId = parsePositiveInt(payload.targetMessageId);
+    if (!targetMessageId || !focusMessage(targetMessageId)) {
+      console.error("[WebView] Quoted target message is not available in current history window");
+    }
   }
 
   function showLoadMoreButton() {
-    if (!messagesContainer) return;
-    hideLoadMoreButton();
-    const btn = document.createElement('div');
-    btn.id = 'load-more-btn';
-    btn.className = 'load-more-btn';
-    btn.textContent = '加载更多历史';
-    btn.addEventListener('click', () => {
-      btn.textContent = '加载中...';
-      btn.classList.add('loading');
+    if (!messagesContainer || document.getElementById("load-more-btn")) {
+      return;
+    }
+    const btn = document.createElement("div");
+    btn.id = "load-more-btn";
+    btn.className = "load-more-btn";
+    btn.textContent = "加载更多历史";
+    btn.addEventListener("click", () => {
+      btn.textContent = "加载中...";
+      btn.classList.add("loading");
       loadMoreHistory();
     });
     messagesContainer.insertBefore(btn, messagesContainer.firstChild);
   }
 
   function hideLoadMoreButton() {
-    const btn = document.getElementById('load-more-btn');
-    if (btn) {btn.remove();
-  }
-    updateEmptyState();
-  }
-
-  /**
-   * @param {any} msg
-   * @param {boolean} [skipDivider]
-   */
-  function appendMessage(msg, skipDivider = false) {
-    if (!messagesContainer) return;
-
-    if (emptyState) emptyState.style.display = 'none';
-
-    if (!skipDivider && msg.timestamp) {
-      const lastDateStr = lastMessageTimestamp > 0
-        ? new Date(lastMessageTimestamp).toLocaleDateString()
-        : "";
-      const msgDate = new Date(msg.timestamp).toLocaleDateString();
-      
-      if (msgDate !== lastDateStr) {
-        const divider = createTimeDivider(msg.timestamp, displayMode);
-        messagesContainer.appendChild(divider);
-      } else if (lastMessageTimestamp > 0 && (msg.timestamp - lastMessageTimestamp > TIME_GAP_THRESHOLD)) {
-        const divider = createTimeGapDivider(msg.timestamp, displayMode);
-        messagesContainer.appendChild(divider);
-      }
-      lastMessageTimestamp = msg.timestamp;
-    }
-
-    const messageEl = createMessageElement(msg, displayMode);
-    messagesContainer.appendChild(messageEl);
-    bindImageLinkEvents(messageEl);
-
-    if (autoScrollEnabled) {
-      scrollToBottom();
-    } else {
-      if (scrollToBottomBtn) scrollToBottomBtn.style.display = 'flex';
+    const btn = document.getElementById("load-more-btn");
+    if (btn) {
+      btn.remove();
     }
   }
 
   function clearMessages() {
-    if (!messagesContainer) return;
-    messagesContainer.innerHTML = '<div id="empty-state">暂无消息</div>';
-    lastMessageTimestamp = 0;
+    messageStore = [];
+    resetRenderState();
     oldestTimestamp = null;
     hasMoreHistory = true;
+    isLoadingMore = false;
     isFirstLoad = true;
+    clearComposerQuote();
+    if (!messagesContainer) {
+      return;
+    }
+    messagesContainer.innerHTML = "";
+    updateEmptyState();
   }
 
   function updateEmptyState() {
-    if (!messagesContainer) return;
-    const currentEmptyState = document.getElementById('empty-state');
-    if (!currentEmptyState) return;
-
-    const hasMessages = Array.from(messagesContainer.children).some(
-      child => child.id !== 'empty-state' && child.id !== 'load-more-btn'
-    );
-    const isLoading = document.getElementById('load-more-btn')?.classList.contains('loading') || false;
-    currentEmptyState.style.display = (!hasMessages && !isLoading) ? 'block' : 'none';
+    if (!messagesContainer) {
+      return;
+    }
+    const currentEmptyState = document.getElementById("empty-state");
+    if (messageStore.length === 0) {
+      if (currentEmptyState) {
+        currentEmptyState.style.display = "block";
+      } else {
+        const empty = document.createElement("div");
+        empty.id = "empty-state";
+        empty.textContent = "暂无消息";
+        messagesContainer.appendChild(empty);
+      }
+      return;
+    }
+    if (currentEmptyState) {
+      currentEmptyState.remove();
+    }
   }
 
   function flushPendingMessages() {
-    if (pendingMessages.length === 0) return;
+    if (pendingMessages.length === 0) {
+      return;
+    }
     requestAnimationFrame(() => {
-      pendingMessages.forEach(msg => appendMessage(msg));
+      pendingMessages.forEach((msg) => appendMessageToView(msg));
       pendingMessages = [];
     });
   }
@@ -493,33 +653,37 @@
    * @param {'bubble' | 'log'} mode
    */
   function setDisplayMode(mode) {
-    if (displayMode === mode) return;
+    if (displayMode === mode) {
+      return;
+    }
     displayMode = mode;
     document.body.dataset.displayMode = mode;
-    if (messagesContainer) {
-      vscode.postMessage({ type: 'ready' });
-    }
+    vscode.postMessage({ type: "ready" });
   }
 
   /**
    * @param {boolean} connected
    */
   function updateStatus(connected) {
-    if (!statusIndicator || !statusText) return;
-    if (connected) {
-      statusIndicator.className = 'status-connected';
-      statusText.textContent = '已连接';
-    } else {
-      statusIndicator.className = 'status-disconnected';
-      statusText.textContent = '已断开';
+    if (!statusIndicator || !statusText) {
+      return;
     }
+    if (connected) {
+      statusIndicator.className = "status-connected";
+      statusText.textContent = "已连接";
+      return;
+    }
+    statusIndicator.className = "status-disconnected";
+    statusText.textContent = "已断开";
   }
 
   /**
    * @param {boolean} [force]
    */
   function scrollToBottom(force = false) {
-    if (!messagesContainer) return;
+    if (!messagesContainer) {
+      return;
+    }
     if (force || autoScrollEnabled) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
@@ -537,7 +701,7 @@
       await attachmentManager.handleImageFile(file);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error('[WebView] Failed to add image:', message);
+      console.error("[WebView] Failed to add image:", message);
       alert(`添加图片失败：${message}`);
     }
   }
@@ -549,11 +713,11 @@
   /**
    * @param {string} url
    */
-  // @ts-ignore - Dynamically adding global function for onclick handlers
+  // @ts-ignore
   window.showImagePreview = function(url) {
     vscode.postMessage({
-      type: 'openImage',
-      payload: { url }
+      type: "openImage",
+      payload: { url },
     });
   };
 
@@ -561,5 +725,6 @@
   // Initialization
   // ============================================================================
 
-  vscode.postMessage({ type: 'ready' });
+  updateEmptyState();
+  vscode.postMessage({ type: "ready" });
 })();

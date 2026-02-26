@@ -82,6 +82,39 @@ body[data-display-mode="log"] .log-content {
   min-width: 0;
 }
 
+body[data-display-mode="log"] .quote-preview-log {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--vscode-terminal-ansiMagenta);
+  cursor: pointer;
+}
+
+body[data-display-mode="log"] .quote-preview-log .quote-source {
+  font-weight: 600;
+}
+
+body[data-display-mode="log"] .quote-preview-log .quote-text {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-display-mode="log"] .quote-action-btn.log {
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+body[data-display-mode="log"] .quote-action-btn.log:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
 /* Image tag in log mode */
 body[data-display-mode="log"] .img-tag {
   position: relative;

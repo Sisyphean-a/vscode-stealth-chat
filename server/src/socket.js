@@ -7,6 +7,63 @@ const config = require("./config");
 // Global click URL (can be overridden by app config if we extended it, 
 // but currently clickUrl is passed in msg or falls back to global env)
 const CLICK_URL = config.CLICK_URL;
+const DEFAULT_AROUND_WINDOW_SIZE = 25;
+const MAX_AROUND_WINDOW_SIZE = 100;
+const QUOTE_SNIPPET_MAX_LENGTH = 120;
+
+function normalizeWindowSize(input) {
+  const parsed = Number.parseInt(String(input ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_AROUND_WINDOW_SIZE;
+  }
+  return Math.min(parsed, MAX_AROUND_WINDOW_SIZE);
+}
+
+function getMessagePreviewText(message) {
+  const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
+  const text = typeof message.text === "string" ? message.text.trim() : "";
+  const preview = hasAttachments ? `[图片] ${text}`.trim() : text;
+  if (!preview) {
+    return "(空消息)";
+  }
+  if (preview.length <= QUOTE_SNIPPET_MAX_LENGTH) {
+    return preview;
+  }
+  return `${preview.slice(0, QUOTE_SNIPPET_MAX_LENGTH - 3)}...`;
+}
+
+function buildQuoteSnapshot(quoteInput, appId) {
+  if (!quoteInput || typeof quoteInput !== "object") {
+    return null;
+  }
+  const messageId = Number.parseInt(String(quoteInput.messageId ?? ""), 10);
+  if (!Number.isFinite(messageId) || messageId <= 0) {
+    throw new Error("Invalid quoted message id");
+  }
+
+  const targetMessage = db.getMessageById(messageId, appId);
+  if (!targetMessage || !targetMessage.id) {
+    throw new Error("Quoted message not found");
+  }
+
+  return {
+    messageId: targetMessage.id,
+    textSnippet: getMessagePreviewText(targetMessage),
+    source: targetMessage.source,
+    timestamp: targetMessage.timestamp,
+  };
+}
+
+function serializeMessagePayload(message) {
+  if (!message.attachments && !message.quote) {
+    return message.text;
+  }
+  return JSON.stringify({
+    text: message.text,
+    attachments: message.attachments,
+    quote: message.quote,
+  });
+}
 
 function initSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -40,11 +97,20 @@ function initSocket(httpServer) {
     // Handle chat messages
     socket.on("chat message", async (msg) => {
       try {
+        const source = msg.source === "mobile" || msg.source === "vscode" ? msg.source : null;
+        if (!source) {
+          throw new Error("Invalid message source");
+        }
+        const text = typeof msg.text === "string" ? msg.text : "";
         const hasAttachments = msg.attachments && msg.attachments.length > 0;
-        console.log(`[Socket] Message from ${msg.source} (App: ${app.name}): text=${msg.text ? msg.text.substring(0, 30) : '(empty)'}, attachments=${hasAttachments ? msg.attachments.length : 0}`);
+        console.log(`[Socket] Message from ${source} (App: ${app.name}): text=${text ? text.substring(0, 30) : "(empty)"}, attachments=${hasAttachments ? msg.attachments.length : 0}`);
 
-        let finalMessage = { ...msg };
+        let finalMessage = { text, source };
         const timestamp = Date.now();
+        const quote = buildQuoteSnapshot(msg.quote, appId);
+        if (quote) {
+          finalMessage.quote = quote;
+        }
 
         // Process image attachments if present
         if (msg.attachments && msg.attachments.length > 0) {
@@ -95,33 +161,32 @@ function initSocket(httpServer) {
             : undefined;
         }
 
-        // Save to database (JSON serialize if has attachments)
-        const dbText = finalMessage.attachments
-          ? JSON.stringify({
-              text: finalMessage.text,
-              attachments: finalMessage.attachments,
-            })
-          : finalMessage.text;
-
         // Save with App ID
-        db.saveMessage(dbText, msg.source, timestamp, appId);
+        const dbText = serializeMessagePayload(finalMessage);
+        const savedMessage = db.saveMessageRecord({
+          text: dbText,
+          source,
+          timestamp,
+          appId,
+          quoteMessageId: quote?.messageId ?? null,
+        });
+        if (!savedMessage || !savedMessage.id) {
+          throw new Error("Failed to persist message");
+        }
 
         // Broadcast ONLY to this App's room
-        io.to(appId).emit("chat message", {
-          ...finalMessage,
-          timestamp: timestamp,
-        });
+        io.to(appId).emit("chat message", savedMessage);
 
         // Handle VS Code -> Mobile Notification
-        if (msg.source === "vscode") {
+        if (source === "vscode") {
           // 重新读取最新配置，避免使用连接时缓存的旧对象（Admin 面板更新后 token 可能已变）
           const latestApp = config.findAppById(appId) || app;
           console.log(`[Socket] Message from VS Code (App: ${latestApp.name}), triggering Gotify...`);
           const targetUrl = latestApp.clickUrl || msg.clickUrl || CLICK_URL;
           const priority = latestApp.gotifyPriority ?? 10;
-          const pushText = finalMessage.attachments
+          const pushText = savedMessage.attachments
             ? "[图片]"
-            : finalMessage.text;
+            : (savedMessage.text || savedMessage.quote?.textSnippet || "(空消息)");
 
           // Push notification is fire-and-forget and must not block message delivery.
           void sendNotification("New Reply", pushText, priority, targetUrl, latestApp);
@@ -156,6 +221,45 @@ function initSocket(httpServer) {
       } catch (err) {
         console.error(`[Socket] "load more history" error:`, err);
         socket.emit("more history loaded", { messages: [], hasMore: false });
+      }
+    });
+
+    socket.on("load around message", (data) => {
+      try {
+        const targetMessageId = Number.parseInt(String(data?.targetMessageId ?? ""), 10);
+        if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) {
+          socket.emit("around message loaded", {
+            messages: [],
+            targetMessageId: null,
+            error: "Invalid target message id",
+          });
+          return;
+        }
+
+        const targetMessage = db.getMessageById(targetMessageId, appId);
+        if (!targetMessage) {
+          socket.emit("around message loaded", {
+            messages: [],
+            targetMessageId,
+            error: "Target message not found",
+          });
+          return;
+        }
+
+        const windowSize = normalizeWindowSize(data?.windowSize);
+        const messages = db.getMessagesAroundMessage(targetMessageId, appId, windowSize, windowSize);
+        socket.emit("around message loaded", {
+          messages,
+          targetMessageId,
+          error: null,
+        });
+      } catch (error) {
+        console.error(`[Socket] "load around message" error:`, error);
+        socket.emit("around message loaded", {
+          messages: [],
+          targetMessageId: null,
+          error: error.message || "Failed to load message context",
+        });
       }
     });
 

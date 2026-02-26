@@ -13,6 +13,7 @@ let historyLoaded = false;
 let lastDisplayedDate: string = "";
 
 const HISTORY_LOAD_LIMIT = 50;
+const AROUND_WINDOW_SIZE = 25;
 
 /**
  * 设置输出通道
@@ -109,9 +110,19 @@ export function connectToServer(
     });
 
     socket.on("chat message", (data: ChatMessage) => {
-      if (data.source === "mobile") {
-        callbacks.onMessage?.(data);
-      }
+      callbacks.onMessage?.(data);
+    });
+
+    socket.on("around message loaded", (payload: {
+      messages?: ChatMessage[];
+      targetMessageId?: number | null;
+      error?: string | null;
+    }) => {
+      callbacks.onAroundMessageLoaded?.({
+        messages: Array.isArray(payload?.messages) ? payload.messages : [],
+        targetMessageId: typeof payload?.targetMessageId === "number" ? payload.targetMessageId : null,
+        error: payload?.error ?? null,
+      });
     });
   } catch (error) {
     const timestamp = getCurrentTimestamp();
@@ -188,6 +199,13 @@ export function loadHistory(): void {
  */
 export function loadMoreHistory(beforeTimestamp: number): void {
   socket?.emit("load more history", { limit: HISTORY_LOAD_LIMIT, beforeTimestamp });
+}
+
+/**
+ * 按目标消息加载上下文窗口
+ */
+export function loadAroundMessage(targetMessageId: number): void {
+  socket?.emit("load around message", { targetMessageId, windowSize: AROUND_WINDOW_SIZE });
 }
 
 /**

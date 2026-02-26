@@ -56,10 +56,58 @@ window.ChatRenderer = (function () {
     const el = displayMode === 'log'
       ? createLogMessageElement(msg, '')
       : createBubbleMessageElement(msg, '');
+    if (msg.id) {
+      el.dataset.messageId = String(msg.id);
+    }
     if (msg.timestamp) {
       el.dataset.timestamp = String(msg.timestamp);
     }
     return el;
+  }
+
+  /**
+   * @param {'mobile' | 'vscode'} source
+   * @returns {string}
+   */
+  function getSourceLabel(source) {
+    return source === 'mobile' ? '我' : 'VSCode';
+  }
+
+  /**
+   * Create quote preview block (click to jump)
+   * @param {any} quote
+   * @param {'bubble' | 'log'} mode
+   * @returns {HTMLElement}
+   */
+  function createQuotePreview(quote, mode) {
+    const block = document.createElement(mode === 'bubble' ? 'div' : 'span');
+    block.className = mode === 'bubble' ? 'quote-preview-bubble' : 'quote-preview-log';
+    block.dataset.quoteMessageId = String(quote.messageId);
+    block.setAttribute('role', 'button');
+    block.tabIndex = 0;
+    const sender = getSourceLabel(quote.source);
+    const snippet = quote.textSnippet || '(空消息)';
+    block.innerHTML = `<span class="quote-source">${escapeHtml(sender)}</span><span class="quote-text">${escapeHtml(snippet)}</span>`;
+    return block;
+  }
+
+  /**
+   * Create quote action button for a message
+   * @param {any} msg
+   * @param {'bubble' | 'log'} mode
+   * @returns {HTMLButtonElement | null}
+   */
+  function createQuoteActionButton(msg, mode) {
+    if (!msg.id) {
+      return null;
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = mode === 'bubble' ? 'quote-action-btn bubble' : 'quote-action-btn log';
+    btn.dataset.quoteAction = 'quote';
+    btn.dataset.messageId = String(msg.id);
+    btn.textContent = '引用';
+    return btn;
   }
 
   /**
@@ -80,6 +128,10 @@ window.ChatRenderer = (function () {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble ' + (msg.source === 'vscode' ? 'own' : 'remote');
 
+    if (msg.quote && msg.quote.messageId) {
+      bubble.appendChild(createQuotePreview(msg.quote, 'bubble'));
+    }
+
     if (msg.attachments && msg.attachments.length > 0) {
       renderBubbleAttachments(bubble, msg, serverUrl);
       if (msg.text) {
@@ -93,6 +145,10 @@ window.ChatRenderer = (function () {
 
     wrapper.appendChild(timeEl);
     wrapper.appendChild(bubble);
+    const actionBtn = createQuoteActionButton(msg, 'bubble');
+    if (actionBtn) {
+      wrapper.appendChild(actionBtn);
+    }
     return wrapper;
   }
 
@@ -153,6 +209,12 @@ window.ChatRenderer = (function () {
     const content = document.createElement('span');
     content.className = 'log-content';
 
+    if (msg.quote && msg.quote.messageId) {
+      const quotePrefix = createQuotePreview(msg.quote, 'log');
+      content.appendChild(quotePrefix);
+      content.appendChild(document.createTextNode(' '));
+    }
+
     if (msg.attachments && msg.attachments.length > 0) {
       renderLogAttachments(content, msg, serverUrl);
       if (msg.text) {
@@ -167,6 +229,10 @@ window.ChatRenderer = (function () {
     logEntry.appendChild(timestamp);
     logEntry.appendChild(source);
     logEntry.appendChild(content);
+    const actionBtn = createQuoteActionButton(msg, 'log');
+    if (actionBtn) {
+      logEntry.appendChild(actionBtn);
+    }
     bubble.appendChild(logEntry);
     wrapper.appendChild(bubble);
     return wrapper;

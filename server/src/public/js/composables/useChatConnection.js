@@ -20,7 +20,7 @@ export function useChatConnection() {
     const { connected, socketConnected, isConnecting, isLoadingMore, hasMoreHistory, errorMsg } = socketManager
     const { connections, activeConnectionId } = connManager
     const { authToken, rememberMe } = auth
-    const { messages, appendMessage, appendSystemMessage, prependMessages, clearMessages } = msgManager
+    const { messages, appendMessage, appendSystemMessage, prependMessages, mergeMessages, clearMessages } = msgManager
     const { messagesContainer, scrollToBottom, preserveScrollPosition } = scrollManager
 
     // 连接编辑器 UI 状态
@@ -51,7 +51,7 @@ export function useChatConnection() {
             },
             onHistoryLoaded: (history) => {
                 if (history) {
-                    history.forEach(appendMessage)
+                    mergeMessages(history)
                     scrollToBottom()
                 }
             }
@@ -157,6 +157,10 @@ export function useChatConnection() {
         })
     }
 
+    const loadAroundMessage = (targetMessageId, callback) => {
+        return socketManager.loadAroundMessage(targetMessageId, callback)
+    }
+
     return {
         // 状态
         connected, socketConnected, isConnecting, isLoadingMore, hasMoreHistory, errorMsg,
@@ -168,7 +172,8 @@ export function useChatConnection() {
 
         // 方法
         connect, disconnect, switchConnection, connectWithNewToken,
-        deleteConnection, loadMore, scrollToBottom,
+        deleteConnection, loadMore, loadAroundMessage, scrollToBottom,
+        mergeMessages,
         openAddConnection, openEditConnection, saveConnectionEditor,
         closeConnectionEditor, openConnectionManager,
 

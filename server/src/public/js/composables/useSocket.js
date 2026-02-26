@@ -14,6 +14,7 @@ export function useSocket() {
 
     let socket = null
     let moreHistoryCallback = null
+    let aroundMessageCallback = null
 
     /**
      * 连接到服务器
@@ -69,6 +70,12 @@ export function useSocket() {
             moreHistoryCallback?.(messages)
         })
 
+        socket.on('around message loaded', (payload) => {
+            const callback = aroundMessageCallback
+            aroundMessageCallback = null
+            callback?.(payload || { messages: [], targetMessageId: null, error: 'Invalid payload' })
+        })
+
         return socket
     }
 
@@ -80,6 +87,8 @@ export function useSocket() {
             socket.disconnect()
             socket = null
         }
+        moreHistoryCallback = null
+        aroundMessageCallback = null
         connected.value = false
         socketConnected.value = false
     }
@@ -114,6 +123,22 @@ export function useSocket() {
     }
 
     /**
+     * 按目标消息加载上下文窗口
+     */
+    const loadAroundMessage = (targetMessageId, callback) => {
+        if (!socket?.connected) {
+            return false
+        }
+        const parsed = Number.parseInt(String(targetMessageId ?? ''), 10)
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return false
+        }
+        aroundMessageCallback = callback
+        socket.emit('load around message', { targetMessageId: parsed, windowSize: 25 })
+        return true
+    }
+
+    /**
      * 重置加载更多状态
      */
     const resetLoadMoreState = () => {
@@ -133,6 +158,7 @@ export function useSocket() {
         emit,
         getSocket,
         loadMoreHistory,
+        loadAroundMessage,
         resetLoadMoreState
     }
 }

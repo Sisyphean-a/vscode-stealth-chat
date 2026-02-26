@@ -3,6 +3,7 @@ body[data-display-mode="bubble"] .message-wrapper {
   display: flex;
   flex-direction: column;
   margin-bottom: 12px;
+  position: relative;
 }
 
 body[data-display-mode="bubble"] .message-wrapper.own {
@@ -30,6 +31,55 @@ body[data-display-mode="bubble"] .message-bubble {
   white-space: pre-wrap;
   line-height: 1.4;
   font-size: 13px;
+}
+
+body[data-display-mode="bubble"] .quote-preview-bubble {
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  background: var(--vscode-input-background);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+body[data-display-mode="bubble"] .quote-preview-bubble .quote-source {
+  font-size: 11px;
+  color: var(--vscode-textLink-foreground);
+}
+
+body[data-display-mode="bubble"] .quote-preview-bubble .quote-text {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-display-mode="bubble"] .quote-action-btn.bubble {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editorWidget-background);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+body[data-display-mode="bubble"] .message-wrapper.own .quote-action-btn.bubble {
+  right: auto;
+  left: 0;
+}
+
+body[data-display-mode="bubble"] .message-wrapper:hover .quote-action-btn.bubble {
+  opacity: 1;
 }
 
 body[data-display-mode="bubble"] .message-bubble.own {

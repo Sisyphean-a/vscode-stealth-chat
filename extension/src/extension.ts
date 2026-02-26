@@ -4,7 +4,7 @@
  */
 import * as vscode from "vscode";
 import { Connection } from "./types";
-import { getActiveConnection, getCurrentTimestamp } from "./utils/helpers";
+import { getActiveConnection } from "./utils/helpers";
 import * as socketService from "./services/socketService";
 import * as messageCache from "./services/messageCache";
 import * as statusBar from "./ui/statusBar";
@@ -35,7 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
   connectWithCallbacks(conn.serverUrl, conn.token, forceWebsocket);
 
   // 注册 WebView Provider
-  const provider = new ChatViewProvider(context.extensionUri, outputChannel);
+  const provider = new ChatViewProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("tsLintChat.chatView", provider, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -109,6 +109,15 @@ function connectWithCallbacks(serverUrl: string, token: string, forceWebsocket: 
         payload: { messages, hasMore },
       });
     },
+    onAroundMessageLoaded: (payload) => {
+      if (payload.messages.length > 0) {
+        messageCache.mergeMessages(payload.messages);
+      }
+      getWebviewView()?.webview.postMessage({
+        type: "aroundMessagesLoaded",
+        payload,
+      });
+    },
   });
 }
 
@@ -119,7 +128,8 @@ function handleIncomingMessage(msg: any): void {
 
   const msgTime = new Date(msg.timestamp);
   const timestamp = `${msgTime.getHours().toString().padStart(2, "0")}:${msgTime.getMinutes().toString().padStart(2, "0")}:${msgTime.getSeconds().toString().padStart(2, "0")}`;
-  outputChannel.appendLine(`[Info - ${timestamp}] Process: ${msg.text}`);
+  const prefix = msg.source === "vscode" ? "Sent" : "Process";
+  outputChannel.appendLine(`[Info - ${timestamp}] ${prefix}: ${msg.text}`);
 
   const config = vscode.workspace.getConfiguration("tsLint");
   // 移除自动弹出 outputChannel 的逻辑
@@ -134,7 +144,7 @@ function handleIncomingMessage(msg: any): void {
   }
 
   // 只有当 webview 不可见时才增加未读计数
-  if (!webview?.visible) {
+  if (msg.source === "mobile" && !webview?.visible) {
     statusBar.incrementUnread();
   }
 }
@@ -211,13 +221,6 @@ function registerCommands(context: vscode.ExtensionContext): void {
           source: "vscode",
           clickUrl,
         });
-
-        const timestamp = getCurrentTimestamp();
-        outputChannel.appendLine(`[Info - ${timestamp}] Sent: ${message.trim()}`);
-
-        const msg = { text: message.trim(), source: "vscode", timestamp: Date.now() };
-        getWebviewView()?.webview.postMessage({ type: "addMessage", payload: msg });
-        messageCache.addToCache(msg as any);
       }
     })
   );

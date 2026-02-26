@@ -25,6 +25,9 @@ function simpleHash(str: string): string {
  * 生成消息唯一键（用于去重）
  */
 export function getMessageKey(msg: ChatMessage): string {
+  if (typeof msg.id === "number" && Number.isFinite(msg.id) && msg.id > 0) {
+    return `id:${msg.id}`;
+  }
   const textHash = simpleHash(msg.text || "");
   const attachmentKey = msg.attachments?.length ? `-att${msg.attachments.length}` : "";
   return `${msg.timestamp}-${msg.source}-${textHash}${attachmentKey}`;
@@ -121,6 +124,27 @@ export function prependHistory(messages: ChatMessage[]): void {
     if (removed) {
       processedMessageKeys.delete(getMessageKey(removed));
     }
+  }
+}
+
+/**
+ * 合并消息集合（用于上下文加载等场景）
+ */
+export function mergeMessages(messages: ChatMessage[]): void {
+  const merged = [...cachedMessages];
+  for (const msg of messages) {
+    const key = getMessageKey(msg);
+    if (!processedMessageKeys.has(key)) {
+      merged.push(msg);
+    }
+  }
+
+  merged.sort((a, b) => a.timestamp - b.timestamp);
+  cachedMessages = merged.slice(-CACHE_MAX_SIZE);
+
+  processedMessageKeys.clear();
+  for (const msg of cachedMessages) {
+    processedMessageKeys.add(getMessageKey(msg));
   }
 }
 
