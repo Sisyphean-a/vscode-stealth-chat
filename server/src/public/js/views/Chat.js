@@ -102,18 +102,21 @@ export default {
                         <div v-if="msg.sender !== '我' && msg.type !== 'system'" class="avatar">{{ msg.sender[0] }}</div>
                         <div class="message-content">
                             <div class="bubble">
-                                <div
-                                    v-if="msg.quote"
-                                    class="quote-card"
-                                    @click="jumpToQuotedMessage(msg.quote.messageId)"
-                                >
-                                    <span class="quote-card-source">引用 {{ getSourceLabel(msg.quote.source) }}</span>
-                                    <span class="quote-card-text">{{ msg.quote.textSnippet || '(空消息)' }}</span>
-                                </div>
                                 <div v-if="msg.attachments" v-for="att in msg.attachments" :key="att.filename">
                                     <img v-if="att.type === 'image'" :src="getImageSrc(att)" class="chat-img" @click="openImage(getImageSrc(att))">
                                 </div>
-                                <div v-html="parseMarkdown(msg.text)"></div>
+                                <div class="bubble-inline">
+                                    <span class="bubble-main-text" v-html="parseMarkdown(msg.text)"></span>
+                                    <button
+                                        v-if="msg.quote"
+                                        type="button"
+                                        class="quote-inline-chip"
+                                        @click="jumpToQuotedMessage(msg.quote.messageId)"
+                                    >
+                                        <span class="quote-inline-prefix">↩ {{ getSourceLabel(msg.quote.source) }}</span>
+                                        <span class="quote-inline-text">{{ msg.quote.textSnippet || '(空消息)' }}</span>
+                                    </button>
+                                </div>
                             </div>
                             <button
                                 v-if="msg.id && msg.type !== 'system'"

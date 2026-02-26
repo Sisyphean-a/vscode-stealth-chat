@@ -45,11 +45,6 @@ body[data-display-mode="bubble"] .quote-preview-bubble {
   gap: 2px;
 }
 
-body[data-display-mode="bubble"] .quote-preview-bubble .quote-source {
-  font-size: 11px;
-  color: var(--vscode-textLink-foreground);
-}
-
 body[data-display-mode="bubble"] .quote-preview-bubble .quote-text {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);

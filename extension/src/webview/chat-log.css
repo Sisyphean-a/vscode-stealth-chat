@@ -83,19 +83,20 @@ body[data-display-mode="log"] .log-content {
 }
 
 body[data-display-mode="log"] .quote-preview-log {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  color: var(--vscode-terminal-ansiMagenta);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+  margin-bottom: 2px;
+  padding: 1px 0 1px 6px;
+  border-left: 2px solid var(--vscode-terminal-ansiMagenta);
   cursor: pointer;
 }
 
-body[data-display-mode="log"] .quote-preview-log .quote-source {
-  font-weight: 600;
-}
-
 body[data-display-mode="log"] .quote-preview-log .quote-text {
-  max-width: 220px;
+  max-width: 320px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

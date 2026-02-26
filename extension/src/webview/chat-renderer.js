@@ -66,28 +66,19 @@ window.ChatRenderer = (function () {
   }
 
   /**
-   * @param {'mobile' | 'vscode'} source
-   * @returns {string}
-   */
-  function getSourceLabel(source) {
-    return source === 'mobile' ? '我' : 'VSCode';
-  }
-
-  /**
    * Create quote preview block (click to jump)
    * @param {any} quote
    * @param {'bubble' | 'log'} mode
    * @returns {HTMLElement}
    */
   function createQuotePreview(quote, mode) {
-    const block = document.createElement(mode === 'bubble' ? 'div' : 'span');
+    const block = document.createElement('div');
     block.className = mode === 'bubble' ? 'quote-preview-bubble' : 'quote-preview-log';
     block.dataset.quoteMessageId = String(quote.messageId);
     block.setAttribute('role', 'button');
     block.tabIndex = 0;
-    const sender = getSourceLabel(quote.source);
     const snippet = quote.textSnippet || '(空消息)';
-    block.innerHTML = `<span class="quote-source">${escapeHtml(sender)}</span><span class="quote-text">${escapeHtml(snippet)}</span>`;
+    block.innerHTML = `<span class="quote-text">${escapeHtml(snippet)}</span>`;
     return block;
   }
 
@@ -211,7 +202,6 @@ window.ChatRenderer = (function () {
     if (msg.quote && msg.quote.messageId) {
       const quotePrefix = createQuotePreview(msg.quote, 'log');
       content.appendChild(quotePrefix);
-      content.appendChild(document.createTextNode(' '));
     }
 
     if (msg.attachments && msg.attachments.length > 0) {

@@ -39,10 +39,6 @@
     return a.timestamp - b.timestamp;
   }
 
-  function sourceLabel(source) {
-    return source === "mobile" ? "我" : "VSCode";
-  }
-
   function buildQuoteSnippet(msg) {
     const hasAttachments = Array.isArray(msg?.attachments) && msg.attachments.length > 0;
     const text = typeof msg?.text === "string" ? msg.text.trim() : "";
@@ -57,9 +53,8 @@
   }
 
   function buildComposerQuoteLabel(quote) {
-    const sender = sourceLabel(quote.source);
     const snippet = quote.textSnippet || "(空消息)";
-    return `${sender}: ${snippet}`;
+    return snippet;
   }
 
   /**
