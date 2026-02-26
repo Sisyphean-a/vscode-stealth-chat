@@ -126,8 +126,18 @@ health_check() {
   require_command curl
 
   log "执行健康检查: ${HEALTH_URL}"
-  curl -fsS "${HEALTH_URL}" >/dev/null || fail "健康检查失败: ${HEALTH_URL}"
-  log "健康检查通过"
+  local max_retries=5
+  local retry=0
+  while (( retry < max_retries )); do
+    if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then
+      log "健康检查通过"
+      return 0
+    fi
+    ((retry += 1))
+    log "健康检查失败，${retry}/${max_retries}，等待2秒后重试..."
+    sleep 2
+  done
+  fail "健康检查失败: ${HEALTH_URL}"
 }
 
 show_status() {
