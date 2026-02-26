@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
-import * as path from "path";
 
 /**
  * Get the WebView HTML content by loading external files
@@ -17,12 +16,6 @@ export function getChatHtml(
     "webview",
     "chat.html",
   );
-  const cssPath = vscode.Uri.joinPath(
-    extensionUri,
-    "src",
-    "webview",
-    "chat.css",
-  );
   const coreCssPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-core.css");
   const bubbleCssPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-bubble.css");
   const logCssPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-log.css");
@@ -30,6 +23,7 @@ export function getChatHtml(
   const jsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat.js");
   const utilsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-utils.js");
   const rendererJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-renderer.js");
+  const attachmentsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-attachments.js");
   const settingsJsPath = vscode.Uri.joinPath(extensionUri, "src", "webview", "chat-settings.js");
 
   // Convert to webview URIs
@@ -40,6 +34,7 @@ export function getChatHtml(
   const scriptUri = webview.asWebviewUri(jsPath);
   const utilsScriptUri = webview.asWebviewUri(utilsJsPath);
   const rendererScriptUri = webview.asWebviewUri(rendererJsPath);
+  const attachmentsScriptUri = webview.asWebviewUri(attachmentsJsPath);
   const settingsScriptUri = webview.asWebviewUri(settingsJsPath);
   const cspSource = webview.cspSource;
 
@@ -55,6 +50,7 @@ export function getChatHtml(
   html = html.replace(/{{gapStyleUri}}/g, gapStyleUri.toString());
   html = html.replace(/{{utilsScriptUri}}/g, utilsScriptUri.toString());
   html = html.replace(/{{rendererScriptUri}}/g, rendererScriptUri.toString());
+  html = html.replace(/{{attachmentsScriptUri}}/g, attachmentsScriptUri.toString());
   html = html.replace(/{{settingsScriptUri}}/g, settingsScriptUri.toString());
   html = html.replace(/{{scriptUri}}/g, scriptUri.toString());
 

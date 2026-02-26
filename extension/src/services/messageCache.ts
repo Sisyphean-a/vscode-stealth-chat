@@ -47,15 +47,12 @@ export function addToCache(msg: ChatMessage): boolean {
   }
   processedMessageKeys.add(key);
 
-  const newMessages = [...cachedMessages, msg];
-  if (newMessages.length > CACHE_MAX_SIZE) {
-    const removed = newMessages.slice(0, newMessages.length - CACHE_MAX_SIZE);
-    for (const m of removed) {
-      processedMessageKeys.delete(getMessageKey(m));
+  cachedMessages.push(msg);
+  while (cachedMessages.length > CACHE_MAX_SIZE) {
+    const removed = cachedMessages.shift();
+    if (removed) {
+      processedMessageKeys.delete(getMessageKey(removed));
     }
-    cachedMessages = newMessages.slice(-CACHE_MAX_SIZE);
-  } else {
-    cachedMessages = newMessages;
   }
   return true;
 }
@@ -117,7 +114,14 @@ export function prependHistory(messages: ChatMessage[]): void {
     }
   }
   newMessages.sort((a, b) => a.timestamp - b.timestamp);
-  cachedMessages = [...newMessages, ...cachedMessages].slice(-CACHE_MAX_SIZE);
+  cachedMessages.unshift(...newMessages);
+
+  while (cachedMessages.length > CACHE_MAX_SIZE) {
+    const removed = cachedMessages.shift();
+    if (removed) {
+      processedMessageKeys.delete(getMessageKey(removed));
+    }
+  }
 }
 
 /**

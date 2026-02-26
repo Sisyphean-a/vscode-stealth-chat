@@ -23,7 +23,7 @@ if (!fs.existsSync(IMAGES_DIR)) {
  * @returns {Object} - { type: 'inline'|'file', data?: string, url?: string, size: number, filename: string }
  * @throws {Error} - If validation fails
  */
-function processImage(base64Data, mimeType, originalFilename) {
+async function processImage(base64Data, mimeType, originalFilename) {
   // Validate MIME type
   if (!ALLOWED_TYPES.includes(mimeType)) {
     throw new Error(`Unsupported image type: ${mimeType}. Allowed: ${ALLOWED_TYPES.join(', ')}`);
@@ -62,7 +62,7 @@ function processImage(base64Data, mimeType, originalFilename) {
   const filepath = path.join(IMAGES_DIR, filename);
 
   try {
-    fs.writeFileSync(filepath, buffer);
+    await fs.promises.writeFile(filepath, buffer);
     console.log(`[ImageStorage] Saved large image: ${filename} (${(buffer.length / 1024).toFixed(2)}KB)`);
 
     return {

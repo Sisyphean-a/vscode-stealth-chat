@@ -30,7 +30,7 @@ router.use(authMiddleware);
  * Body: { data: "data:image/png;base64,...", filename: "image.png", mimeType: "image/png" }
  * Returns: { success: true, attachment: { type, data?, url?, size, filename } }
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const { data, filename, mimeType } = req.body;
 
@@ -52,7 +52,7 @@ router.post('/', (req, res) => {
             }
         }
 
-        const result = processImage(base64Data, detectedMime, filename || 'image.png');
+        const result = await processImage(base64Data, detectedMime, filename || 'image.png');
 
         const attachment = {
             type: 'image',

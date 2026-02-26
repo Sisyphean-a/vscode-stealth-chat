@@ -10,62 +10,58 @@ const uploadRoutes = require("./routes/upload");
 const app = express();
 const server = http.createServer(app);
 
-// Parser middleware（上传路径需要更大的 body 限制）
 app.use("/api/upload", express.json({ limit: "10mb" }));
 app.use(express.json());
 
-// Start Server Sequence
-(async () => {
-  try {
-    // 1. Initialize Database
-    await db.init();
-    console.log("[Server] Database initialized");
+async function startServer() {
+  await db.init();
+  console.log("[Server] Database initialized");
 
-    // 2. Initialize Socket.io
-    initSocket(server);
+  initSocket(server);
 
-    // 3. Admin Routes
-    app.use("/api/admin", adminRoutes);
+  app.use("/api/admin", adminRoutes);
+  app.use("/api/upload", uploadRoutes);
+  app.use(express.static(path.join(__dirname, "public")));
 
-    // 3.5. Upload Routes (图片 HTTP 上传)
-    app.use("/api/upload", uploadRoutes);
+  app.use("/uploads", express.static(IMAGES_DIR));
+  console.log(`[Server] Serving uploaded images from ${IMAGES_DIR}`);
 
-    // 4. Serve static files (Mobile Client & Admin UI)
-    app.use(express.static(path.join(__dirname, "public")));
+  setInterval(cleanupOldImages, 24 * 60 * 60 * 1000);
+  console.log("[Server] Image cleanup scheduled (daily)");
 
-    // 5. Serve uploaded images
-    app.use("/uploads", express.static(IMAGES_DIR));
-    console.log(`[Server] Serving uploaded images from ${IMAGES_DIR}`);
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`[Server] running on port ${PORT}`);
+  });
+}
 
-    // 6. Start periodic image cleanup (daily)
-    setInterval(cleanupOldImages, 24 * 60 * 60 * 1000);
-    console.log("[Server] Image cleanup scheduled (daily)");
+void startServer().catch((error) => {
+  console.error("[Server] Startup failed:", error);
+  process.exit(1);
+});
 
-    // 7. Start Listening
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => {
-      console.log(`[Server] running on port ${PORT}`);
-    });
-
-  } catch (err) {
-    console.error("[Server] Startup failed:", err);
-    process.exit(1);
-  }
-})();
-
-// Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
     timestamp: Date.now(),
     messageCount: db.getMessageCount(),
-    database: "connected",
+    database: db.getDatabaseStatus(),
   });
 });
 
-// Graceful shutdown
-process.on("SIGINT", () => {
+let shutdownStarted = false;
+process.on("SIGINT", async () => {
+  if (shutdownStarted) {
+    return;
+  }
+
+  shutdownStarted = true;
   console.log("[Server] Shutting down gracefully...");
-  db.close();
-  process.exit(0);
+  try {
+    await db.close();
+    process.exit(0);
+  } catch (error) {
+    console.error("[Server] Shutdown failed:", error);
+    process.exit(1);
+  }
 });

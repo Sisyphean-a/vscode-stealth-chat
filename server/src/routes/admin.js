@@ -48,8 +48,8 @@ router.get('/status', (req, res) => {
 });
 
 // Create App
-router.post('/apps', (req, res) => {
-    const newApp = config.addApp(req.body);
+router.post('/apps', async (req, res) => {
+    const newApp = await config.addApp(req.body);
     if (newApp) {
         res.json({ success: true, app: newApp });
     } else {
@@ -58,8 +58,8 @@ router.post('/apps', (req, res) => {
 });
 
 // Update App
-router.put('/apps/:id', (req, res) => {
-    const updated = config.updateApp(req.params.id, req.body);
+router.put('/apps/:id', async (req, res) => {
+    const updated = await config.updateApp(req.params.id, req.body);
     if (updated) {
         res.json({ success: true, app: updated });
     } else {
@@ -68,8 +68,8 @@ router.put('/apps/:id', (req, res) => {
 });
 
 // Delete App
-router.delete('/apps/:id', (req, res) => {
-    const success = config.deleteApp(req.params.id);
+router.delete('/apps/:id', async (req, res) => {
+    const success = await config.deleteApp(req.params.id);
     if (success) {
         res.json({ success: true });
     } else {
@@ -78,7 +78,7 @@ router.delete('/apps/:id', (req, res) => {
 });
 
 // Change Admin Password
-router.post('/password', (req, res) => {
+router.post('/password', async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
@@ -93,7 +93,7 @@ router.post('/password', (req, res) => {
         return res.status(401).json({ error: '当前密码错误' });
     }
 
-    if (settings.setPassword(newPassword)) {
+    if (await settings.setPassword(newPassword)) {
         res.json({ success: true, message: '密码已更新，请重新登录' });
     } else {
         res.status(500).json({ error: '保存密码失败' });

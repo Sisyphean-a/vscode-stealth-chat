@@ -43,11 +43,13 @@ export function useSocket() {
         socket.on('connect_error', (err) => {
             isConnecting.value = false
             errorMsg.value = '连接失败: ' + err.message
+            connected.value = false
             socketConnected.value = false
             callbacks.onConnectError?.(err)
         })
 
         socket.on('disconnect', () => {
+            connected.value = false
             socketConnected.value = false
             callbacks.onDisconnect?.()
         })

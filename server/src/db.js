@@ -2,123 +2,182 @@ const initSqlJs = require("sql.js");
 const path = require("path");
 const fs = require("fs");
 
-// 配置
-const DB_PATH =
-  process.env.DB_PATH || path.join(__dirname, "../data/messages.db");
-const MESSAGE_RETENTION_DAYS = parseInt(
-  process.env.MESSAGE_RETENTION_DAYS || "30",
-);
-const MESSAGE_MAX_COUNT = parseInt(process.env.MESSAGE_MAX_COUNT || "1000"); // Per app limit
+const DEFAULT_DB_PATH = path.join(__dirname, "../data/messages.db");
+const DEFAULT_RETENTION_DAYS = 30;
+const DEFAULT_MAX_COUNT = 1000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const SAVE_INTERVAL_MS = 5 * 60 * 1000;
 
-let db = null;
-let isInitialized = false;
+const state = {
+  db: null,
+  isInitialized: false,
+  config: null,
+  cleanupTimer: null,
+  saveTimer: null,
+  isSaving: false,
+  pendingSave: false,
+};
 
-/**
- * 初始化数据库
- */
-async function init() {
+function parsePositiveInt(input, fallback) {
+  const parsed = Number.parseInt(String(input ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveConfig(options = {}) {
+  return {
+    dbPath: options.dbPath || process.env.DB_PATH || DEFAULT_DB_PATH,
+    retentionDays: parsePositiveInt(
+      options.retentionDays ?? process.env.MESSAGE_RETENTION_DAYS,
+      DEFAULT_RETENTION_DAYS,
+    ),
+    maxCount: parsePositiveInt(
+      options.maxCount ?? process.env.MESSAGE_MAX_COUNT,
+      DEFAULT_MAX_COUNT,
+    ),
+  };
+}
+
+async function ensureDataDir(dbPath) {
+  const dbDir = path.dirname(dbPath);
+  await fs.promises.mkdir(dbDir, { recursive: true });
+}
+
+async function loadDatabaseBuffer(dbPath) {
+  if (!fs.existsSync(dbPath)) {
+    return null;
+  }
+  return fs.promises.readFile(dbPath);
+}
+
+function createSchema(database) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      app_id TEXT DEFAULT 'default',
+      text TEXT NOT NULL,
+      source TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   try {
-    // 确保数据目录存在
-    const dbDir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-    }
-
-    // 初始化 SQL.js
-    const SQL = await initSqlJs();
-
-    // 尝试加载现有数据库或创建新数据库
-    let buffer = null;
-    if (fs.existsSync(DB_PATH)) {
-      buffer = fs.readFileSync(DB_PATH);
-    }
-
-    db = new SQL.Database(buffer);
-
-    // 1. 创建表 (如果是新库)
-    db.run(`
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                app_id TEXT DEFAULT 'default',
-                text TEXT NOT NULL,
-                source TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-
-    // 2. 检查并执行迁移 (如果是旧库，缺少 app_id)
-    try {
-        db.run("SELECT app_id FROM messages LIMIT 1");
-    } catch (e) {
-        console.log("[DB] Migrating schema: adding app_id column...");
-        db.run("ALTER TABLE messages ADD COLUMN app_id TEXT DEFAULT 'default'");
-        db.run("UPDATE messages SET app_id = 'default' WHERE app_id IS NULL");
-        console.log("[DB] Migration completed.");
-    }
-
-    // 索引
-    db.run(
-      `CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp DESC);`,
-    );
-    db.run(
-        `CREATE INDEX IF NOT EXISTS idx_app_id ON messages(app_id);`
-    );
-
-    isInitialized = true;
-    console.log(`[DB] Initialized at ${DB_PATH}`);
-
-    // 启动定期清理和保存任务
-    startCleanupTask();
-    startSaveTask();
-
-    return true;
+    database.run("SELECT app_id FROM messages LIMIT 1");
   } catch (error) {
-    console.error(`[DB] Initialization failed: ${error.message}`);
-    console.error("[DB] Falling back to memory-only mode");
-    isInitialized = false;
-    return false;
+    console.log("[DB] Migrating schema: adding app_id column...");
+    database.run("ALTER TABLE messages ADD COLUMN app_id TEXT DEFAULT 'default'");
+    database.run("UPDATE messages SET app_id = 'default' WHERE app_id IS NULL");
+    console.log("[DB] Migration completed.");
+  }
+
+  database.run("CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp DESC);");
+  database.run("CREATE INDEX IF NOT EXISTS idx_app_id ON messages(app_id);");
+}
+
+function clearTimers() {
+  if (state.cleanupTimer) {
+    clearInterval(state.cleanupTimer);
+    state.cleanupTimer = null;
+  }
+  if (state.saveTimer) {
+    clearInterval(state.saveTimer);
+    state.saveTimer = null;
   }
 }
 
-/**
- * 保存数据库到文件
- */
-function saveToFile() {
-  if (!isInitialized || !db) {
-    return false;
+function startCleanupTask() {
+  state.cleanupTimer = setInterval(() => {
+    void cleanupOldMessages();
+  }, CLEANUP_INTERVAL_MS);
+  console.log("[DB] Cleanup task started (runs every hour)");
+}
+
+function startSaveTask() {
+  state.saveTimer = setInterval(() => {
+    void saveToFile();
+  }, SAVE_INTERVAL_MS);
+  console.log("[DB] Auto-save task started (runs every 5 minutes)");
+}
+
+function ensureInitialized() {
+  return state.isInitialized && state.db && state.config;
+}
+
+async function init(options = {}) {
+  if (state.isInitialized) {
+    await close();
   }
 
   try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
+    state.config = resolveConfig(options);
+    await ensureDataDir(state.config.dbPath);
+
+    const SQL = await initSqlJs();
+    const buffer = await loadDatabaseBuffer(state.config.dbPath);
+    state.db = buffer ? new SQL.Database(buffer) : new SQL.Database();
+
+    createSchema(state.db);
+    state.isInitialized = true;
+    const saved = await saveToFile();
+    if (!saved) {
+      throw new Error(`Unable to persist database snapshot at ${state.config.dbPath}`);
+    }
+
+    clearTimers();
+    startCleanupTask();
+    startSaveTask();
+
+    console.log(`[DB] Initialized at ${state.config.dbPath}`);
+  } catch (error) {
+    state.db = null;
+    state.isInitialized = false;
+    state.config = null;
+    clearTimers();
+    throw new Error(`[DB] Initialization failed: ${error.message}`);
+  }
+}
+
+async function writeSnapshot() {
+  const data = state.db.export();
+  const buffer = Buffer.from(data);
+  await fs.promises.writeFile(state.config.dbPath, buffer);
+}
+
+async function saveToFile() {
+  if (!ensureInitialized()) {
+    return false;
+  }
+
+  if (state.isSaving) {
+    state.pendingSave = true;
+    return true;
+  }
+
+  state.isSaving = true;
+  try {
+    do {
+      state.pendingSave = false;
+      await writeSnapshot();
+    } while (state.pendingSave);
     return true;
   } catch (error) {
     console.error(`[DB] Failed to save to file: ${error.message}`);
     return false;
+  } finally {
+    state.isSaving = false;
   }
 }
 
-/**
- * 保存消息
- * @param {string} text 消息内容
- * @param {string} source 消息来源 ('vscode' | 'mobile')
- * @param {number} timestamp 时间戳
- * @param {string} appId 应用ID
- */
-function saveMessage(text, source, timestamp, appId = 'default') {
-  if (!isInitialized || !db) {
+function saveMessage(text, source, timestamp, appId = "default") {
+  if (!ensureInitialized()) {
     return false;
   }
 
   try {
-    db.run("INSERT INTO messages (text, source, timestamp, app_id) VALUES (?, ?, ?, ?)", [
-      text,
-      source,
-      timestamp,
-      appId
-    ]);
+    state.db.run(
+      "INSERT INTO messages (text, source, timestamp, app_id) VALUES (?, ?, ?, ?)",
+      [text, source, timestamp, appId],
+    );
     return true;
   } catch (error) {
     console.error(`[DB] Failed to save message: ${error.message}`);
@@ -126,70 +185,61 @@ function saveMessage(text, source, timestamp, appId = 'default') {
   }
 }
 
-/**
- * 获取最近的消息
- * @param {number} limit 返回消息数量
- * @param {string} appId 应用ID
- * @param {number} beforeTimestamp 获取此时间戳之前的消息（用于加载更多）
- * @returns {Array} 消息数组
- */
-function getRecentMessages(limit = 50, appId = 'default', beforeTimestamp = null) {
-  if (!isInitialized || !db) {
+function parseMessageText(rowText) {
+  try {
+    const parsed = JSON.parse(rowText);
+    if (parsed.attachments) {
+      return { text: parsed.text, attachments: parsed.attachments };
+    }
+  } catch (error) {
+    // plain text message
+  }
+  return { text: rowText, attachments: null };
+}
+
+function getRecentMessages(limit = 50, appId = "default", beforeTimestamp = null) {
+  if (!ensureInitialized()) {
     return [];
   }
 
+  const withPagination = beforeTimestamp !== null && beforeTimestamp !== undefined;
+  const sql = withPagination
+    ? `
+      SELECT text, source, timestamp
+      FROM messages
+      WHERE app_id = ? AND timestamp < ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `
+    : `
+      SELECT text, source, timestamp
+      FROM messages
+      WHERE app_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `;
+
+  const params = withPagination
+    ? [appId, beforeTimestamp, limit]
+    : [appId, limit];
+
   try {
-    let sql, params;
-    if (beforeTimestamp) {
-      sql = `
-        SELECT text, source, timestamp
-        FROM messages
-        WHERE app_id = ? AND timestamp < ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `;
-      params = [appId, beforeTimestamp, limit];
-    } else {
-      sql = `
-        SELECT text, source, timestamp
-        FROM messages
-        WHERE app_id = ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-      `;
-      params = [appId, limit];
-    }
-    const stmt = db.prepare(sql);
+    const stmt = state.db.prepare(sql);
     stmt.bind(params);
 
     const messages = [];
     while (stmt.step()) {
       const row = stmt.getAsObject();
-
-      // Try to parse JSON (image messages), fallback to plain text
-      let parsedText = row.text;
-      let attachments = null;
-
-      try {
-        const parsed = JSON.parse(row.text);
-        if (parsed.attachments) {
-          parsedText = parsed.text;
-          attachments = parsed.attachments;
-        }
-      } catch (e) {
-        // Plain text message, keep as-is
-      }
-
+      const parsed = parseMessageText(row.text);
       messages.push({
-        text: parsedText,
+        text: parsed.text,
         source: row.source,
         timestamp: row.timestamp,
-        attachments: attachments,
+        attachments: parsed.attachments,
       });
     }
     stmt.free();
 
-    // 反转顺序,使最旧的消息在前
     return messages.reverse();
   } catch (error) {
     console.error(`[DB] Failed to get messages: ${error.message}`);
@@ -197,28 +247,20 @@ function getRecentMessages(limit = 50, appId = 'default', beforeTimestamp = null
   }
 }
 
-/**
- * 获取消息总数 (Global or App specific? Currently global for simplicity in counting)
- * But cleanup should ideally be per app. 
- * For now let's keep it simple: Count ALL messages for stats if needed, or by App ID.
- * @param {string} [appId] Optional app ID
- * @returns {number} 消息数量
- */
 function getMessageCount(appId) {
-  if (!isInitialized || !db) {
+  if (!ensureInitialized()) {
     return 0;
   }
 
   try {
-    let sql = "SELECT COUNT(*) as count FROM messages";
-    let params = [];
-    if (appId) {
-        sql += " WHERE app_id = ?";
-        params.push(appId);
+    const hasAppFilter = !!appId;
+    const sql = hasAppFilter
+      ? "SELECT COUNT(*) as count FROM messages WHERE app_id = ?"
+      : "SELECT COUNT(*) as count FROM messages";
+    const stmt = state.db.prepare(sql);
+    if (hasAppFilter) {
+      stmt.bind([appId]);
     }
-
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
     stmt.step();
     const result = stmt.getAsObject();
     stmt.free();
@@ -229,87 +271,80 @@ function getMessageCount(appId) {
   }
 }
 
-/**
- * 清理过期消息
- */
-function cleanupOldMessages() {
-  if (!isInitialized || !db) {
+function getDistinctAppIds() {
+  const stmt = state.db.prepare("SELECT DISTINCT app_id FROM messages");
+  const appIds = [];
+  while (stmt.step()) {
+    appIds.push(stmt.getAsObject().app_id);
+  }
+  stmt.free();
+  return appIds;
+}
+
+function enforceMaxCountPerApp(maxCount) {
+  const appIds = getDistinctAppIds();
+  for (const appId of appIds) {
+    const count = getMessageCount(appId);
+    if (count <= maxCount) {
+      continue;
+    }
+
+    const excess = count - maxCount;
+    state.db.run(
+      `
+      DELETE FROM messages
+      WHERE id IN (
+        SELECT id FROM messages
+        WHERE app_id = ?
+        ORDER BY timestamp ASC
+        LIMIT ?
+      )
+      `,
+      [appId, excess],
+    );
+    console.log(`[DB] Cleaned up ${excess} excess messages for app ${appId}`);
+  }
+}
+
+async function cleanupOldMessages() {
+  if (!ensureInitialized()) {
     return;
   }
 
   try {
-    const retentionTimestamp =
-      Date.now() - MESSAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-
-    // 1. 删除过期的 (Global)
-    db.run("DELETE FROM messages WHERE timestamp < ?", [retentionTimestamp]);
-
-    // 2. 数量限制 (Per App is better, but to save SQL performance, we can do a simplified versions)
-    // We will do a generic clean up: distinct app_ids, then for each app, keep max.
-    
-    // Get distinct app_ids
-    const appSmt = db.prepare("SELECT DISTINCT app_id FROM messages");
-    const appIds = [];
-    while(appSmt.step()) {
-        appIds.push(appSmt.getAsObject().app_id);
-    }
-    appSmt.free();
-
-    for (const appId of appIds) {
-        const count = getMessageCount(appId);
-        if (count > MESSAGE_MAX_COUNT) {
-            const excess = count - MESSAGE_MAX_COUNT;
-            // Delete oldest for this app
-            db.run(
-                `
-                DELETE FROM messages 
-                WHERE id IN (
-                    SELECT id FROM messages 
-                    WHERE app_id = ?
-                    ORDER BY timestamp ASC 
-                    LIMIT ?
-                )
-                `,
-                [appId, excess]
-            );
-            console.log(`[DB] Cleaned up ${excess} excess messages for app ${appId}`);
-        }
-    }
-
-    // 保存到文件
-    saveToFile();
+    const retentionTimestamp = Date.now() - state.config.retentionDays * 24 * 60 * 60 * 1000;
+    state.db.run("DELETE FROM messages WHERE timestamp < ?", [retentionTimestamp]);
+    enforceMaxCountPerApp(state.config.maxCount);
+    await saveToFile();
   } catch (error) {
     console.error(`[DB] Cleanup failed: ${error.message}`);
   }
 }
 
-/**
- * 启动定期清理任务
- */
-function startCleanupTask() {
-  // 每小时清理一次
-  setInterval(cleanupOldMessages, 60 * 60 * 1000);
-  console.log("[DB] Cleanup task started (runs every hour)");
-}
+async function close() {
+  clearTimers();
 
-/**
- * 启动定期保存任务
- */
-function startSaveTask() {
-  // 每 5 分钟保存一次
-  setInterval(saveToFile, 5 * 60 * 1000);
-  console.log("[DB] Auto-save task started (runs every 5 minutes)");
-}
-
-/**
- * 关闭数据库连接
- */
-function close() {
-  if (db) {
-    saveToFile();
-    db.close();
-    console.log("[DB] Connection closed");
+  if (!state.db) {
+    state.isInitialized = false;
+    state.config = null;
+    state.pendingSave = false;
+    state.isSaving = false;
+    return;
   }
+
+  await saveToFile();
+  state.db.close();
+  console.log("[DB] Connection closed");
+
+  state.db = null;
+  state.isInitialized = false;
+  state.config = null;
+  state.pendingSave = false;
+  state.isSaving = false;
+}
+
+function getDatabaseStatus() {
+  return ensureInitialized() ? "connected" : "uninitialized";
 }
 
 module.exports = {
@@ -318,5 +353,7 @@ module.exports = {
   getRecentMessages,
   getMessageCount,
   cleanupOldMessages,
+  saveToFile,
   close,
+  getDatabaseStatus,
 };

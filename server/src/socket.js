@@ -71,7 +71,7 @@ function initSocket(httpServer) {
                   base64Data = base64Data.split(",")[1];
                 }
 
-                const result = processImage(
+                const result = await processImage(
                   base64Data,
                   attachment.mimeType || "image/png",
                   attachment.filename || "image.png",
@@ -123,12 +123,8 @@ function initSocket(httpServer) {
             ? "[图片]"
             : finalMessage.text;
 
-          // Pass app config to Gotify service (异步等待)
-          try {
-            await sendNotification("New Reply", pushText, priority, targetUrl, latestApp);
-          } catch (notifyErr) {
-            console.error('[Socket] Gotify push failed:', notifyErr.message);
-          }
+          // Push notification is fire-and-forget and must not block message delivery.
+          void sendNotification("New Reply", pushText, priority, targetUrl, latestApp);
         }
       } catch (error) {
         console.error("[Socket] Error processing message:", error);

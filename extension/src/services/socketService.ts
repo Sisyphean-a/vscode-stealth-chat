@@ -69,28 +69,36 @@ export function connectToServer(
     });
 
     socket.on("history loaded", (messages: ChatMessage[]) => {
-      if (messages.length > 0) {
-        messageCache.mergeHistory(messages);
-        const timestamp = getCurrentTimestamp();
-        outputChannel?.appendLine(`[Info - ${timestamp}] Loading ${messages.length} historical messages...`);
+      historyLoaded = true;
+      const safeMessages = Array.isArray(messages) ? messages : [];
+      const timestamp = getCurrentTimestamp();
 
-        lastDisplayedDate = "";
-        messages.forEach((msg) => {
-          const msgTime = new Date(msg.timestamp);
-          const msgDate = getDateKey(msg.timestamp);
-
-          if (msgDate !== lastDisplayedDate) {
-            outputChannel?.appendLine(`[Info - 00:00:00] ═══════════ ${msgDate} ═══════════`);
-            lastDisplayedDate = msgDate;
-          }
-
-          const formattedTime = formatTimestamp(msgTime);
-          const prefix = msg.source === "mobile" ? "Process" : "Sent";
-          outputChannel?.appendLine(`[Info - ${formattedTime}] ${prefix}: ${msg.text}`);
-        });
-        outputChannel?.appendLine(`[Info - ${timestamp}] History loaded successfully`);
-        callbacks.onHistoryLoaded?.(messageCache.getCachedMessages());
+      if (safeMessages.length === 0) {
+        outputChannel?.appendLine(`[Info - ${timestamp}] No historical messages found`);
+        callbacks.onHistoryLoaded?.([]);
+        return;
       }
+
+      messageCache.mergeHistory(safeMessages);
+      outputChannel?.appendLine(`[Info - ${timestamp}] Loading ${safeMessages.length} historical messages...`);
+
+      lastDisplayedDate = "";
+      safeMessages.forEach((msg) => {
+        const msgTime = new Date(msg.timestamp);
+        const msgDate = getDateKey(msg.timestamp);
+
+        if (msgDate !== lastDisplayedDate) {
+          outputChannel?.appendLine(`[Info - 00:00:00] ═══════════ ${msgDate} ═══════════`);
+          lastDisplayedDate = msgDate;
+        }
+
+        const formattedTime = formatTimestamp(msgTime);
+        const prefix = msg.source === "mobile" ? "Process" : "Sent";
+        outputChannel?.appendLine(`[Info - ${formattedTime}] ${prefix}: ${msg.text}`);
+      });
+
+      outputChannel?.appendLine(`[Info - ${timestamp}] History loaded successfully`);
+      callbacks.onHistoryLoaded?.(messageCache.getCachedMessages());
     });
 
     socket.on("more history loaded", (data: { messages: ChatMessage[]; hasMore: boolean }) => {
@@ -148,13 +156,6 @@ export function resetHistoryLoaded(): void {
  */
 export function isHistoryLoaded(): boolean {
   return historyLoaded;
-}
-
-/**
- * 设置历史已加载
- */
-export function setHistoryLoaded(): void {
-  historyLoaded = true;
 }
 
 /**

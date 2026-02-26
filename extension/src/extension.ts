@@ -82,7 +82,6 @@ function connectWithCallbacks(serverUrl: string, token: string, forceWebsocket: 
       handleIncomingMessage(msg);
     },
     onHistoryLoaded: (messages) => {
-      socketService.setHistoryLoaded();
       const webview = getWebviewView();
       if (webview) {
         webview.webview.postMessage({

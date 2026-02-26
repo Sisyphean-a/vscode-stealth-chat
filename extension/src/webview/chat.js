@@ -5,6 +5,7 @@
   // Dependencies
   const { bindImageLinkEvents } = window.ChatUtils;
   const { createTimeDivider, createTimeGapDivider, createMessageElement } = window.ChatRenderer;
+  const { createManager: createAttachmentManager } = window.ChatAttachments;
 
   // Constants
   const TIME_GAP_THRESHOLD = 10 * 60 * 1000; // 10 minutes
@@ -35,8 +36,6 @@
   // State
   let autoScrollEnabled = true;
   let lastMessageTimestamp = 0;
-  /** @type {Array<{data: string, filename: string, size: number}>} */
-  let pendingAttachments = [];
   /** @type {'bubble' | 'log'} */
   let displayMode = 'bubble';
   /** @type {string} */
@@ -59,6 +58,10 @@
   // 图片大小限制 (5MB)
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
   const HISTORY_PAGE_SIZE = 50;
+  const attachmentManager = createAttachmentManager({
+    maxImageSize: MAX_IMAGE_SIZE,
+    getInputContainer: () => document.getElementById('input-container'),
+  });
 
   // ============================================================================
   // Event Listeners
@@ -188,70 +191,29 @@
   // Message Handling
   // ============================================================================
 
-  /**
-   * 通过 HTTP 上传单张图片
-   * @param {{ data: string, filename: string, size: number }} att
-   * @returns {Promise<Object>} 服务端返回的 attachment 对象
-   */
-  async function uploadImageHttp(att) {
-    const res = await fetch(`${serverUrl}/api/upload`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        data: att.data,
-        filename: att.filename
-      })
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(err.error || `HTTP ${res.status}`);
-    }
-
-    const result = await res.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Upload failed');
-    }
-    return result.attachment;
-  }
-
   async function sendMessage() {
     if (!messageInput) return;
 
+    const pendingAttachments = attachmentManager.getPending();
     const text = messageInput.value.trim();
     if (!text && pendingAttachments.length === 0) return;
 
     let attachments;
 
-    // 有图片时先通过 HTTP 上传
-    if (pendingAttachments.length > 0 && authToken) {
-      try {
-        attachments = [];
-        for (const att of pendingAttachments) {
-          const uploaded = await uploadImageHttp(att);
-          attachments.push(uploaded);
-        }
-      } catch (err) {
-        console.error('[WebView] Image upload failed:', err);
-        // fallback: 直接通过 socket 发送 base64
-        attachments = pendingAttachments.map(att => ({
-          type: 'image',
-          data: att.data,
-          filename: att.filename,
-          size: att.size
-        }));
+    if (pendingAttachments.length > 0) {
+      if (!authToken) {
+        alert('图片发送失败：缺少认证令牌，请检查连接配置');
+        return;
       }
-    } else if (pendingAttachments.length > 0) {
-      // 没有 token 时 fallback
-      attachments = pendingAttachments.map(att => ({
-        type: 'image',
-        data: att.data,
-        filename: att.filename,
-        size: att.size
-      }));
+
+      try {
+        attachments = await attachmentManager.uploadAll(serverUrl, authToken);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[WebView] Image upload failed:', message);
+        alert(`图片上传失败：${message}`);
+        return;
+      }
     }
 
     vscode.postMessage({
@@ -264,7 +226,7 @@
 
     messageInput.value = '';
     messageInput.style.height = 'auto';
-    clearPendingAttachments();
+    attachmentManager.clear();
   }
 
   /**
@@ -558,80 +520,14 @@
   /**
    * @param {File} file
    */
-  function handleImageFile(file) {
-    if (file.size > MAX_IMAGE_SIZE) {
-      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-      console.warn('[WebView] Image too large:', sizeMB, 'MB');
-      return;
+  async function handleImageFile(file) {
+    try {
+      await attachmentManager.handleImageFile(file);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[WebView] Failed to add image:', message);
+      alert(`添加图片失败：${message}`);
     }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = /** @type {string} */ (e.target?.result);
-      if (dataUrl) {
-        pendingAttachments.push({
-          data: dataUrl,
-          filename: file.name || 'image.png',
-          size: file.size
-        });
-        renderAttachmentPreview();
-      }
-    };
-    reader.onerror = () => {
-      console.error('[WebView] Failed to read file:', file.name);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function renderAttachmentPreview() {
-    let previewContainer = document.getElementById('attachment-preview');
-
-    if (!previewContainer) {
-      previewContainer = document.createElement('div');
-      previewContainer.id = 'attachment-preview';
-      const inputContainer = document.getElementById('input-container');
-      if (inputContainer) {
-        inputContainer.insertBefore(previewContainer, inputContainer.firstChild);
-      }
-    }
-
-    if (pendingAttachments.length === 0) {
-      previewContainer.style.display = 'none';
-      previewContainer.innerHTML = '';
-      return;
-    }
-
-    previewContainer.style.display = 'flex';
-    previewContainer.innerHTML = '';
-
-    pendingAttachments.forEach((att, index) => {
-      const itemDiv = document.createElement('div');
-      itemDiv.className = 'attachment-item';
-      itemDiv.dataset.index = String(index);
-
-      const img = document.createElement('img');
-      img.src = att.data;
-      img.alt = att.filename;
-      itemDiv.appendChild(img);
-
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-attachment';
-      removeBtn.dataset.index = String(index);
-      removeBtn.title = '移除';
-      removeBtn.textContent = '×';
-      removeBtn.addEventListener('click', () => {
-        pendingAttachments.splice(index, 1);
-        renderAttachmentPreview();
-      });
-      itemDiv.appendChild(removeBtn);
-
-      previewContainer.appendChild(itemDiv);
-    });
-  }
-
-  function clearPendingAttachments() {
-    pendingAttachments = [];
-    renderAttachmentPreview();
   }
 
   // ============================================================================

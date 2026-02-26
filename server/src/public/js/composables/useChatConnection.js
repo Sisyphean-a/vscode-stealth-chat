@@ -64,7 +64,7 @@ export function useChatConnection() {
     }
 
     const switchConnection = (connId) => {
-        if (activeConnectionId.value === connId && connected.value) return
+        if (activeConnectionId.value === connId && socketConnected.value) return
 
         activeConnectionId.value = connId
         connManager.saveActiveConnection()
@@ -147,8 +147,6 @@ export function useChatConnection() {
     const loadMore = () => {
         const oldestTimestamp = msgManager.getOldestTimestamp()
         if (!oldestTimestamp) return
-
-        const oldScrollHeight = messagesContainer.value?.scrollHeight || 0
 
         socketManager.loadMoreHistory(oldestTimestamp, (olderMessages) => {
             if (olderMessages && olderMessages.length > 0) {

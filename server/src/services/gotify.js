@@ -1,5 +1,7 @@
 const axios = require('axios');
 
+const GOTIFY_TIMEOUT_MS = 3000;
+
 /**
  * Send a notification via Gotify
  * @param {string} title 
@@ -31,7 +33,9 @@ async function sendNotification(title, message, priority = 5, clickUrl, appConfi
             };
         }
 
-        await axios.post(`${url}?token=${token}`, payload);
+        await axios.post(`${url}?token=${token}`, payload, {
+            timeout: GOTIFY_TIMEOUT_MS,
+        });
         console.log(`[Gotify] Notification sent: ${title} (App: ${appConfig.name})`);
     } catch (error) {
         console.error(`[Gotify] Failed to send notification: ${error.message}`);
