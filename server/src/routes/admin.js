@@ -4,6 +4,9 @@ const config = require('../config');
 const db = require('../db');
 const settings = require('../settings');
 
+const DEFAULT_ARCHIVE_LIMIT = 50;
+const MAX_ARCHIVE_LIMIT = 500;
+
 // Middleware to check session token
 const authMiddleware = (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -17,6 +20,39 @@ const authMiddleware = (req, res, next) => {
     }
     next();
 };
+
+function parsePositiveInt(value, fallback) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseArchiveLimit(rawLimit) {
+    const limit = parsePositiveInt(rawLimit, DEFAULT_ARCHIVE_LIMIT);
+    return Math.min(limit, MAX_ARCHIVE_LIMIT);
+}
+
+function parseOptionalTimestamp(rawValue, fieldName) {
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+        return null;
+    }
+    const parsed = Number.parseInt(String(rawValue), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`${fieldName} 必须是正整数时间戳`);
+    }
+    return parsed;
+}
+
+function parseOptionalAppId(rawValue) {
+    if (typeof rawValue !== 'string') {
+        return null;
+    }
+    const appId = rawValue.trim();
+    return appId.length > 0 ? appId : null;
+}
+
+function parseBoolean(rawValue) {
+    return String(rawValue).toLowerCase() === 'true';
+}
 
 // Login check
 router.post('/login', (req, res) => {
@@ -42,9 +78,41 @@ router.get('/status', (req, res) => {
     res.json({
         uptime: process.uptime(),
         totalMessages: db.getMessageCount(),
+        archivedMessages: db.getArchiveMessageCount(),
         apps: apps,
         dbPath: process.env.DB_PATH || 'default'
     });
+});
+
+router.get('/archive/messages', (req, res) => {
+    try {
+        const limit = parseArchiveLimit(req.query.limit);
+        const appId = parseOptionalAppId(req.query.appId);
+        const beforeTimestamp = parseOptionalTimestamp(req.query.beforeTimestamp, 'beforeTimestamp');
+        const includeRestored = parseBoolean(req.query.includeRestored);
+        const messages = db.getArchivedMessages(limit, appId, beforeTimestamp, includeRestored);
+        res.json({
+            messages,
+            hasMore: messages.length === limit,
+            limit
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message || '参数错误' });
+    }
+});
+
+router.post('/archive/restore', async (req, res) => {
+    try {
+        const archiveIds = req.body?.archiveIds;
+        if (!Array.isArray(archiveIds) || archiveIds.length === 0) {
+            return res.status(400).json({ error: 'archiveIds 不能为空数组' });
+        }
+
+        const result = await db.restoreArchivedMessages(archiveIds);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        res.status(400).json({ error: error.message || '恢复失败' });
+    }
 });
 
 // Create App

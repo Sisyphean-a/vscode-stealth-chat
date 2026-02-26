@@ -26,6 +26,7 @@ services:
       - STEALTH_SECRET=${STEALTH_SECRET:-ChangeMeInProduction}
       - CLICK_URL=${CLICK_URL:-https://chat.sisyphean.top}
       - DB_PATH=/app/data/messages.db
+      - ARCHIVE_DB_PATH=/app/data/messages.archive.db
       - MESSAGE_RETENTION_DAYS=${MESSAGE_RETENTION_DAYS:-30}
       - MESSAGE_MAX_COUNT=${MESSAGE_MAX_COUNT:-1000}
       - APP_APPS=${APP_APPS}

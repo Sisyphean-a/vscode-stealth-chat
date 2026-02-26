@@ -45,6 +45,7 @@ app.get("/health", (req, res) => {
     status: "ok",
     timestamp: Date.now(),
     messageCount: db.getMessageCount(),
+    archiveMessageCount: db.getArchiveMessageCount(),
     database: db.getDatabaseStatus(),
   });
 });

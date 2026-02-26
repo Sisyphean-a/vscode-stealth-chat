@@ -32,7 +32,7 @@ vscode-stealth-chat/
 │   │   ├── routes/            # Admin / Upload API
 │   │   ├── public/            # Web 聊天 + Admin 前端（Vue3 CDN）
 │   │   ├── services/          # Gotify 集成
-│   │   ├── db.js              # 消息存储与清理策略
+│   │   ├── db.js              # 消息存储与封存策略
 │   │   ├── config.js          # App 配置持久化与加载
 │   │   └── settings.js        # 管理员密码与会话令牌
 │   └── data/                  # 运行时数据（卷挂载）
@@ -84,8 +84,9 @@ App 配置加载顺序：
 - `GOTIFY_URL`：Gotify 推送地址
 - `GOTIFY_TOKEN`：兼容旧版默认 app 的 Gotify token
 - `CLICK_URL`：通知点击跳转地址
-- `MESSAGE_RETENTION_DAYS`：消息按时间清理阈值
-- `MESSAGE_MAX_COUNT`：每个 App 最大保留消息数
+- `MESSAGE_RETENTION_DAYS`：消息按时间封存阈值
+- `MESSAGE_MAX_COUNT`：每个 App 热数据最大保留消息数
+- `ARCHIVE_DB_PATH`：归档数据库路径（可选）
 - `GOTIFY_PASS`：Gotify 管理员密码（作用于 gotify 容器）
 
 ## 数据存储与持久化
@@ -93,6 +94,7 @@ App 配置加载顺序：
 聊天与配置数据默认保存在以下目录（由 `docker-compose.yml` 挂载）：
 
 - `server/data/messages.db`：聊天消息数据库
+- `server/data/messages.archive.db`：封存消息数据库
 - `server/data/apps.json`：App 配置
 - `server/data/settings.json`：管理员密码哈希
 - `server/data/images/`：大图文件存储
@@ -179,6 +181,8 @@ npm run watch
 - `PUT /api/admin/apps/:id`
 - `DELETE /api/admin/apps/:id`
 - `POST /api/admin/password`
+- `GET /api/admin/archive/messages`
+- `POST /api/admin/archive/restore`
 
 ### 上传 API
 
@@ -189,9 +193,11 @@ npm run watch
 
 - `GET /health`
 
-## 消息清理策略
+## 消息封存策略
 
-- 时间维度：删除超过 `MESSAGE_RETENTION_DAYS` 的消息（默认 30 天）
-- 数量维度：每个 App 最多保留 `MESSAGE_MAX_COUNT` 条（默认 1000）
-- 清理任务：每小时执行
+- 时间维度：超过 `MESSAGE_RETENTION_DAYS` 的消息会从热库转移到归档库（默认 30 天）
+- 数量维度：每个 App 热库最多保留 `MESSAGE_MAX_COUNT` 条，超出部分转移到归档库（默认 1000）
+- 清理任务：每小时执行一次封存搬迁
+- 默认展示：聊天历史仅显示热库消息，归档消息默认不展示
+- 恢复机制：可通过管理 API 将归档消息恢复到热库
 - 自动落盘：每 5 分钟执行，优雅停机会额外触发一次落盘

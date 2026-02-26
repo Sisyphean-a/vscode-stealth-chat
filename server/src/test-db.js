@@ -2,7 +2,9 @@ const fs = require("fs");
 const path = require("path");
 
 const TEST_DB_PATH = path.join(__dirname, "../data/test.db");
+const TEST_ARCHIVE_DB_PATH = path.join(__dirname, "../data/test.archive.db");
 process.env.DB_PATH = TEST_DB_PATH;
+process.env.ARCHIVE_DB_PATH = TEST_ARCHIVE_DB_PATH;
 process.env.MESSAGE_RETENTION_DAYS = "1";
 process.env.MESSAGE_MAX_COUNT = "10";
 
@@ -27,6 +29,9 @@ function cleanup() {
     if (fs.existsSync(TEST_DB_PATH)) {
       fs.unlinkSync(TEST_DB_PATH);
     }
+    if (fs.existsSync(TEST_ARCHIVE_DB_PATH)) {
+      fs.unlinkSync(TEST_ARCHIVE_DB_PATH);
+    }
 
     const testDir = path.dirname(TEST_DB_PATH);
     if (fs.existsSync(testDir) && fs.readdirSync(testDir).length === 0) {
@@ -39,6 +44,7 @@ function cleanup() {
 
 function assertUsingTestDatabasePath() {
   assert(fs.existsSync(TEST_DB_PATH), `Test DB should exist at ${TEST_DB_PATH}`);
+  assert(fs.existsSync(TEST_ARCHIVE_DB_PATH), `Archive DB should exist at ${TEST_ARCHIVE_DB_PATH}`);
 }
 
 async function runTests() {
@@ -81,16 +87,45 @@ async function runTests() {
   await db.cleanupOldMessages();
   const count3 = db.getMessageCount();
   assert(count3 <= 10, `Message count should be <= 10 after cleanup, got ${count3}`);
+  const archivedCountAfterLimitCleanup = db.getArchiveMessageCount();
+  assert(
+    archivedCountAfterLimitCleanup === 5,
+    `Archive count should be 5 after max-count archive, got ${archivedCountAfterLimitCleanup}`,
+  );
 
-  console.log("\nTest 8: Old Message Cleanup (retention: 1 day)");
+  console.log("\nTest 8: Old Message Archive (retention: 1 day)");
   const oldTimestamp = Date.now() - 2 * 24 * 60 * 60 * 1000;
   db.saveMessage("Old message", "vscode", oldTimestamp);
   const beforeCleanup = db.getMessageCount();
+  const beforeArchiveCleanup = db.getArchiveMessageCount();
   await db.cleanupOldMessages();
   const afterCleanup = db.getMessageCount();
-  assert(afterCleanup < beforeCleanup, "Old messages should be cleaned up");
+  const afterArchiveCleanup = db.getArchiveMessageCount();
+  assert(afterCleanup < beforeCleanup, "Old messages should be removed from hot storage");
+  assert(
+    afterArchiveCleanup === beforeArchiveCleanup + 1,
+    "Old message should be archived instead of deleted",
+  );
 
-  console.log("\nTest 9: Close Database");
+  console.log("\nTest 9: Restore Archived Message");
+  const restorableBefore = db.getArchiveMessageCount();
+  const totalArchivedBefore = db.getArchiveMessageCount(undefined, true);
+  const hotBeforeRestore = db.getMessageCount();
+  const archivedMessages = db.getArchivedMessages(1, null);
+  assert(archivedMessages.length === 1, "Should fetch one restorable archived message");
+  const restoreResult = await db.restoreArchivedMessages([archivedMessages[0].archiveId]);
+  assert(restoreResult.restored === 1, `Should restore 1 message, got ${restoreResult.restored}`);
+  const hotAfterRestore = db.getMessageCount();
+  const restorableAfter = db.getArchiveMessageCount();
+  const totalArchivedAfter = db.getArchiveMessageCount(undefined, true);
+  assert(hotAfterRestore === hotBeforeRestore + 1, "Hot message count should increase after restore");
+  assert(restorableAfter === restorableBefore - 1, "Restorable archive count should decrease after restore");
+  assert(
+    totalArchivedAfter === totalArchivedBefore,
+    "Total archived rows (including restored) should remain unchanged",
+  );
+
+  console.log("\nTest 10: Close Database");
   await db.close();
   assert(true, "Database should close without errors");
 
