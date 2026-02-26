@@ -10,6 +10,10 @@
   // Constants
   const TIME_GAP_THRESHOLD = 10 * 60 * 1000; // 10 minutes
 
+  function normalizeServerUrl(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+  }
+
   // Initialize settings module
   window.ChatSettings.init(vscode);
 
@@ -39,7 +43,7 @@
   /** @type {'bubble' | 'log'} */
   let displayMode = 'bubble';
   /** @type {string} */
-  let serverUrl = 'http://localhost:3000';
+  let serverUrl = normalizeServerUrl('http://localhost:3000');
   /** @type {string} */
   let authToken = '';
 
@@ -164,13 +168,18 @@
         updateStatus(message.payload.connected);
         break;
       case 'setDisplayMode':
-        if (message.payload.serverUrl) {
-          serverUrl = message.payload.serverUrl;
+        {
+          const payload = message.payload || {};
+          if (Object.prototype.hasOwnProperty.call(payload, 'serverUrl')) {
+            serverUrl = normalizeServerUrl(payload.serverUrl);
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'token')) {
+            authToken = typeof payload.token === 'string' ? payload.token : '';
+          }
+          if (payload.mode === 'bubble' || payload.mode === 'log') {
+            setDisplayMode(payload.mode);
+          }
         }
-        if (message.payload.token) {
-          authToken = message.payload.token;
-        }
-        setDisplayMode(message.payload.mode);
         break;
       case 'clearMessages':
         clearMessages();
@@ -201,8 +210,12 @@
     let attachments;
 
     if (pendingAttachments.length > 0) {
+      if (!serverUrl) {
+        console.error('[WebView] Image upload failed: missing server URL');
+        return;
+      }
       if (!authToken) {
-        alert('图片发送失败：缺少认证令牌，请检查连接配置');
+        console.error('[WebView] Image upload failed: missing auth token');
         return;
       }
 
@@ -211,7 +224,6 @@
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error('[WebView] Image upload failed:', message);
-        alert(`图片上传失败：${message}`);
         return;
       }
     }

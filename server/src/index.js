@@ -9,7 +9,29 @@ const uploadRoutes = require("./routes/upload");
 
 const app = express();
 const server = http.createServer(app);
+const UPLOAD_CORS_METHODS = "POST,OPTIONS";
+const UPLOAD_CORS_HEADERS = "Content-Type,Authorization";
+const UPLOAD_CORS_MAX_AGE_SECONDS = "86400";
 
+function applyUploadCors(req, res, next) {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", UPLOAD_CORS_METHODS);
+  res.setHeader("Access-Control-Allow-Headers", UPLOAD_CORS_HEADERS);
+  res.setHeader("Access-Control-Max-Age", UPLOAD_CORS_MAX_AGE_SECONDS);
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  next();
+}
+
+app.use("/api/upload", applyUploadCors);
 app.use("/api/upload", express.json({ limit: "10mb" }));
 app.use(express.json());
 

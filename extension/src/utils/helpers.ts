@@ -4,6 +4,15 @@
 import * as vscode from "vscode";
 import { Connection } from "../types";
 
+export const DEFAULT_SERVER_URL = "http://localhost:3000";
+
+/**
+ * 规范化服务端 URL（去掉首尾空白和尾部斜杠）
+ */
+export function normalizeServerUrl(serverUrl: string): string {
+  return serverUrl.trim().replace(/\/+$/, "");
+}
+
 /**
  * 生成随机 nonce 字符串
  */
@@ -62,12 +71,15 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
   const config = vscode.workspace.getConfiguration("tsLint");
   const connections = config.get<Connection[]>("connections") || [];
   const activeName = config.get<string>("activeConnection");
+  const globalServerUrl = normalizeServerUrl(
+    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+  );
 
   if (connections.length > 0) {
     const found = connections.find((c) => c.name === activeName) || connections[0];
     return {
       name: found.name,
-      serverUrl: found.serverUrl || config.get<string>("serverUrl") || "http://localhost:3000",
+      serverUrl: found.serverUrl ? normalizeServerUrl(found.serverUrl) : globalServerUrl,
       token: found.token,
     };
   }
@@ -75,7 +87,7 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
   // 回退到旧配置
   return {
     name: "Default",
-    serverUrl: config.get<string>("serverUrl") || "http://localhost:3000",
+    serverUrl: globalServerUrl,
     token: config.get<string>("secret") || "ChangeMeInProduction",
   };
 }

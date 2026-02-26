@@ -3,7 +3,7 @@
  */
 import * as vscode from "vscode";
 import { getChatHtml } from "../webview/chatContent";
-import { getNonce, getCurrentTimestamp } from "../utils/helpers";
+import { getNonce, getCurrentTimestamp, getActiveConnection } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as messageCache from "../services/messageCache";
 import * as configService from "../services/configService";
@@ -115,11 +115,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const config = vscode.workspace.getConfiguration("tsLint");
     const displayMode = config.get<string>("displayMode") || "bubble";
-    const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
-    const secret = config.get<string>("secret") || "";
+    const activeConnection = getActiveConnection();
     view.webview.postMessage({
       type: "setDisplayMode",
-      payload: { mode: displayMode, serverUrl, token: secret },
+      payload: {
+        mode: displayMode,
+        serverUrl: activeConnection.serverUrl,
+        token: activeConnection.token,
+      },
     });
 
     const cached = messageCache.getCachedMessages();
@@ -142,8 +145,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const { text, attachments } = payload;
     if ((!text?.trim() && !attachments?.length) || !socketService.isConnected()) return;
 
-    const config = vscode.workspace.getConfiguration("tsLint");
-    const clickUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+    const activeConnection = getActiveConnection();
+    const clickUrl = activeConnection.serverUrl;
 
     socketService.getSocket()?.emit("chat message", {
       text: text?.trim() || "",

@@ -48,19 +48,32 @@ export async function activate(context: vscode.ExtensionContext) {
   // 监听配置变化
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("tsLint.activeConnection")) {
+      if (
+        e.affectsConfiguration("tsLint.activeConnection")
+        || e.affectsConfiguration("tsLint.connections")
+        || e.affectsConfiguration("tsLint.serverUrl")
+        || e.affectsConfiguration("tsLint.secret")
+      ) {
         handleConnectionChange();
       } else if (e.affectsConfiguration("tsLint.displayMode")) {
-        const config = vscode.workspace.getConfiguration("tsLint");
-        const displayMode = config.get<string>("displayMode") || "bubble";
-        const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
-        getWebviewView()?.webview.postMessage({
-          type: "setDisplayMode",
-          payload: { mode: displayMode, serverUrl },
-        });
+        postWebviewRuntimeConfig();
       }
     })
   );
+}
+
+function postWebviewRuntimeConfig(): void {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const displayMode = config.get<string>("displayMode") || "bubble";
+  const conn = getActiveConnection();
+  getWebviewView()?.webview.postMessage({
+    type: "setDisplayMode",
+    payload: {
+      mode: displayMode,
+      serverUrl: conn.serverUrl,
+      token: conn.token,
+    },
+  });
 }
 
 function connectWithCallbacks(serverUrl: string, token: string, forceWebsocket: boolean): void {
@@ -142,6 +155,7 @@ function handleConnectionChange(): void {
   const forceWebsocket = config.get<boolean>("forceWebsocket") || false;
 
   connectWithCallbacks(conn.serverUrl, conn.token, forceWebsocket);
+  postWebviewRuntimeConfig();
 }
 
 function registerCommands(context: vscode.ExtensionContext): void {
@@ -190,8 +204,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
       });
 
       if (message?.trim() && socketService.isConnected()) {
-        const config = vscode.workspace.getConfiguration("tsLint");
-        const clickUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+        const clickUrl = getActiveConnection().serverUrl;
 
         socketService.getSocket()?.emit("chat message", {
           text: message.trim(),

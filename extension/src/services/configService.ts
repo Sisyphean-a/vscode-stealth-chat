@@ -3,14 +3,18 @@
  */
 import * as vscode from "vscode";
 import { Connection, GlobalSettings } from "../types";
+import { DEFAULT_SERVER_URL, normalizeServerUrl } from "../utils/helpers";
 
 /**
  * 获取全局设置
  */
 export function getGlobalSettings(): GlobalSettings {
   const config = vscode.workspace.getConfiguration("tsLint");
+  const serverUrl = normalizeServerUrl(
+    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+  );
   return {
-    serverUrl: config.get<string>("serverUrl") || "http://localhost:3000",
+    serverUrl,
     forceWebsocket: config.get<boolean>("forceWebsocket") || false,
     autoReveal: config.get<boolean>("autoReveal") || false,
     displayMode: config.get<"bubble" | "log">("displayMode") || "bubble",
@@ -22,7 +26,7 @@ export function getGlobalSettings(): GlobalSettings {
  */
 export async function saveGlobalSettings(settings: GlobalSettings): Promise<void> {
   const config = vscode.workspace.getConfiguration("tsLint");
-  await config.update("serverUrl", settings.serverUrl, true);
+  await config.update("serverUrl", normalizeServerUrl(settings.serverUrl), true);
   await config.update("forceWebsocket", settings.forceWebsocket, true);
   await config.update("autoReveal", settings.autoReveal, true);
   await config.update("displayMode", settings.displayMode, true);
@@ -39,7 +43,9 @@ export async function ensureDefaultConnection(): Promise<void> {
     return;
   }
 
-  const serverUrl = config.get<string>("serverUrl") || "http://localhost:3000";
+  const serverUrl = normalizeServerUrl(
+    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+  );
   const token = config.get<string>("secret") || "";
 
   // 如果没有有效 token，不创建默认连接
@@ -82,23 +88,29 @@ export async function saveConnection(
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration("tsLint");
   const connections = [...getConnections()];
+  const normalizedConnection: Connection = {
+    ...connection,
+    serverUrl: connection.serverUrl
+      ? normalizeServerUrl(connection.serverUrl)
+      : undefined,
+  };
 
-  const searchName = originalName || connection.name;
+  const searchName = originalName || normalizedConnection.name;
   const index = connections.findIndex((c) => c.name === searchName);
 
   if (index >= 0) {
-    connections[index] = connection;
+    connections[index] = normalizedConnection;
   } else {
-    connections.push(connection);
+    connections.push(normalizedConnection);
   }
 
   await config.update("connections", connections, true);
 
   // 如果修改了名称且是活跃连接，更新活跃连接名
-  if (originalName && originalName !== connection.name) {
+  if (originalName && originalName !== normalizedConnection.name) {
     const activeName = getActiveConnectionName();
     if (activeName === originalName) {
-      await config.update("activeConnection", connection.name, true);
+      await config.update("activeConnection", normalizedConnection.name, true);
     }
   }
 }

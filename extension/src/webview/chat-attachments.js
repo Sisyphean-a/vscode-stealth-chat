@@ -1,4 +1,16 @@
 window.ChatAttachments = (function () {
+  function normalizeServerUrl(serverUrl) {
+    return String(serverUrl || '').trim().replace(/\/+$/, '');
+  }
+
+  function buildUploadUrl(serverUrl) {
+    const normalizedServerUrl = normalizeServerUrl(serverUrl);
+    if (!normalizedServerUrl) {
+      throw new Error('Missing server URL');
+    }
+    return `${normalizedServerUrl}/api/upload`;
+  }
+
   function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -16,7 +28,7 @@ window.ChatAttachments = (function () {
   }
 
   async function uploadImage(serverUrl, authToken, attachment) {
-    const response = await fetch(`${serverUrl}/api/upload`, {
+    const response = await fetch(buildUploadUrl(serverUrl), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
