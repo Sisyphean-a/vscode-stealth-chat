@@ -134,13 +134,12 @@ window.ChatRenderer = (function () {
 
     if (msg.attachments && msg.attachments.length > 0) {
       renderBubbleAttachments(bubble, msg, serverUrl);
-      if (msg.text) {
-        const textDiv = document.createElement('div');
-        textDiv.innerHTML = linkifyImages(escapeHtml(msg.text));
-        bubble.appendChild(textDiv);
-      }
-    } else {
-      bubble.innerHTML = linkifyImages(escapeHtml(msg.text));
+    }
+
+    if (msg.text) {
+      const textDiv = document.createElement('div');
+      textDiv.innerHTML = linkifyImages(escapeHtml(msg.text));
+      bubble.appendChild(textDiv);
     }
 
     wrapper.appendChild(timeEl);
@@ -217,13 +216,12 @@ window.ChatRenderer = (function () {
 
     if (msg.attachments && msg.attachments.length > 0) {
       renderLogAttachments(content, msg, serverUrl);
-      if (msg.text) {
-        const textSpan = document.createElement('span');
-        textSpan.innerHTML = linkifyImages(escapeHtml(msg.text));
-        content.appendChild(textSpan);
-      }
-    } else {
-      content.innerHTML = linkifyImages(escapeHtml(msg.text));
+    }
+
+    if (msg.text) {
+      const textSpan = document.createElement('span');
+      textSpan.innerHTML = linkifyImages(escapeHtml(msg.text));
+      content.appendChild(textSpan);
     }
 
     logEntry.appendChild(timestamp);

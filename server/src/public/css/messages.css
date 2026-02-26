@@ -114,10 +114,19 @@
     cursor: pointer;
 }
 
+.message-row.own .quote-card {
+    border-left-color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.2);
+}
+
 .quote-card-source {
     font-size: 12px;
     font-weight: 600;
     color: var(--primary-color);
+}
+
+.message-row.own .quote-card-source {
+    color: rgba(255, 255, 255, 0.95);
 }
 
 .quote-card-text {
@@ -128,15 +137,19 @@
     white-space: nowrap;
 }
 
+.message-row.own .quote-card-text {
+    color: rgba(255, 255, 255, 0.9);
+}
+
 .quote-btn {
     align-self: flex-start;
-    border: none;
-    background: transparent;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.9);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
     cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 8px;
+    padding: 3px 8px;
+    border-radius: 999px;
 }
 
 .message-row.own .quote-btn {

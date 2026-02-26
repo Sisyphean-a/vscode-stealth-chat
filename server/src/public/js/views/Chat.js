@@ -107,7 +107,7 @@ export default {
                                     class="quote-card"
                                     @click="jumpToQuotedMessage(msg.quote.messageId)"
                                 >
-                                    <span class="quote-card-source">{{ getSourceLabel(msg.quote.source) }}</span>
+                                    <span class="quote-card-source">引用 {{ getSourceLabel(msg.quote.source) }}</span>
                                     <span class="quote-card-text">{{ msg.quote.textSnippet || '(空消息)' }}</span>
                                 </div>
                                 <div v-if="msg.attachments" v-for="att in msg.attachments" :key="att.filename">
@@ -229,6 +229,13 @@ export default {
                 source: msg.source,
                 timestamp: msg.timestamp,
             }
+            nextTick(() => {
+                if (inputArea.value) {
+                    inputArea.value.focus()
+                    const end = inputArea.value.value.length
+                    inputArea.value.setSelectionRange(end, end)
+                }
+            })
         }
 
         const highlightMessageElement = (messageId) => {

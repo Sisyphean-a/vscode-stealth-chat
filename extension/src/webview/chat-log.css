@@ -109,6 +109,13 @@ body[data-display-mode="log"] .quote-action-btn.log {
   font-size: 11px;
   padding: 0 4px;
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+body[data-display-mode="log"] .message-wrapper:hover .quote-action-btn.log,
+body[data-display-mode="log"] .message-wrapper:focus-within .quote-action-btn.log {
+  opacity: 1;
 }
 
 body[data-display-mode="log"] .quote-action-btn.log:hover {

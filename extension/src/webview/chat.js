@@ -184,6 +184,11 @@
       source: target.source,
       timestamp: target.timestamp,
     });
+    if (messageInput) {
+      messageInput.focus();
+      const end = messageInput.value.length;
+      messageInput.setSelectionRange(end, end);
+    }
   }
 
   function setOldestTimestampFromStore() {
