@@ -39,11 +39,69 @@ export function useAppCrud(api, state) {
             state.stats.uptime = data.uptime
             state.stats.totalMessages = data.totalMessages
             state.stats.apps = data.apps
+            if (!state.archiveFilterAppId.value && state.stats.apps.length > 0) {
+                state.archiveFilterAppId.value = state.stats.apps[0].id
+            }
         } catch (error) {
             if (error.message === 'Unauthorized') {
                 return
             }
             ElMessage.error(error.message || '获取状态失败')
+        }
+    }
+
+    const loadArchiveMessages = async (append = false) => {
+        state.archiveLoading.value = true
+        try {
+            const data = await api.fetchArchiveMessages({
+                appId: state.archiveFilterAppId.value,
+                limit: 50,
+                beforeTimestamp: append ? state.archiveBeforeTimestamp.value : null,
+                includeRestored: state.includeRestored.value
+            })
+            const rows = Array.isArray(data.messages) ? data.messages : []
+            if (append) {
+                state.archiveMessages.value = [...state.archiveMessages.value, ...rows]
+            } else {
+                state.archiveMessages.value = rows
+            }
+            state.archiveHasMore.value = data.hasMore === true
+            const last = state.archiveMessages.value[state.archiveMessages.value.length - 1]
+            state.archiveBeforeTimestamp.value = last?.timestamp || null
+            state.selectedArchiveIds.value = []
+        } catch (error) {
+            ElMessage.error(error.message || '加载归档失败')
+        } finally {
+            state.archiveLoading.value = false
+        }
+    }
+
+    const toggleArchiveSelection = (archiveId, checked) => {
+        const id = Number.parseInt(String(archiveId), 10)
+        if (!Number.isFinite(id) || id <= 0) {
+            return
+        }
+        const next = new Set(state.selectedArchiveIds.value)
+        if (checked) {
+            next.add(id)
+        } else {
+            next.delete(id)
+        }
+        state.selectedArchiveIds.value = Array.from(next)
+    }
+
+    const restoreSelectedArchives = async () => {
+        if (!Array.isArray(state.selectedArchiveIds.value) || state.selectedArchiveIds.value.length === 0) {
+            ElMessage.warning('请先选择归档消息')
+            return
+        }
+        try {
+            const result = await api.restoreArchiveMessages(state.selectedArchiveIds.value)
+            ElMessage.success(`已恢复 ${result.restored || 0} 条`)
+            await fetchStatus()
+            await loadArchiveMessages(false)
+        } catch (error) {
+            ElMessage.error(error.message || '恢复失败')
         }
     }
 
@@ -105,6 +163,9 @@ export function useAppCrud(api, state) {
 
     return {
         fetchStatus,
+        loadArchiveMessages,
+        toggleArchiveSelection,
+        restoreSelectedArchives,
         deleteApp,
         openDialog,
         submitForm,

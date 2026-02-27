@@ -29,6 +29,8 @@ function compareMessages(a, b) {
  */
 const mapServerMessage = (msg) => ({
     id: parsePositiveId(msg.id),
+    archiveId: parsePositiveId(msg.archiveId),
+    archived: msg.archived === true,
     text: typeof msg.text === 'string' ? msg.text : '',
     type: msg.source === 'mobile' ? 'own' : (msg.source === 'system' ? 'system' : 'remote'),
     sender: msg.source === 'mobile' ? '我' : 'VSCode',

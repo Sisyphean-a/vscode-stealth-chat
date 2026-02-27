@@ -194,6 +194,10 @@
     box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
 }
 
+.message-row.archived .bubble {
+    border: 1px dashed rgba(0, 0, 0, 0.18);
+}
+
 .message-row.system .bubble {
     background: transparent;
     color: var(--text-secondary);

@@ -1,8 +1,16 @@
 /**
  * Socket.io 连接 Composable
- * 管理 Socket.io 连接生命周期
+ * 管理 Socket.io 连接生命周期、消息 ACK 与重试
  */
 const { ref } = Vue
+
+const ACK_TIMEOUT_MS = 4000
+const MAX_SEND_RETRIES = 3
+const RETRY_DELAY_MS = 1200
+
+function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export function useSocket() {
     const connected = ref(false)
@@ -15,10 +23,8 @@ export function useSocket() {
     let socket = null
     let moreHistoryCallback = null
     let aroundMessageCallback = null
+    let aroundArchivedMessageCallback = null
 
-    /**
-     * 连接到服务器
-     */
     const connect = (token, callbacks = {}) => {
         if (!token) {
             errorMsg.value = '请输入密钥'
@@ -29,7 +35,7 @@ export function useSocket() {
         errorMsg.value = ''
 
         socket = io({
-            auth: { token }
+            auth: { token, clientType: 'mobile' }
         })
 
         socket.on('connect', () => {
@@ -76,12 +82,33 @@ export function useSocket() {
             callback?.(payload || { messages: [], targetMessageId: null, error: 'Invalid payload' })
         })
 
+        socket.on('around archived message loaded', (payload) => {
+            const callback = aroundArchivedMessageCallback
+            aroundArchivedMessageCallback = null
+            callback?.(payload || { messages: [], targetArchiveId: null, error: 'Invalid payload' })
+        })
+
+        socket.on('presence update', (payload) => {
+            callbacks.onPresenceUpdate?.({
+                appId: typeof payload?.appId === 'string' ? payload.appId : 'default',
+                total: Number.isFinite(payload?.total) ? payload.total : 0,
+                mobile: Number.isFinite(payload?.mobile) ? payload.mobile : 0,
+                vscode: Number.isFinite(payload?.vscode) ? payload.vscode : 0,
+            })
+        })
+
+        socket.on('read receipt', (payload) => {
+            callbacks.onReadReceipt?.({
+                appId: typeof payload?.appId === 'string' ? payload.appId : 'default',
+                clientType: payload?.clientType === 'mobile' || payload?.clientType === 'vscode' ? payload.clientType : 'unknown',
+                lastReadTimestamp: Number.isFinite(payload?.lastReadTimestamp) ? payload.lastReadTimestamp : Date.now(),
+                lastReadMessageId: Number.isFinite(payload?.lastReadMessageId) ? payload.lastReadMessageId : null,
+            })
+        })
+
         return socket
     }
 
-    /**
-     * 断开连接
-     */
     const disconnect = () => {
         if (socket) {
             socket.disconnect()
@@ -89,13 +116,11 @@ export function useSocket() {
         }
         moreHistoryCallback = null
         aroundMessageCallback = null
+        aroundArchivedMessageCallback = null
         connected.value = false
         socketConnected.value = false
     }
 
-    /**
-     * 发送消息
-     */
     const emit = (event, data) => {
         if (socket?.connected) {
             socket.emit(event, data)
@@ -104,14 +129,75 @@ export function useSocket() {
         return false
     }
 
-    /**
-     * 获取 socket 实例
-     */
+    const emitWithAck = (event, data, timeoutMs = ACK_TIMEOUT_MS) => {
+        return new Promise((resolve, reject) => {
+            if (!socket?.connected) {
+                reject(new Error('当前未连接'))
+                return
+            }
+            let finished = false
+            const timer = setTimeout(() => {
+                if (finished) {
+                    return
+                }
+                finished = true
+                reject(new Error('确认超时'))
+            }, timeoutMs)
+
+            socket.emit(event, data, (ack) => {
+                if (finished) {
+                    return
+                }
+                finished = true
+                clearTimeout(timer)
+                resolve(ack)
+            })
+        })
+    }
+
+    const sendChatMessage = async (payload) => {
+        let lastError = new Error('发送失败')
+        let retriesLeft = MAX_SEND_RETRIES
+        while (retriesLeft >= 0) {
+            try {
+                const ack = await emitWithAck('chat message', payload, ACK_TIMEOUT_MS)
+                if (ack?.ok) {
+                    return ack
+                }
+                throw new Error(ack?.error || '发送失败')
+            } catch (error) {
+                lastError = error instanceof Error ? error : new Error(String(error))
+                if (retriesLeft === 0) {
+                    throw lastError
+                }
+                retriesLeft -= 1
+                await wait(RETRY_DELAY_MS)
+            }
+        }
+        throw lastError
+    }
+
+    const searchMessages = async (keyword, limit = 50) => {
+        const ack = await emitWithAck('search messages', { keyword, limit }, 6000)
+        if (!ack?.ok) {
+            throw new Error(ack?.error || '搜索失败')
+        }
+        return Array.isArray(ack.results) ? ack.results : []
+    }
+
+    const markRead = (lastReadTimestamp, lastReadMessageId) => {
+        if (!socket?.connected) {
+            return
+        }
+        socket.emit('mark read', {
+            clientType: 'mobile',
+            lastReadTimestamp,
+            lastReadMessageId,
+        })
+    }
+
     const getSocket = () => socket
 
-    /**
-     * 加载更多历史消息
-     */
     const loadMoreHistory = (beforeTimestamp, callback) => {
         if (!socket?.connected || isLoadingMore.value || !hasMoreHistory.value) {
             return false
@@ -122,9 +208,6 @@ export function useSocket() {
         return true
     }
 
-    /**
-     * 按目标消息加载上下文窗口
-     */
     const loadAroundMessage = (targetMessageId, callback) => {
         if (!socket?.connected) {
             return false
@@ -138,9 +221,19 @@ export function useSocket() {
         return true
     }
 
-    /**
-     * 重置加载更多状态
-     */
+    const loadAroundArchivedMessage = (targetArchiveId, callback) => {
+        if (!socket?.connected) {
+            return false
+        }
+        const parsed = Number.parseInt(String(targetArchiveId ?? ''), 10)
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            return false
+        }
+        aroundArchivedMessageCallback = callback
+        socket.emit('load around archived message', { targetArchiveId: parsed, windowSize: 25 })
+        return true
+    }
+
     const resetLoadMoreState = () => {
         hasMoreHistory.value = true
         isLoadingMore.value = false
@@ -156,9 +249,14 @@ export function useSocket() {
         connect,
         disconnect,
         emit,
+        emitWithAck,
+        sendChatMessage,
+        searchMessages,
+        markRead,
         getSocket,
         loadMoreHistory,
         loadAroundMessage,
+        loadAroundArchivedMessage,
         resetLoadMoreState
     }
 }

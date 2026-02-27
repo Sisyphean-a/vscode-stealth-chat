@@ -10,6 +10,9 @@ const CLICK_URL = config.CLICK_URL;
 const DEFAULT_AROUND_WINDOW_SIZE = 25;
 const MAX_AROUND_WINDOW_SIZE = 100;
 const QUOTE_SNIPPET_MAX_LENGTH = 120;
+const MAX_SEARCH_LIMIT = 100;
+const DEFAULT_SEARCH_LIMIT = 50;
+const VALID_CLIENT_TYPES = new Set(["mobile", "vscode", "unknown"]);
 
 function normalizeWindowSize(input) {
   const parsed = Number.parseInt(String(input ?? ""), 10);
@@ -17,6 +20,50 @@ function normalizeWindowSize(input) {
     return DEFAULT_AROUND_WINDOW_SIZE;
   }
   return Math.min(parsed, MAX_AROUND_WINDOW_SIZE);
+}
+
+function normalizeSearchLimit(input) {
+  const parsed = Number.parseInt(String(input ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SEARCH_LIMIT;
+  }
+  return Math.min(parsed, MAX_SEARCH_LIMIT);
+}
+
+function normalizeClientType(input) {
+  const type = typeof input === "string" ? input.trim().toLowerCase() : "";
+  return VALID_CLIENT_TYPES.has(type) ? type : "unknown";
+}
+
+function safeAck(ack, payload) {
+  if (typeof ack === "function") {
+    ack(payload);
+  }
+}
+
+function buildPresencePayload(io, appId) {
+  const room = io.sockets.adapter.rooms.get(appId);
+  if (!room || room.size === 0) {
+    return { appId, total: 0, mobile: 0, vscode: 0 };
+  }
+
+  let mobile = 0;
+  let vscode = 0;
+  for (const socketId of room) {
+    const roomSocket = io.sockets.sockets.get(socketId);
+    const type = normalizeClientType(roomSocket?.data?.clientType);
+    if (type === "mobile") {
+      mobile += 1;
+    } else if (type === "vscode") {
+      vscode += 1;
+    }
+  }
+
+  return { appId, total: room.size, mobile, vscode };
+}
+
+function emitPresenceUpdate(io, appId) {
+  io.to(appId).emit("presence update", buildPresencePayload(io, appId));
 }
 
 function getMessagePreviewText(message) {
@@ -75,11 +122,13 @@ function initSocket(httpServer) {
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     const app = config.findAppByToken(token);
+    const clientType = normalizeClientType(socket.handshake.auth.clientType);
 
     if (app) {
       // Store app info in socket session
       socket.data.app = app;
       socket.data.appId = app.id;
+      socket.data.clientType = clientType;
       next();
     } else {
       console.log(`[Socket] Unauthorized access attempt: ${socket.id}`);
@@ -93,9 +142,10 @@ function initSocket(httpServer) {
 
     // Join room based on App ID for isolation
     socket.join(appId);
+    emitPresenceUpdate(io, appId);
 
     // Handle chat messages
-    socket.on("chat message", async (msg) => {
+    socket.on("chat message", async (msg, ack) => {
       try {
         const source = msg.source === "mobile" || msg.source === "vscode" ? msg.source : null;
         if (!source) {
@@ -105,6 +155,7 @@ function initSocket(httpServer) {
         const hasAttachments = msg.attachments && msg.attachments.length > 0;
         console.log(`[Socket] Message from ${source} (App: ${app.name}): text=${text ? text.substring(0, 30) : "(empty)"}, attachments=${hasAttachments ? msg.attachments.length : 0}`);
 
+        const clientMessageId = typeof msg.clientMessageId === "string" ? msg.clientMessageId.trim() : "";
         let finalMessage = { text, source };
         const timestamp = Date.now();
         const quote = buildQuoteSnapshot(msg.quote, appId);
@@ -169,6 +220,7 @@ function initSocket(httpServer) {
           timestamp,
           appId,
           quoteMessageId: quote?.messageId ?? null,
+          clientMessageId: clientMessageId || null,
         });
         if (!savedMessage || !savedMessage.id) {
           throw new Error("Failed to persist message");
@@ -176,6 +228,11 @@ function initSocket(httpServer) {
 
         // Broadcast ONLY to this App's room
         io.to(appId).emit("chat message", savedMessage);
+        safeAck(ack, {
+          ok: true,
+          clientMessageId: clientMessageId || null,
+          message: savedMessage,
+        });
 
         // Handle VS Code -> Mobile Notification
         if (source === "vscode") {
@@ -193,6 +250,11 @@ function initSocket(httpServer) {
         }
       } catch (error) {
         console.error("[Socket] Error processing message:", error);
+        safeAck(ack, {
+          ok: false,
+          clientMessageId: typeof msg?.clientMessageId === "string" ? msg.clientMessageId : null,
+          error: error.message || "Failed to process message",
+        });
         socket.emit("error", {
           message: error.message || "Failed to process message",
         });
@@ -263,8 +325,83 @@ function initSocket(httpServer) {
       }
     });
 
+    socket.on("load around archived message", (data) => {
+      try {
+        const targetArchiveId = Number.parseInt(String(data?.targetArchiveId ?? ""), 10);
+        if (!Number.isFinite(targetArchiveId) || targetArchiveId <= 0) {
+          socket.emit("around archived message loaded", {
+            messages: [],
+            targetArchiveId: null,
+            error: "Invalid target archive id",
+          });
+          return;
+        }
+
+        const windowSize = normalizeWindowSize(data?.windowSize);
+        const messages = db.getArchivedMessagesAround(targetArchiveId, appId, windowSize, windowSize);
+        if (messages.length === 0) {
+          socket.emit("around archived message loaded", {
+            messages: [],
+            targetArchiveId,
+            error: "Target archive message not found",
+          });
+          return;
+        }
+        socket.emit("around archived message loaded", {
+          messages,
+          targetArchiveId,
+          error: null,
+        });
+      } catch (error) {
+        console.error(`[Socket] "load around archived message" error:`, error);
+        socket.emit("around archived message loaded", {
+          messages: [],
+          targetArchiveId: null,
+          error: error.message || "Failed to load archived context",
+        });
+      }
+    });
+
+    socket.on("search messages", (data, ack) => {
+      try {
+        const keyword = typeof data?.keyword === "string" ? data.keyword.trim() : "";
+        if (!keyword) {
+          safeAck(ack, { ok: false, error: "Keyword is required", results: [] });
+          return;
+        }
+        const limit = normalizeSearchLimit(data?.limit);
+        const results = db.searchMessages({ appId, keyword, limit });
+        safeAck(ack, { ok: true, results, keyword, limit });
+      } catch (error) {
+        console.error(`[Socket] "search messages" error:`, error);
+        safeAck(ack, { ok: false, error: error.message || "Search failed", results: [] });
+      }
+    });
+
+    socket.on("mark read", (data) => {
+      try {
+        const lastReadTimestamp = Number.parseInt(String(data?.lastReadTimestamp ?? ""), 10);
+        if (!Number.isFinite(lastReadTimestamp) || lastReadTimestamp <= 0) {
+          return;
+        }
+        const lastReadMessageId = Number.parseInt(String(data?.lastReadMessageId ?? ""), 10);
+        const payload = {
+          appId,
+          clientType: normalizeClientType(data?.clientType || socket.data.clientType),
+          lastReadTimestamp,
+          lastReadMessageId: Number.isFinite(lastReadMessageId) && lastReadMessageId > 0
+            ? lastReadMessageId
+            : null,
+        };
+        socket.to(appId).emit("read receipt", payload);
+      } catch (error) {
+        console.error(`[Socket] "mark read" error:`, error);
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
+      emitPresenceUpdate(io, appId);
     });
   });
 

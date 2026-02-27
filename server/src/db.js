@@ -60,6 +60,7 @@ function createSchema(database) {
       source TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
       quote_message_id INTEGER,
+      client_message_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -81,10 +82,19 @@ function createSchema(database) {
     console.log("[DB] Migration completed.");
   }
 
+  try {
+    database.run("SELECT client_message_id FROM messages LIMIT 1");
+  } catch (error) {
+    console.log("[DB] Migrating schema: adding client_message_id column...");
+    database.run("ALTER TABLE messages ADD COLUMN client_message_id TEXT");
+    console.log("[DB] Migration completed.");
+  }
+
   database.run("CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp DESC);");
   database.run("CREATE INDEX IF NOT EXISTS idx_app_id ON messages(app_id);");
   database.run("CREATE INDEX IF NOT EXISTS idx_app_timestamp ON messages(app_id, timestamp DESC);");
   database.run("CREATE INDEX IF NOT EXISTS idx_quote_message_id ON messages(quote_message_id);");
+  database.run("CREATE INDEX IF NOT EXISTS idx_client_message_id ON messages(app_id, source, client_message_id);");
 }
 
 function clearTimers() {
@@ -176,6 +186,7 @@ function mapMessageRow(row) {
     timestamp: row.timestamp,
     attachments: parsed.attachments,
     quote: parsed.quote,
+    clientMessageId: typeof row.client_message_id === "string" ? row.client_message_id : null,
   };
 }
 
@@ -284,13 +295,24 @@ function insertMessage(options) {
     timestamp,
     appId = "default",
     quoteMessageId = null,
+    clientMessageId = null,
   } = options;
   const safeQuoteMessageId = parsePositiveMessageId(quoteMessageId);
+  const safeClientMessageId = typeof clientMessageId === "string" && clientMessageId.trim().length > 0
+    ? clientMessageId.trim()
+    : null;
+
+  if (safeClientMessageId) {
+    const existing = getMessageByClientMessageId(safeClientMessageId, source, appId);
+    if (existing && existing.id) {
+      return existing.id;
+    }
+  }
 
   try {
     state.db.run(
-      "INSERT INTO messages (text, source, timestamp, app_id, quote_message_id) VALUES (?, ?, ?, ?, ?)",
-      [text, source, timestamp, appId, safeQuoteMessageId],
+      "INSERT INTO messages (text, source, timestamp, app_id, quote_message_id, client_message_id) VALUES (?, ?, ?, ?, ?, ?)",
+      [text, source, timestamp, appId, safeQuoteMessageId, safeClientMessageId],
     );
     return getLastInsertedId();
   } catch (error) {
@@ -313,7 +335,7 @@ function getRawMessageById(messageId, appId = "default") {
   }
   try {
     const stmt = state.db.prepare(`
-      SELECT id, text, source, timestamp
+      SELECT id, text, source, timestamp, client_message_id
       FROM messages
       WHERE id = ? AND app_id = ?
       LIMIT 1
@@ -330,6 +352,41 @@ function getRawMessageById(messageId, appId = "default") {
     console.error(`[DB] Failed to get message by id: ${error.message}`);
     return null;
   }
+}
+
+function getRawMessageByClientMessageId(clientMessageId, source, appId = "default") {
+  if (!ensureInitialized()) {
+    return null;
+  }
+  const safeClientMessageId = typeof clientMessageId === "string" ? clientMessageId.trim() : "";
+  if (!safeClientMessageId) {
+    return null;
+  }
+  try {
+    const stmt = state.db.prepare(`
+      SELECT id, text, source, timestamp, client_message_id
+      FROM messages
+      WHERE app_id = ? AND source = ? AND client_message_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `);
+    stmt.bind([appId, source, safeClientMessageId]);
+    if (!stmt.step()) {
+      stmt.free();
+      return null;
+    }
+    const row = stmt.getAsObject();
+    stmt.free();
+    return row;
+  } catch (error) {
+    console.error(`[DB] Failed to get message by client_message_id: ${error.message}`);
+    return null;
+  }
+}
+
+function getMessageByClientMessageId(clientMessageId, source, appId = "default") {
+  const row = getRawMessageByClientMessageId(clientMessageId, source, appId);
+  return row ? mapMessageRow(row) : null;
 }
 
 function getMessageById(messageId, appId = "default") {
@@ -354,6 +411,7 @@ function getRecentMessages(limit = 50, appId = "default", beforeTimestamp = null
   const sql = withPagination
     ? `
       SELECT id, text, source, timestamp
+      , client_message_id
       FROM messages
       WHERE app_id = ? AND timestamp < ?
       ORDER BY timestamp DESC, id DESC
@@ -361,6 +419,7 @@ function getRecentMessages(limit = 50, appId = "default", beforeTimestamp = null
     `
     : `
       SELECT id, text, source, timestamp
+      , client_message_id
       FROM messages
       WHERE app_id = ?
       ORDER BY timestamp DESC, id DESC
@@ -404,6 +463,7 @@ function getMessagesAroundMessage(targetMessageId, appId = "default", beforeLimi
   try {
     const olderStmt = state.db.prepare(`
       SELECT id, text, source, timestamp
+      , client_message_id
       FROM messages
       WHERE app_id = ?
         AND (timestamp < ? OR (timestamp = ? AND id <= ?))
@@ -419,6 +479,7 @@ function getMessagesAroundMessage(targetMessageId, appId = "default", beforeLimi
 
     const newerStmt = state.db.prepare(`
       SELECT id, text, source, timestamp
+      , client_message_id
       FROM messages
       WHERE app_id = ?
         AND (timestamp > ? OR (timestamp = ? AND id > ?))
@@ -438,6 +499,105 @@ function getMessagesAroundMessage(targetMessageId, appId = "default", beforeLimi
     console.error(`[DB] Failed to get messages around target: ${error.message}`);
     return [];
   }
+}
+
+function buildSearchSnippet(message, keyword, maxLength = 120) {
+  const lowerKeyword = keyword.toLowerCase();
+  const text = typeof message.text === "string" ? message.text : "";
+  const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
+  const previewRaw = hasAttachments ? `[图片] ${text}`.trim() : text.trim();
+  const preview = previewRaw || "(空消息)";
+  const lowerPreview = preview.toLowerCase();
+  const hitIndex = lowerPreview.indexOf(lowerKeyword);
+  if (hitIndex < 0 || preview.length <= maxLength) {
+    return preview.length <= maxLength
+      ? preview
+      : `${preview.slice(0, maxLength - 3)}...`;
+  }
+
+  const half = Math.floor(maxLength / 2);
+  const start = Math.max(0, hitIndex - half);
+  const end = Math.min(preview.length, start + maxLength);
+  const clipped = preview.slice(start, end);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < preview.length ? "..." : "";
+  return `${prefix}${clipped}${suffix}`;
+}
+
+function getHotSearchRows(appId, keyword, limit) {
+  const pattern = `%${keyword}%`;
+  const stmt = state.db.prepare(`
+    SELECT id, text, source, timestamp, client_message_id
+    FROM messages
+    WHERE app_id = ? AND text LIKE ?
+    ORDER BY timestamp DESC, id DESC
+    LIMIT ?
+  `);
+  stmt.bind([appId, pattern, limit]);
+  const rows = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return rows;
+}
+
+function searchMessages(options = {}) {
+  if (!ensureInitialized()) {
+    return [];
+  }
+
+  const appId = typeof options.appId === "string" && options.appId.trim().length > 0
+    ? options.appId.trim()
+    : null;
+  const keyword = typeof options.keyword === "string" ? options.keyword.trim() : "";
+  const limit = parsePositiveInt(options.limit, 50);
+  if (!appId || keyword.length === 0) {
+    return [];
+  }
+
+  const lowerKeyword = keyword.toLowerCase();
+  const hotRows = getHotSearchRows(appId, keyword, limit);
+  const hotResults = hotRows
+    .map((row) => mapMessageRow(row))
+    .filter((message) => {
+      const text = `${message.text || ""} ${JSON.stringify(message.attachments || [])}`.toLowerCase();
+      return text.includes(lowerKeyword);
+    })
+    .map((message) => ({
+      targetType: "hot",
+      messageId: message.id,
+      archiveId: null,
+      source: message.source,
+      timestamp: message.timestamp,
+      preview: buildSearchSnippet(message, keyword),
+      restored: false,
+    }));
+
+  const archiveRows = archiveDb.searchArchivedMessages({ appId, keyword, limit });
+  const archiveResults = archiveRows.map((row) => {
+    const message = mapArchivedRow(row);
+    return {
+      targetType: "archive",
+      messageId: null,
+      archiveId: Number.parseInt(String(message.archiveId), 10),
+      source: message.source,
+      timestamp: message.timestamp,
+      preview: buildSearchSnippet(message, keyword),
+      restored: false,
+    };
+  });
+
+  return [...hotResults, ...archiveResults]
+    .sort((a, b) => {
+      if (a.timestamp === b.timestamp) {
+        const aId = a.messageId || a.archiveId || 0;
+        const bId = b.messageId || b.archiveId || 0;
+        return bId - aId;
+      }
+      return b.timestamp - a.timestamp;
+    })
+    .slice(0, limit);
 }
 
 function getMessageCount(appId) {
@@ -572,6 +732,29 @@ function getArchivedMessages(limit = 50, appId = null, beforeTimestamp = null, i
   return rows.map(mapArchivedRow);
 }
 
+function mapArchivedRowToChatMessage(row) {
+  const message = mapArchivedRow(row);
+  return {
+    id: null,
+    text: message.text,
+    source: message.source,
+    timestamp: message.timestamp,
+    attachments: message.attachments,
+    quote: message.quote,
+    archiveId: message.archiveId,
+    archived: true,
+    originalMessageId: message.originalMessageId,
+  };
+}
+
+function getArchivedMessagesAround(archiveId, appId = "default", beforeLimit = 25, afterLimit = 25) {
+  if (!ensureInitialized()) {
+    return [];
+  }
+  const rows = archiveDb.getMessagesAroundArchiveId(archiveId, appId, beforeLimit, afterLimit);
+  return rows.map(mapArchivedRowToChatMessage);
+}
+
 function getArchiveMessageCount(appId, includeRestored = false) {
   if (!ensureInitialized()) {
     return 0;
@@ -667,7 +850,10 @@ module.exports = {
   saveMessageRecord,
   getRecentMessages,
   getMessageById,
+  getMessageByClientMessageId,
   getMessagesAroundMessage,
+  getArchivedMessagesAround,
+  searchMessages,
   getMessageCount,
   getArchivedMessages,
   getArchiveMessageCount,

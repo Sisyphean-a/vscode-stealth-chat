@@ -20,6 +20,7 @@ export default {
                 await api.login(state.password.value)
                 state.errorMsg.value = ''
                 await appCrud.fetchStatus()
+                await appCrud.loadArchiveMessages(false)
             } catch (error) {
                 state.errorMsg.value = error.message || '网络错误'
             } finally {
@@ -32,7 +33,7 @@ export default {
 
         onMounted(() => {
             if (api.token.value) {
-                void appCrud.fetchStatus()
+                void appCrud.fetchStatus().then(() => appCrud.loadArchiveMessages(false))
             }
         })
 

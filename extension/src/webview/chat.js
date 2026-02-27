@@ -57,6 +57,15 @@
     return snippet;
   }
 
+  function generateClientMessageId() {
+    return `vscode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+
+  function formatShortTime(timestamp) {
+    const date = new Date(timestamp);
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
   /**
    * Merge messages into store by key and keep order.
    * @param {any[]} store
@@ -92,6 +101,12 @@
   /** @type {HTMLElement | null} */
   const statusText = document.getElementById("status-text");
   /** @type {HTMLElement | null} */
+  const presenceText = document.getElementById("presence-text");
+  /** @type {HTMLElement | null} */
+  const readText = document.getElementById("read-text");
+  /** @type {HTMLButtonElement | null} */
+  const searchBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("search-btn"));
+  /** @type {HTMLElement | null} */
   const messagesContainer = document.getElementById("messages-container");
   /** @type {HTMLTextAreaElement | null} */
   const messageInput = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("message-input"));
@@ -103,6 +118,18 @@
   const settingsBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("settings-btn"));
   /** @type {HTMLButtonElement | null} */
   const settingsBackBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("settings-back-btn"));
+  /** @type {HTMLElement | null} */
+  const searchPanel = document.getElementById("search-panel");
+  /** @type {HTMLInputElement | null} */
+  const searchInput = /** @type {HTMLInputElement | null} */ (document.getElementById("search-input"));
+  /** @type {HTMLButtonElement | null} */
+  const searchRunBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("search-run-btn"));
+  /** @type {HTMLButtonElement | null} */
+  const searchCloseBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById("search-close-btn"));
+  /** @type {HTMLElement | null} */
+  const searchResults = document.getElementById("search-results");
+  /** @type {HTMLElement | null} */
+  const searchResultMeta = document.getElementById("search-result-meta");
   /** @type {HTMLElement | null} */
   const composerQuote = document.getElementById("composer-quote");
   /** @type {HTMLElement | null} */
@@ -122,6 +149,7 @@
   /** @type {any[]} */
   let messageStore = [];
   const messageElementIndex = new Map();
+  const archiveElementIndex = new Map();
 
   // IME state
   let isComposing = false;
@@ -138,6 +166,7 @@
   // Quote composer state
   /** @type {any | null} */
   let selectedQuote = null;
+  let lastReadTimestamp = 0;
 
   const attachmentManager = createAttachmentManager({
     maxImageSize: MAX_IMAGE_SIZE,
@@ -193,6 +222,7 @@
   function resetRenderState() {
     lastMessageTimestamp = 0;
     messageElementIndex.clear();
+    archiveElementIndex.clear();
   }
 
   function renderMessage(msg) {
@@ -214,13 +244,17 @@
       lastMessageTimestamp = msg.timestamp;
     }
 
-    const messageEl = createMessageElement(msg, displayMode);
+    const messageEl = createMessageElement(msg, displayMode, serverUrl);
     messagesContainer.appendChild(messageEl);
     bindImageLinkEvents(messageEl);
 
     const messageId = parsePositiveInt(msg.id);
     if (messageId) {
       messageElementIndex.set(messageId, messageEl);
+    }
+    const archiveId = parsePositiveInt(msg.archiveId);
+    if (archiveId) {
+      archiveElementIndex.set(archiveId, messageEl);
     }
   }
 
@@ -271,6 +305,7 @@
     updateEmptyState();
     if (autoScrollEnabled) {
       scrollToBottom();
+      reportReadStatus();
     } else if (scrollToBottomBtn) {
       scrollToBottomBtn.style.display = "flex";
     }
@@ -278,6 +313,19 @@
 
   function focusMessage(messageId) {
     const target = messageElementIndex.get(messageId);
+    if (!target) {
+      return false;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.remove("message-highlight");
+    void target.offsetWidth;
+    target.classList.add("message-highlight");
+    setTimeout(() => target.classList.remove("message-highlight"), 1200);
+    return true;
+  }
+
+  function focusArchivedMessage(archiveId) {
+    const target = archiveElementIndex.get(archiveId);
     if (!target) {
       return false;
     }
@@ -300,6 +348,93 @@
     vscode.postMessage({
       type: "loadAroundMessage",
       payload: { targetMessageId: numericId },
+    });
+  }
+
+  function jumpToArchivedMessage(archiveId) {
+    const numericId = parsePositiveInt(archiveId);
+    if (!numericId) {
+      return;
+    }
+    if (focusArchivedMessage(numericId)) {
+      return;
+    }
+    vscode.postMessage({
+      type: "loadAroundArchivedMessage",
+      payload: { targetArchiveId: numericId },
+    });
+  }
+
+  function renderSearchResults(keyword, results) {
+    if (!searchResults || !searchResultMeta) {
+      return;
+    }
+    searchResultMeta.textContent = keyword
+      ? `关键词 "${keyword}"，共 ${results.length} 条`
+      : "";
+    searchResults.innerHTML = "";
+    results.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "search-item";
+      row.innerHTML = `
+        <div>${item.preview || "(空消息)"}</div>
+        <div class="search-item-meta">${item.targetType === "archive" ? "归档" : "热库"} · ${item.source} · ${formatShortTime(item.timestamp)}</div>
+      `;
+      row.addEventListener("click", () => {
+        if (item.targetType === "hot" && parsePositiveInt(item.messageId)) {
+          jumpToQuotedMessage(item.messageId);
+          return;
+        }
+        if (item.targetType === "archive" && parsePositiveInt(item.archiveId)) {
+          jumpToArchivedMessage(item.archiveId);
+        }
+      });
+      searchResults.appendChild(row);
+    });
+  }
+
+  function runSearch() {
+    const keyword = searchInput?.value?.trim() || "";
+    if (!keyword) {
+      if (searchResultMeta) {
+        searchResultMeta.textContent = "请输入关键词";
+      }
+      if (searchResults) {
+        searchResults.innerHTML = "";
+      }
+      return;
+    }
+    vscode.postMessage({
+      type: "searchMessages",
+      payload: { keyword, limit: 50 },
+    });
+  }
+
+  function updateReadHint(payload) {
+    if (!readText) {
+      return;
+    }
+    if (!payload || payload.clientType !== "mobile") {
+      return;
+    }
+    readText.textContent = `对端已读 ${formatShortTime(payload.lastReadTimestamp)}`;
+  }
+
+  function reportReadStatus() {
+    if (messageStore.length === 0) {
+      return;
+    }
+    const last = messageStore[messageStore.length - 1];
+    if (!last || !Number.isFinite(last.timestamp) || last.timestamp <= lastReadTimestamp) {
+      return;
+    }
+    lastReadTimestamp = last.timestamp;
+    vscode.postMessage({
+      type: "markRead",
+      payload: {
+        lastReadTimestamp: last.timestamp,
+        lastReadMessageId: parsePositiveInt(last.id) || undefined,
+      },
     });
   }
 
@@ -364,6 +499,7 @@
         if (scrollToBottomBtn) {
           scrollToBottomBtn.style.display = "none";
         }
+        reportReadStatus();
       } else {
         autoScrollEnabled = false;
       }
@@ -396,6 +532,7 @@
     scrollToBottomBtn.addEventListener("click", () => {
       scrollToBottom(true);
       scrollToBottomBtn.style.display = "none";
+      reportReadStatus();
     });
   }
 
@@ -408,6 +545,37 @@
 
   if (settingsBackBtn) {
     settingsBackBtn.addEventListener("click", () => window.ChatSettings.hide());
+  }
+
+  if (searchBtn) {
+    searchBtn.addEventListener("click", () => {
+      if (!searchPanel) {
+        return;
+      }
+      searchPanel.classList.toggle("hidden");
+      if (!searchPanel.classList.contains("hidden")) {
+        searchInput?.focus();
+      }
+    });
+  }
+
+  if (searchCloseBtn) {
+    searchCloseBtn.addEventListener("click", () => {
+      searchPanel?.classList.add("hidden");
+    });
+  }
+
+  if (searchRunBtn) {
+    searchRunBtn.addEventListener("click", runSearch);
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runSearch();
+      }
+    });
   }
 
   // Listen for messages from extension
@@ -430,8 +598,23 @@
       case "aroundMessagesLoaded":
         handleAroundMessagesLoaded(message.payload);
         break;
+      case "aroundArchivedMessagesLoaded":
+        handleAroundArchivedMessagesLoaded(message.payload);
+        break;
       case "updateStatus":
         updateStatus(message.payload.connected);
+        break;
+      case "presenceUpdate":
+        updatePresence(message.payload);
+        break;
+      case "readReceipt":
+        updateReadHint(message.payload);
+        break;
+      case "sendFailed":
+        handleSendFailed(message.payload);
+        break;
+      case "searchResults":
+        handleSearchResults(message.payload);
         break;
       case "setDisplayMode":
         {
@@ -496,12 +679,14 @@
       }
     }
 
+    const clientMessageId = generateClientMessageId();
     vscode.postMessage({
       type: "sendMessage",
       payload: {
         text: text || "",
         attachments: attachments && attachments.length > 0 ? attachments : undefined,
         quote: selectedQuote || undefined,
+        clientMessageId,
       },
     });
 
@@ -525,6 +710,7 @@
       scrollToBottom(true);
       isFirstLoad = false;
     }
+    reportReadStatus();
   }
 
   function loadMoreHistory() {
@@ -558,6 +744,7 @@
     const newScrollHeight = messagesContainer.scrollHeight;
     const heightDiff = newScrollHeight - oldScrollHeight;
     messagesContainer.scrollTop = oldScrollTop + heightDiff;
+    reportReadStatus();
   }
 
   function handleAroundMessagesLoaded(payload) {
@@ -578,6 +765,57 @@
     if (!targetMessageId || !focusMessage(targetMessageId)) {
       console.error("[WebView] Quoted target message is not available in current history window");
     }
+  }
+
+  function handleAroundArchivedMessagesLoaded(payload) {
+    if (!payload) {
+      return;
+    }
+    if (payload.error) {
+      console.error(`[WebView] Failed to load archive context: ${payload.error}`);
+      return;
+    }
+    const incoming = normalizeIncomingMessages(payload.messages);
+    if (incoming.length > 0) {
+      messageStore = mergeMessageStore(messageStore, incoming);
+      setOldestTimestampFromStore();
+      rebuildMessages();
+    }
+    const targetArchiveId = parsePositiveInt(payload.targetArchiveId);
+    if (!targetArchiveId || !focusArchivedMessage(targetArchiveId)) {
+      console.error("[WebView] Archived target message is not visible");
+    }
+  }
+
+  function handleSendFailed(payload) {
+    const message = typeof payload?.error === "string" ? payload.error : "发送失败";
+    console.error("[WebView] Send failed:", message);
+    if (statusText) {
+      statusText.textContent = `发送失败: ${message}`;
+    }
+  }
+
+  function handleSearchResults(payload) {
+    if (!searchResultMeta) {
+      return;
+    }
+    if (payload?.error) {
+      searchResultMeta.textContent = `搜索失败: ${payload.error}`;
+      if (searchResults) {
+        searchResults.innerHTML = "";
+      }
+      return;
+    }
+    renderSearchResults(payload?.keyword || "", Array.isArray(payload?.results) ? payload.results : []);
+  }
+
+  function updatePresence(payload) {
+    if (!presenceText) {
+      return;
+    }
+    const total = Number.isFinite(payload?.total) ? payload.total : 0;
+    const mobile = Number.isFinite(payload?.mobile) ? payload.mobile : 0;
+    presenceText.textContent = `在线 ${total} (M:${mobile})`;
   }
 
   function showLoadMoreButton() {
@@ -610,6 +848,10 @@
     hasMoreHistory = true;
     isLoadingMore = false;
     isFirstLoad = true;
+    lastReadTimestamp = 0;
+    if (readText) {
+      readText.textContent = "";
+    }
     clearComposerQuote();
     if (!messagesContainer) {
       return;
@@ -675,6 +917,9 @@
     }
     statusIndicator.className = "status-disconnected";
     statusText.textContent = "已断开";
+    if (presenceText) {
+      presenceText.textContent = "";
+    }
   }
 
   /**

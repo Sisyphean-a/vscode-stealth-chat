@@ -18,6 +18,9 @@ export interface Attachment {
 
 export interface ChatMessage {
   id?: number;
+  clientMessageId?: string | null;
+  archiveId?: number | null;
+  archived?: boolean;
   text: string;
   source: "mobile" | "vscode";
   timestamp: number;
@@ -44,6 +47,23 @@ export interface SocketCallbacks {
     targetMessageId: number | null;
     error?: string | null;
   }) => void;
+  onAroundArchivedMessageLoaded?: (payload: {
+    messages: ChatMessage[];
+    targetArchiveId: number | null;
+    error?: string | null;
+  }) => void;
+  onPresenceUpdate?: (payload: {
+    appId: string;
+    total: number;
+    mobile: number;
+    vscode: number;
+  }) => void;
+  onReadReceipt?: (payload: {
+    appId: string;
+    clientType: "mobile" | "vscode" | "unknown";
+    lastReadTimestamp: number;
+    lastReadMessageId: number | null;
+  }) => void;
 }
 
 export interface GlobalSettings {
@@ -60,9 +80,12 @@ export interface SettingsMessage {
 
 export type WebviewMessage =
   | { type: "ready" }
-  | { type: "sendMessage"; payload: { text: string; attachments?: Attachment[]; quote?: MessageQuote } }
+  | { type: "sendMessage"; payload: { text: string; attachments?: Attachment[]; quote?: MessageQuote; clientMessageId?: string } }
   | { type: "loadMoreHistory"; payload: { beforeTimestamp: number } }
   | { type: "loadAroundMessage"; payload: { targetMessageId: number } }
+  | { type: "loadAroundArchivedMessage"; payload: { targetArchiveId: number } }
+  | { type: "searchMessages"; payload: { keyword: string; limit?: number } }
+  | { type: "markRead"; payload: { lastReadTimestamp: number; lastReadMessageId?: number } }
   | { type: "openImage"; payload: { url: string } }
   | { type: "getConfig" }
   | { type: "saveGlobalSettings"; payload: GlobalSettings }

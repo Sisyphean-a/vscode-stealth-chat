@@ -5,6 +5,13 @@ export function useAdminState() {
     const loading = ref(false)
     const errorMsg = ref('')
     const stats = reactive({ uptime: 0, totalMessages: 0, apps: [] })
+    const archiveFilterAppId = ref('')
+    const includeRestored = ref(false)
+    const archiveLoading = ref(false)
+    const archiveMessages = ref([])
+    const archiveHasMore = ref(false)
+    const archiveBeforeTimestamp = ref(null)
+    const selectedArchiveIds = ref([])
 
     const dialogVisible = ref(false)
     const isEdit = ref(false)
@@ -32,6 +39,13 @@ export function useAdminState() {
         loading,
         errorMsg,
         stats,
+        archiveFilterAppId,
+        includeRestored,
+        archiveLoading,
+        archiveMessages,
+        archiveHasMore,
+        archiveBeforeTimestamp,
+        selectedArchiveIds,
         dialogVisible,
         isEdit,
         form,

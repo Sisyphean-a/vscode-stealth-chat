@@ -79,9 +79,29 @@ export default {
                     </div>
                 </div>
                 <div class="header-right">
+                    <span class="meta-pill">在线 {{ presence.total }} (M{{ presence.mobile }}/V{{ presence.vscode }})</span>
+                    <span v-if="peerReadText" class="meta-pill">{{ peerReadText }}</span>
+                    <button class="text-btn" @click="runSearch">搜索</button>
                     <button class="text-btn" @click="disconnect">断开</button>
                 </div>
             </header>
+
+            <div class="search-inline">
+                <input v-model.trim="searchKeyword" @keyup.enter="runSearch" placeholder="搜索热库+归档消息..." />
+                <button class="text-btn" @click="runSearch">查找</button>
+            </div>
+            <div v-if="searchError" class="search-error">{{ searchError }}</div>
+            <div v-if="searchResults.length > 0" class="search-results">
+                <button
+                    v-for="item in searchResults"
+                    :key="(item.targetType || 'hot') + '-' + (item.messageId || item.archiveId || item.timestamp)"
+                    class="search-hit"
+                    @click="jumpToSearchResult(item)"
+                >
+                    <span class="hit-meta">{{ item.targetType === 'archive' ? '归档' : '热库' }} · {{ formatTime(item.timestamp) }}</span>
+                    <span class="hit-text">{{ item.preview }}</span>
+                </button>
+            </div>
 
             <main class="message-list" ref="messagesContainer">
                 <div v-if="messages.length > 0 && hasMoreHistory" class="load-more-wrapper">
@@ -98,7 +118,7 @@ export default {
                     <div v-if="showTimeDivider(msg, messages[index-1])" class="time-divider">
                         <span>{{ formatDividerDate(msg.timestamp) }}</span>
                     </div>
-                    <div :class="['message-row', msg.type]" :data-message-id="msg.id || ''">
+                    <div :class="['message-row', msg.type, { archived: msg.archived }]" :data-message-id="msg.id || ''" :data-archive-id="msg.archiveId || ''">
                         <div v-if="msg.sender !== '我' && msg.type !== 'system'" class="avatar">{{ msg.sender[0] }}</div>
                         <div class="message-content">
                             <div class="bubble">
@@ -206,6 +226,11 @@ export default {
         const cameraInput = ref(null)
         const quotedMessage = ref(null)
         const isSending = ref(false)
+        let readTimer = null
+        const searchKeyword = ref('')
+        const searchResults = ref([])
+        const searchError = ref('')
+        const lastReadTimestamp = ref(0)
 
         const quoteDraftLabel = computed(() => {
             if (!quotedMessage.value) {
@@ -287,6 +312,89 @@ export default {
             }
         }
 
+        const highlightArchivedElement = (archiveId) => {
+            const container = chat.messagesContainer.value
+            if (!container) {
+                return false
+            }
+            const target = container.querySelector(`[data-archive-id="${archiveId}"]`)
+            if (!target) {
+                return false
+            }
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            target.classList.remove('message-highlight')
+            void target.offsetWidth
+            target.classList.add('message-highlight')
+            setTimeout(() => target.classList.remove('message-highlight'), 1200)
+            return true
+        }
+
+        const jumpToArchivedMessage = (targetArchiveId) => {
+            const archiveId = parsePositiveId(targetArchiveId)
+            if (!archiveId) {
+                return
+            }
+            if (highlightArchivedElement(archiveId)) {
+                return
+            }
+            const requestSent = chat.loadAroundArchivedMessage(archiveId, (payload) => {
+                if (payload?.error) {
+                    chat.errorMsg.value = `定位失败: ${payload.error}`
+                    return
+                }
+                if (Array.isArray(payload?.messages) && payload.messages.length > 0) {
+                    chat.mergeMessages(payload.messages)
+                    nextTick(() => {
+                        if (!highlightArchivedElement(archiveId)) {
+                            chat.errorMsg.value = '定位失败：目标归档消息不可见'
+                        }
+                    })
+                    return
+                }
+                chat.errorMsg.value = '定位失败：目标归档消息不存在'
+            })
+            if (!requestSent) {
+                chat.errorMsg.value = '定位失败：当前未连接'
+            }
+        }
+
+        const jumpToSearchResult = (item) => {
+            if (item.targetType === 'archive') {
+                jumpToArchivedMessage(item.archiveId)
+                return
+            }
+            jumpToQuotedMessage(item.messageId)
+        }
+
+        const runSearch = async () => {
+            const keyword = searchKeyword.value.trim()
+            if (!keyword) {
+                searchResults.value = []
+                searchError.value = '请输入搜索关键词'
+                return
+            }
+            searchError.value = ''
+            try {
+                const results = await chat.searchMessages(keyword, 50)
+                searchResults.value = Array.isArray(results) ? results : []
+            } catch (error) {
+                searchResults.value = []
+                searchError.value = error.message || '搜索失败'
+            }
+        }
+
+        const reportRead = () => {
+            if (!chat.messages || chat.messages.length === 0) {
+                return
+            }
+            const last = chat.messages[chat.messages.length - 1]
+            if (!last || !Number.isFinite(last.timestamp) || last.timestamp <= lastReadTimestamp.value) {
+                return
+            }
+            lastReadTimestamp.value = last.timestamp
+            chat.markRead(last.timestamp, parsePositiveId(last.id) || undefined)
+        }
+
         const sendMessage = async () => {
             if ((!inputText.value.trim() && pendingImages.length === 0) || !chat.socketConnected.value || isSending.value) return
 
@@ -305,11 +413,12 @@ export default {
                     }
                 }
 
-                chat.emit('chat message', {
+                await chat.sendChatMessage({
                     text: inputText.value,
                     source: 'mobile',
                     attachments: attachments && attachments.length > 0 ? attachments : undefined,
                     quote: quotedMessage.value || undefined,
+                    clientMessageId: `mobile-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
                 })
 
                 inputText.value = ''
@@ -318,7 +427,10 @@ export default {
                 nextTick(() => {
                     if (inputArea.value) inputArea.value.style.height = 'auto'
                     chat.scrollToBottom()
+                    reportRead()
                 })
+            } catch (err) {
+                chat.errorMsg.value = err.message || '发送失败'
             } finally {
                 isSending.value = false
             }
@@ -353,10 +465,15 @@ export default {
             } else if (chat.authToken.value && chat.rememberMe.value) {
                 chat.connect()
             }
+            readTimer = setInterval(reportRead, 1500)
         })
 
         onUnmounted(() => {
             chat.socketManager.disconnect()
+            if (readTimer) {
+                clearInterval(readTimer)
+                readTimer = null
+            }
         })
 
         return {
@@ -367,8 +484,10 @@ export default {
             sendMessage, handlePaste, handleFileSelect, removePendingImage,
             triggerFileInput, triggerCameraInput, handleConnectionSave,
             openImage, closePreview, zoomIn, zoomOut, resetZoom,
-            selectQuote, clearQuote, jumpToQuotedMessage, getSourceLabel,
+            selectQuote, clearQuote, jumpToQuotedMessage, jumpToSearchResult, runSearch, getSourceLabel,
             parseMarkdown, formatTime, showTimeDivider, formatDividerDate, getImageSrc,
+            searchKeyword, searchResults, searchError,
+            reportRead,
         }
     }
 }

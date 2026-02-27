@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'nonce-{{nonce}}'; img-src https: data:; connect-src {{cspSource}} https: http: ws: wss:;"
+      content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'nonce-{{nonce}}'; img-src {{cspSource}} https: http: data:; connect-src {{cspSource}} https: http: ws: wss:;"
     />
     <title>TS-Lint Service</title>
     <link rel="stylesheet" href="{{coreStyleUri}}" />
@@ -17,6 +17,9 @@
     <div id="status-bar">
       <span id="status-indicator" class="status-connecting"></span>
       <span id="status-text">连接中...</span>
+      <span id="presence-text" class="status-meta"></span>
+      <span id="read-text" class="status-meta"></span>
+      <button id="search-btn" title="搜索">🔍</button>
       <button id="settings-btn" title="设置">⚙</button>
     </div>
 
@@ -43,6 +46,16 @@
     </div>
 
     <button id="scroll-to-bottom" title="滚动到底部">↓</button>
+
+    <div id="search-panel" class="hidden">
+      <div class="search-header">
+        <input id="search-input" type="text" placeholder="搜索历史消息..." />
+        <button id="search-run-btn" class="btn btn-primary">搜索</button>
+        <button id="search-close-btn" class="btn btn-secondary">关闭</button>
+      </div>
+      <div id="search-result-meta"></div>
+      <div id="search-results"></div>
+    </div>
 
     <!-- Settings View (Overlay) -->
     <div id="settings-view" class="hidden">

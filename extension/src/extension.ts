@@ -118,6 +118,27 @@ function connectWithCallbacks(serverUrl: string, token: string, forceWebsocket: 
         payload,
       });
     },
+    onAroundArchivedMessageLoaded: (payload) => {
+      if (payload.messages.length > 0) {
+        messageCache.mergeMessages(payload.messages);
+      }
+      getWebviewView()?.webview.postMessage({
+        type: "aroundArchivedMessagesLoaded",
+        payload,
+      });
+    },
+    onPresenceUpdate: (payload) => {
+      getWebviewView()?.webview.postMessage({
+        type: "presenceUpdate",
+        payload,
+      });
+    },
+    onReadReceipt: (payload) => {
+      getWebviewView()?.webview.postMessage({
+        type: "readReceipt",
+        payload,
+      });
+    },
   });
 }
 
@@ -215,12 +236,16 @@ function registerCommands(context: vscode.ExtensionContext): void {
 
       if (message?.trim() && socketService.isConnected()) {
         const clickUrl = getActiveConnection().serverUrl;
-
-        socketService.getSocket()?.emit("chat message", {
+        try {
+          await socketService.sendChatMessage({
           text: message.trim(),
           source: "vscode",
           clickUrl,
-        });
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          vscode.window.showErrorMessage(`发送失败: ${errorMessage}`);
+        }
       }
     })
   );

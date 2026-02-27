@@ -26,7 +26,7 @@ body {
   flex-shrink: 0;
 }
 
-#settings-btn {
+#search-btn {
   margin-left: auto;
   background: transparent;
   border: none;
@@ -38,6 +38,18 @@ body {
   opacity: 0.8;
 }
 
+#settings-btn {
+  background: transparent;
+  border: none;
+  color: var(--vscode-statusBar-foreground);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  opacity: 0.8;
+}
+
+#search-btn:hover,
 #settings-btn:hover {
   opacity: 1;
   background: var(--vscode-toolbar-hoverBackground);
@@ -72,6 +84,12 @@ body {
   font-size: 12px;
   color: var(--vscode-statusBar-foreground);
   font-weight: 500;
+}
+
+.status-meta {
+  font-size: 11px;
+  color: var(--vscode-statusBar-foreground);
+  opacity: 0.8;
 }
 
 /* Messages container */
@@ -152,6 +170,11 @@ body {
 
 .message-wrapper.message-highlight {
   animation: messageHighlightPulse 1.2s ease-out;
+}
+
+.archived-message .message-bubble {
+  border-style: dashed !important;
+  opacity: 0.95;
 }
 
 @keyframes messageHighlightPulse {
@@ -275,6 +298,72 @@ body {
 
 #scroll-to-bottom:hover {
   opacity: 0.9;
+}
+
+#search-panel {
+  position: absolute;
+  top: 40px;
+  left: 8px;
+  right: 8px;
+  max-height: 55vh;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 6px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 8px;
+}
+
+#search-panel.hidden {
+  display: none;
+}
+
+.search-header {
+  display: flex;
+  gap: 6px;
+}
+
+#search-input {
+  flex: 1;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+#search-result-meta {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+#search-results {
+  overflow-y: auto;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-item {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  padding: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.search-item:hover {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-hoverBackground);
+}
+
+.search-item-meta {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
 }
 
 /* Scrollbar styling */

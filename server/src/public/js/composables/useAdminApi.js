@@ -76,6 +76,36 @@ export function useAdminApi() {
         return data
     }
 
+    const fetchArchiveMessages = async ({ appId = '', limit = 50, beforeTimestamp = null, includeRestored = false } = {}) => {
+        const query = new URLSearchParams()
+        if (appId) {
+            query.set('appId', appId)
+        }
+        query.set('limit', String(limit))
+        if (beforeTimestamp) {
+            query.set('beforeTimestamp', String(beforeTimestamp))
+        }
+        query.set('includeRestored', includeRestored ? 'true' : 'false')
+        const res = await request(`/api/admin/archive/messages?${query.toString()}`)
+        const data = await res.json()
+        if (!res.ok) {
+            throw new Error(data.error || '获取归档失败')
+        }
+        return data
+    }
+
+    const restoreArchiveMessages = async (archiveIds) => {
+        const res = await request('/api/admin/archive/restore', {
+            method: 'POST',
+            body: JSON.stringify({ archiveIds })
+        })
+        const data = await res.json()
+        if (!res.ok) {
+            throw new Error(data.error || '恢复失败')
+        }
+        return data
+    }
+
     return {
         token,
         login,
@@ -83,6 +113,8 @@ export function useAdminApi() {
         fetchStatus,
         deleteApp,
         saveApp,
-        changePassword
+        changePassword,
+        fetchArchiveMessages,
+        restoreArchiveMessages
     }
 }

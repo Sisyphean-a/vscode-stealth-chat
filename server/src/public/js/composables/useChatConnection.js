@@ -30,6 +30,8 @@ export function useChatConnection() {
     const editingConnection = ref(null)
     const newConnectionName = ref('')
     const newConnectionToken = ref('')
+    const presence = ref({ total: 0, mobile: 0, vscode: 0 })
+    const peerReadText = ref('')
 
     const connect = () => {
         if (!authToken.value) {
@@ -54,6 +56,18 @@ export function useChatConnection() {
                     mergeMessages(history)
                     scrollToBottom()
                 }
+            },
+            onPresenceUpdate: (payload) => {
+                presence.value = payload
+            },
+            onReadReceipt: (payload) => {
+                if (payload.clientType !== 'vscode') {
+                    return
+                }
+                const date = new Date(payload.lastReadTimestamp)
+                const hh = String(date.getHours()).padStart(2, '0')
+                const mm = String(date.getMinutes()).padStart(2, '0')
+                peerReadText.value = `VSCode 已读 ${hh}:${mm}`
             }
         })
     }
@@ -61,6 +75,8 @@ export function useChatConnection() {
     const disconnect = () => {
         socketManager.disconnect()
         clearMessages()
+        presence.value = { total: 0, mobile: 0, vscode: 0 }
+        peerReadText.value = ''
     }
 
     const switchConnection = (connId) => {
@@ -161,6 +177,16 @@ export function useChatConnection() {
         return socketManager.loadAroundMessage(targetMessageId, callback)
     }
 
+    const loadAroundArchivedMessage = (targetArchiveId, callback) => {
+        return socketManager.loadAroundArchivedMessage(targetArchiveId, callback)
+    }
+
+    const sendChatMessage = (payload) => socketManager.sendChatMessage(payload)
+    const searchMessages = (keyword, limit) => socketManager.searchMessages(keyword, limit)
+    const markRead = (lastReadTimestamp, lastReadMessageId) => {
+        socketManager.markRead(lastReadTimestamp, lastReadMessageId)
+    }
+
     return {
         // 状态
         connected, socketConnected, isConnecting, isLoadingMore, hasMoreHistory, errorMsg,
@@ -169,10 +195,12 @@ export function useChatConnection() {
         connections, activeConnectionId,
         showConnectionMenu, showConnectionManager, showConnectionEditor,
         editingConnection, newConnectionName, newConnectionToken,
+        presence, peerReadText,
 
         // 方法
         connect, disconnect, switchConnection, connectWithNewToken,
         deleteConnection, loadMore, loadAroundMessage, scrollToBottom,
+        loadAroundArchivedMessage, sendChatMessage, searchMessages, markRead,
         mergeMessages,
         openAddConnection, openEditConnection, saveConnectionEditor,
         closeConnectionEditor, openConnectionManager,

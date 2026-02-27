@@ -50,19 +50,40 @@ window.ChatRenderer = (function () {
    * Create a message element (dispatches to bubble or log based on mode)
    * @param {any} msg
    * @param {'bubble' | 'log'} displayMode
+   * @param {string} serverUrl
    * @returns {HTMLElement}
    */
-  function createMessageElement(msg, displayMode) {
+  function createMessageElement(msg, displayMode, serverUrl) {
     const el = displayMode === 'log'
-      ? createLogMessageElement(msg, '')
-      : createBubbleMessageElement(msg, '');
+      ? createLogMessageElement(msg, serverUrl)
+      : createBubbleMessageElement(msg, serverUrl);
     if (msg.id) {
       el.dataset.messageId = String(msg.id);
     }
     if (msg.timestamp) {
       el.dataset.timestamp = String(msg.timestamp);
     }
+    if (msg.archiveId) {
+      el.dataset.archiveId = String(msg.archiveId);
+      el.classList.add("archived-message");
+    }
     return el;
+  }
+
+  /**
+   * Resolve attachment URL to absolute URL when server returns relative upload path
+   * @param {string | undefined | null} imageUrl
+   * @param {string} serverUrl
+   * @returns {string}
+   */
+  function resolveAttachmentUrl(imageUrl, serverUrl) {
+    if (!imageUrl) {
+      return '';
+    }
+    if (imageUrl.startsWith('/uploads/')) {
+      return serverUrl + imageUrl;
+    }
+    return imageUrl;
   }
 
   /**
@@ -151,10 +172,7 @@ window.ChatRenderer = (function () {
   function renderBubbleAttachments(bubble, msg, serverUrl) {
     msg.attachments.forEach(/** @param {any} att */ (att) => {
       if (att.type === 'image') {
-        let imageUrl = att.data || att.url;
-        if (imageUrl && imageUrl.startsWith('/uploads/')) {
-          imageUrl = serverUrl + imageUrl;
-        }
+        const imageUrl = resolveAttachmentUrl(att.data || att.url, serverUrl);
 
         const img = document.createElement('img');
         img.src = imageUrl;
@@ -235,10 +253,7 @@ window.ChatRenderer = (function () {
   function renderLogAttachments(content, msg, serverUrl) {
     msg.attachments.forEach(/** @param {any} att */ (att) => {
       if (att.type === 'image') {
-        let imageUrl = att.data || att.url;
-        if (imageUrl && imageUrl.startsWith('/uploads/')) {
-          imageUrl = serverUrl + imageUrl;
-        }
+        const imageUrl = resolveAttachmentUrl(att.data || att.url, serverUrl);
         const imgTag = createImageTag(att.filename || 'image.png', imageUrl);
         content.appendChild(imgTag);
         content.appendChild(document.createTextNode(' '));

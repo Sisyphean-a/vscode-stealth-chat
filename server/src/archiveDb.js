@@ -3,6 +3,7 @@ const fs = require("fs");
 
 const DEFAULT_ARCHIVE_DB_PATH = path.join(__dirname, "../data/messages.archive.db");
 const DEFAULT_LIMIT = 50;
+const DEFAULT_AROUND_LIMIT = 25;
 
 const ARCHIVE_REASON_RETENTION = "retention";
 const ARCHIVE_REASON_MAX_COUNT = "max_count";
@@ -354,6 +355,124 @@ function getArchiveMessageCount(appId, includeRestored = false) {
   return result.count;
 }
 
+function getArchiveMessageById(archiveId, appId, includeRestored = false) {
+  assertInitialized();
+  const parsedArchiveId = Number.parseInt(String(archiveId ?? ""), 10);
+  if (!Number.isFinite(parsedArchiveId) || parsedArchiveId <= 0) {
+    return null;
+  }
+
+  const normalizedAppId = normalizeAppId(appId);
+  const conditions = ["archive_id = ?"];
+  const params = [parsedArchiveId];
+  if (normalizedAppId) {
+    conditions.push("app_id = ?");
+    params.push(normalizedAppId);
+  }
+  if (!includeRestored) {
+    conditions.push("restored_at IS NULL");
+  }
+
+  const stmt = state.db.prepare(`
+    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
+    FROM archived_messages
+    WHERE ${conditions.join(" AND ")}
+    LIMIT 1
+  `);
+  stmt.bind(params);
+  if (!stmt.step()) {
+    stmt.free();
+    return null;
+  }
+  const row = stmt.getAsObject();
+  stmt.free();
+  return row;
+}
+
+function getMessagesAroundArchiveId(archiveId, appId, beforeLimit = DEFAULT_AROUND_LIMIT, afterLimit = DEFAULT_AROUND_LIMIT) {
+  assertInitialized();
+  const target = getArchiveMessageById(archiveId, appId, false);
+  if (!target) {
+    return [];
+  }
+
+  const safeBeforeLimit = parsePositiveInt(beforeLimit, DEFAULT_AROUND_LIMIT);
+  const safeAfterLimit = parsePositiveInt(afterLimit, DEFAULT_AROUND_LIMIT);
+  const targetArchiveId = Number.parseInt(String(target.archive_id), 10);
+  const targetTimestamp = Number.parseInt(String(target.timestamp), 10);
+  if (!Number.isFinite(targetArchiveId) || targetArchiveId <= 0 || !Number.isFinite(targetTimestamp)) {
+    return [];
+  }
+
+  const olderStmt = state.db.prepare(`
+    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
+    FROM archived_messages
+    WHERE app_id = ?
+      AND restored_at IS NULL
+      AND (timestamp < ? OR (timestamp = ? AND archive_id <= ?))
+    ORDER BY timestamp DESC, archive_id DESC
+    LIMIT ?
+  `);
+  olderStmt.bind([target.app_id, targetTimestamp, targetTimestamp, targetArchiveId, safeBeforeLimit + 1]);
+  const olderRows = [];
+  while (olderStmt.step()) {
+    olderRows.push(olderStmt.getAsObject());
+  }
+  olderStmt.free();
+
+  const newerStmt = state.db.prepare(`
+    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
+    FROM archived_messages
+    WHERE app_id = ?
+      AND restored_at IS NULL
+      AND (timestamp > ? OR (timestamp = ? AND archive_id > ?))
+    ORDER BY timestamp ASC, archive_id ASC
+    LIMIT ?
+  `);
+  newerStmt.bind([target.app_id, targetTimestamp, targetTimestamp, targetArchiveId, safeAfterLimit]);
+  const newerRows = [];
+  while (newerStmt.step()) {
+    newerRows.push(newerStmt.getAsObject());
+  }
+  newerStmt.free();
+
+  return [...olderRows.reverse(), ...newerRows];
+}
+
+function searchArchivedMessages(options = {}) {
+  assertInitialized();
+  const appId = normalizeAppId(options.appId);
+  const keyword = String(options.keyword || "").trim();
+  if (!appId || keyword.length === 0) {
+    return [];
+  }
+
+  const limit = parsePositiveInt(options.limit, DEFAULT_LIMIT);
+  const lowerKeyword = keyword.toLowerCase();
+  const searchPattern = `%${keyword}%`;
+
+  const stmt = state.db.prepare(`
+    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
+    FROM archived_messages
+    WHERE app_id = ?
+      AND restored_at IS NULL
+      AND text LIKE ?
+    ORDER BY timestamp DESC, archive_id DESC
+    LIMIT ?
+  `);
+  stmt.bind([appId, searchPattern, limit]);
+  const rows = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const content = String(row.text || "").toLowerCase();
+    if (content.includes(lowerKeyword)) {
+      rows.push(row);
+    }
+  }
+  stmt.free();
+  return rows;
+}
+
 async function close() {
   if (!state.db) {
     state.isInitialized = false;
@@ -382,6 +501,9 @@ module.exports = {
   getArchivedRowsByIds,
   markRestored,
   getArchiveMessageCount,
+  getArchiveMessageById,
+  getMessagesAroundArchiveId,
+  searchArchivedMessages,
   close,
   ARCHIVE_REASON_RETENTION,
   ARCHIVE_REASON_MAX_COUNT,

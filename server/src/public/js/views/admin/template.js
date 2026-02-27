@@ -112,6 +112,62 @@ export const adminTemplate = `
                     </el-table-column>
                 </el-table>
             </el-card>
+
+            <el-card class="main-card" shadow="never">
+                <template #header>
+                    <div class="card-header">
+                        <div class="header-title">
+                            <span class="title-icon">🗂</span>
+                            <span class="section-title">归档消息</span>
+                            <span class="app-count">{{ archiveMessages.length }}</span>
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <el-select v-model="archiveFilterAppId" placeholder="选择频道" style="min-width: 150px;">
+                                <el-option v-for="app in stats.apps" :key="app.id" :label="app.name" :value="app.id" />
+                            </el-select>
+                            <el-checkbox v-model="includeRestored">含已恢复</el-checkbox>
+                            <el-button @click="loadArchiveMessages(false)" :loading="archiveLoading">刷新</el-button>
+                            <el-button type="primary" @click="restoreSelectedArchives" :disabled="selectedArchiveIds.length === 0">恢复选中</el-button>
+                        </div>
+                    </div>
+                </template>
+
+                <el-table :data="archiveMessages" style="width: 100%">
+                    <el-table-column width="52">
+                        <template #default="scope">
+                            <el-checkbox
+                                :model-value="selectedArchiveIds.includes(scope.row.archiveId)"
+                                :disabled="!!scope.row.restoredAt"
+                                @change="(checked) => toggleArchiveSelection(scope.row.archiveId, checked)"
+                            />
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="archiveId" label="归档ID" width="90" />
+                    <el-table-column prop="appId" label="频道" width="100" />
+                    <el-table-column prop="source" label="来源" width="80" />
+                    <el-table-column label="时间" width="170">
+                        <template #default="scope">
+                            <span>{{ new Date(scope.row.timestamp).toLocaleString() }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="内容">
+                        <template #default="scope">
+                            <span>{{ scope.row.text || '(空消息)' }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="状态" width="100">
+                        <template #default="scope">
+                            <el-tag v-if="scope.row.restoredAt" type="success">已恢复</el-tag>
+                            <el-tag v-else type="info">已归档</el-tag>
+                        </template>
+                    </el-table-column>
+                </el-table>
+                <div style="margin-top: 12px; display:flex; justify-content:center;">
+                    <el-button @click="loadArchiveMessages(true)" :disabled="!archiveHasMore || archiveLoading">
+                        {{ archiveLoading ? '加载中...' : (archiveHasMore ? '加载更多' : '没有更多') }}
+                    </el-button>
+                </div>
+            </el-card>
         </div>
 
         <!-- Dialog -->

@@ -76,13 +76,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.handleReady(view);
           break;
         case "sendMessage":
-          this.handleSendMessage(message.payload);
+          this.handleSendMessage(view, message.payload);
           break;
         case "loadMoreHistory":
           this.handleLoadMoreHistory(message.payload);
           break;
         case "loadAroundMessage":
           this.handleLoadAroundMessage(message.payload);
+          break;
+        case "loadAroundArchivedMessage":
+          this.handleLoadAroundArchivedMessage(message.payload);
+          break;
+        case "searchMessages":
+          this.handleSearchMessages(view, message.payload);
+          break;
+        case "markRead":
+          this.handleMarkRead(message.payload);
           break;
         case "openImage":
           openImagePreview(message.payload.url);
@@ -151,24 +160,84 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     socketService.loadAroundMessage(payload.targetMessageId);
   }
 
-  private handleSendMessage(payload: {
+  private handleLoadAroundArchivedMessage(payload: { targetArchiveId: number }): void {
+    if (!socketService.isConnected()) return;
+    if (!Number.isFinite(payload?.targetArchiveId) || payload.targetArchiveId <= 0) {
+      return;
+    }
+    socketService.loadAroundArchivedMessage(payload.targetArchiveId);
+  }
+
+  private async handleSendMessage(view: vscode.WebviewView, payload: {
     text: string;
     attachments?: import("../types").Attachment[];
     quote?: import("../types").MessageQuote;
-  }): void {
+    clientMessageId?: string;
+  }): Promise<void> {
     const { text, attachments, quote } = payload;
     if ((!text?.trim() && !attachments?.length) || !socketService.isConnected()) return;
 
     const activeConnection = getActiveConnection();
     const clickUrl = activeConnection.serverUrl;
+    try {
+      await socketService.sendChatMessage({
+        text: text?.trim() || "",
+        source: "vscode",
+        clickUrl,
+        attachments,
+        quote,
+        clientMessageId: payload.clientMessageId,
+      });
+    } catch (error) {
+      view.webview.postMessage({
+        type: "sendFailed",
+        payload: {
+          clientMessageId: payload.clientMessageId || null,
+          error: getErrorMessage(error),
+        },
+      });
+    }
+  }
 
-    socketService.getSocket()?.emit("chat message", {
-      text: text?.trim() || "",
-      source: "vscode",
-      clickUrl,
-      attachments,
-      quote,
-    });
+  private async handleSearchMessages(
+    view: vscode.WebviewView,
+    payload: { keyword: string; limit?: number }
+  ): Promise<void> {
+    if (!socketService.isConnected()) {
+      view.webview.postMessage({
+        type: "searchResults",
+        payload: { keyword: payload?.keyword || "", results: [], error: "当前未连接" },
+      });
+      return;
+    }
+    try {
+      const keyword = typeof payload?.keyword === "string" ? payload.keyword.trim() : "";
+      const limit = Number.isFinite(payload?.limit) ? Number(payload.limit) : 50;
+      const results = await socketService.searchMessages(keyword, limit);
+      view.webview.postMessage({
+        type: "searchResults",
+        payload: { keyword, results, error: null },
+      });
+    } catch (error) {
+      view.webview.postMessage({
+        type: "searchResults",
+        payload: {
+          keyword: payload?.keyword || "",
+          results: [],
+          error: getErrorMessage(error),
+        },
+      });
+    }
+  }
+
+  private handleMarkRead(payload: { lastReadTimestamp: number; lastReadMessageId?: number }): void {
+    if (!socketService.isConnected()) {
+      return;
+    }
+    if (!Number.isFinite(payload?.lastReadTimestamp) || payload.lastReadTimestamp <= 0) {
+      return;
+    }
+    socketService.markRead(payload.lastReadTimestamp, payload.lastReadMessageId);
   }
 
   private sendConfig(view: vscode.WebviewView): void {
