@@ -53,19 +53,21 @@ body[data-display-mode="log"] .message-bubble.remote {
 /* Log entry structure */
 body[data-display-mode="log"] .log-entry {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: flex-start;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 body[data-display-mode="log"] .log-timestamp {
   color: var(--vscode-descriptionForeground);
   flex-shrink: 0;
+  width: 74px;
+  font-variant-numeric: tabular-nums;
 }
 
 body[data-display-mode="log"] .log-source {
   flex-shrink: 0;
+  width: 38px;
+  text-align: left;
   font-weight: 600;
 }
 
@@ -80,26 +82,52 @@ body[data-display-mode="log"] .log-source.out {
 body[data-display-mode="log"] .log-content {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
 }
 
 body[data-display-mode="log"] .quote-preview-log {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 0;
+  display: block;
+  max-width: 100%;
   margin-bottom: 2px;
-  padding: 1px 0 1px 6px;
+  padding: 2px 0 2px 6px;
   border-left: 2px solid var(--vscode-terminal-ansiMagenta);
+  background: var(--vscode-editorWidget-background);
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
   cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
 }
 
 body[data-display-mode="log"] .quote-preview-log .quote-text {
-  max-width: 320px;
+  display: block;
+  max-width: 420px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+body[data-display-mode="log"] .log-body {
+  width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+body[data-display-mode="log"] .log-text {
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 body[data-display-mode="log"] .quote-action-btn.log {
@@ -109,6 +137,8 @@ body[data-display-mode="log"] .quote-action-btn.log {
   cursor: pointer;
   font-size: 11px;
   padding: 0 4px;
+  margin-top: 1px;
+  align-self: flex-start;
   flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.15s ease;
@@ -126,7 +156,9 @@ body[data-display-mode="log"] .quote-action-btn.log:hover {
 /* Image tag in log mode */
 body[data-display-mode="log"] .img-tag {
   position: relative;
-  display: inline;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
   color: var(--vscode-terminal-ansiYellow);
   cursor: pointer;
   text-decoration: none;

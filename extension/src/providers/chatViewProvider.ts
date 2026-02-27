@@ -9,7 +9,7 @@ import * as messageCache from "../services/messageCache";
 import * as configService from "../services/configService";
 import * as statusBar from "../ui/statusBar";
 import { openImagePreview } from "../ui/imagePreview";
-import { WebviewMessage } from "../types";
+import { parseWebviewMessage } from "../webview/protocol";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -41,6 +41,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this._extensionUri, "src", "webview"),
+        vscode.Uri.joinPath(this._extensionUri, "dist", "webview"),
       ],
     };
 
@@ -70,7 +71,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private setupMessageHandler(view: vscode.WebviewView): void {
-    view.webview.onDidReceiveMessage((message: WebviewMessage) => {
+    view.webview.onDidReceiveMessage((raw: unknown) => {
+      let message;
+      try {
+        message = parseWebviewMessage(raw);
+      } catch (error) {
+        console.error(`[WebView] Invalid incoming message: ${getErrorMessage(error)}`);
+        return;
+      }
       switch (message.type) {
         case "ready":
           this.handleReady(view);

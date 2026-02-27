@@ -15,6 +15,14 @@ body {
   border-left: 1px solid var(--vscode-sideBar-border);
 }
 
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
 /* Status bar */
 #status-bar {
   display: flex;
@@ -99,7 +107,7 @@ body {
   padding: 12px 8px;
   display: flex;
   flex-direction: column;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 #empty-state {
