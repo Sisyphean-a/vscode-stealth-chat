@@ -1,0 +1,170 @@
+#input-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vscode-editorWidget-background) 72%, transparent) 0%,
+    color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent) 100%
+  );
+  border-top: 1px solid var(--chat-border-soft);
+  flex-shrink: 0;
+}
+
+.composer-quote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--chat-surface-1);
+  border: 1px solid var(--chat-border-soft);
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  border-radius: var(--chat-radius-sm);
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.composer-quote.hidden {
+  display: none;
+}
+
+#composer-quote-text {
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#composer-quote-clear {
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+#composer-quote-clear:hover {
+  color: var(--vscode-errorForeground);
+}
+
+#attachment-preview {
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-item {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--chat-border-soft);
+  box-shadow: var(--chat-shadow-card);
+}
+
+.attachment-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-attachment {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.remove-attachment:hover {
+  background: rgba(196, 43, 52, 0.86);
+}
+
+#input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+#message-input {
+  width: 100%;
+  min-height: 36px;
+  max-height: 120px;
+  resize: none;
+  border-radius: var(--chat-radius-md);
+  border: 1px solid var(--chat-border-soft);
+  background: var(--chat-surface-2);
+  color: var(--vscode-input-foreground);
+  padding: 8px 10px;
+  line-height: 1.45;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+#message-input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 50%, transparent);
+}
+
+#send-button {
+  border: 1px solid color-mix(in srgb, var(--vscode-button-background) 72%, #000000);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vscode-button-background) 86%, transparent) 0%,
+    color-mix(in srgb, var(--vscode-button-background) 100%, transparent) 100%
+  );
+  color: var(--vscode-button-foreground);
+  border-radius: var(--chat-radius-md);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#send-button:hover {
+  transform: translateY(-1px);
+}
+
+#send-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#scroll-to-bottom {
+  position: absolute;
+  right: 14px;
+  bottom: 92px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--vscode-button-background) 80%, transparent);
+  color: var(--vscode-button-foreground);
+  box-shadow: var(--chat-shadow-soft);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#scroll-to-bottom:hover {
+  transform: translateY(-1px);
+}

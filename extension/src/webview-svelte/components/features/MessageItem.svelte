@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { ChatMessage } from "../../types";
-  import { escapeHtml, formatLogTime, formatShortTime, linkifyImages } from "../lib/format";
-  import { parsePositiveInt, resolveAttachmentUrl } from "../lib/messageStore";
+  import type { ChatMessage } from "../../../types";
+  import { escapeHtml, formatLogTime, formatShortTime, linkifyImages } from "../../lib/format";
+  import { parsePositiveInt, resolveAttachmentUrl } from "../../lib/messageStore";
 
   export let message: ChatMessage;
   export let displayMode: "bubble" | "log";
@@ -82,7 +82,6 @@
               src={resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
               class="message-image"
               alt={attachment.filename || "image"}
-              style="max-width: 100%; max-height: 300px; border-radius: 8px; cursor: pointer; display: block; margin-top: 8px;"
               on:click={() => onImageClick(resolveAttachmentUrl(attachment.data || attachment.url, serverUrl))}
             />
           {/if}

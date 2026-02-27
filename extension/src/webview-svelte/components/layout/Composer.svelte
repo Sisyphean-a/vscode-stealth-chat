@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { MessageQuote } from "../../types";
-  import { MAX_IMAGE_SIZE } from "../lib/constants";
-  import { readFileAsDataUrl, type PendingAttachment } from "../lib/attachments";
+  import type { MessageQuote } from "../../../types";
+  import { MAX_IMAGE_SIZE } from "../../lib/constants";
+  import { readFileAsDataUrl, type PendingAttachment } from "../../lib/attachments";
 
 export let selectedQuote: MessageQuote | null = null;
 export let disabled = false;

@@ -23,5 +23,5 @@ yarn.lock
 package-lock.json
 .DS_Store
 
-# 保留必要的 webview 资源
-!src/webview/**
+# 保留必要的桥接层资源
+!src/webview-bridge/**

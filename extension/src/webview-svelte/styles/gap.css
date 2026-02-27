@@ -1,0 +1,36 @@
+.time-divider.time-gap {
+  margin: 14px 0;
+  opacity: 0.74;
+}
+
+.time-divider.time-gap span {
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--vscode-widget-border) 55%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 66%, transparent);
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.load-more-btn {
+  margin: 2px auto 10px;
+  border: 1px dashed color-mix(in srgb, var(--vscode-widget-border) 58%, transparent);
+  border-radius: 999px;
+  padding: 6px 11px;
+  color: var(--vscode-textLink-foreground);
+  font-size: 11px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 46%, transparent);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.load-more-btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+.load-more-btn.loading {
+  cursor: default;
+  color: var(--vscode-descriptionForeground);
+  animation: pulse 1.4s ease-in-out infinite;
+}

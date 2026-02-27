@@ -1,13 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { ChatMessage } from "../../types";
+  import type { ChatMessage } from "../../../types";
   import {
     buildRenderItems,
     parsePositiveInt,
     type DisplayMode,
     type RenderItem,
-  } from "../lib/messageStore";
-  import MessageItem from "./MessageItem.svelte";
+  } from "../../lib/messageStore";
+  import MessageItem from "../features/MessageItem.svelte";
 
   export let messages: ChatMessage[] = [];
   export let displayMode: DisplayMode = "bubble";

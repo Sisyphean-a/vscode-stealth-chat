@@ -1,7 +1,9 @@
-import "../webview/chat-core.css";
-import "../webview/chat-bubble.css";
-import "../webview/chat-log.css";
-import "../webview/chat-gap.css";
+import "./styles/shell.css";
+import "./styles/composer.css";
+import "./styles/panels.css";
+import "./styles/bubble.css";
+import "./styles/log.css";
+import "./styles/gap.css";
 import App from "./App.svelte";
 
 const target = document.getElementById("app");

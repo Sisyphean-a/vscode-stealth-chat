@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { Connection, GlobalSettings } from "../../types";
+  import type { Connection, GlobalSettings } from "../../../types";
 
   type TestBadge = { success: boolean; latency?: number };
 

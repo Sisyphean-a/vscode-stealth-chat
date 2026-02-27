@@ -1,4 +1,4 @@
-import { isHostMessage, type HostMessage, type WebviewMessage } from "../../webview/protocol";
+import { isHostMessage, type HostMessage, type WebviewMessage } from "../../webview-bridge/protocol";
 
 type VsCodeApi = {
   postMessage: (message: unknown) => void;

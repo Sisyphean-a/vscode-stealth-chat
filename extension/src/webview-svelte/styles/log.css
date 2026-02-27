@@ -1,82 +1,69 @@
-/* ============================================================================
-   Log Mode Styles
-   ============================================================================ */
-
 body[data-display-mode="log"] #messages-container {
-  padding: 8px 12px;
-  font-family: var(--vscode-editor-font-family), monospace;
+  padding: 10px 12px;
+  font-family: var(--vscode-editor-font-family), "Cascadia Code", monospace;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.58;
+  color: var(--vscode-editor-foreground);
 }
 
 body[data-display-mode="log"] #empty-state {
   text-align: left;
-  padding: 20px 0;
-  font-family: var(--vscode-editor-font-family), monospace;
+  margin-top: 12px;
+  margin-bottom: 0;
+  font-family: var(--vscode-editor-font-family), "Cascadia Code", monospace;
 }
 
 body[data-display-mode="log"] .message-wrapper {
+  display: flex;
   flex-direction: row;
   align-items: flex-start;
   margin-bottom: 2px;
-  /* Ensure flex layout as base might be column but let's be explicit */
-  display: flex;
-}
-
-body[data-display-mode="log"] .message-wrapper.own,
-body[data-display-mode="log"] .message-wrapper.remote {
-  align-items: flex-start;
 }
 
 body[data-display-mode="log"] .message-time {
   display: none;
 }
 
-body[data-display-mode="log"] .message-bubble {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  max-width: 100%;
-  font-family: var(--vscode-editor-font-family), monospace;
-  font-size: 12px;
-  color: var(--vscode-editor-foreground);
-}
-
+body[data-display-mode="log"] .message-bubble,
 body[data-display-mode="log"] .message-bubble.own,
 body[data-display-mode="log"] .message-bubble.remote {
-  background: transparent;
+  width: 100%;
+  max-width: 100%;
   border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--vscode-editor-foreground);
+  padding: 0;
+  box-shadow: none;
 }
 
-/* Log entry structure */
 body[data-display-mode="log"] .log-entry {
   display: flex;
-  gap: 8px;
   align-items: flex-start;
+  gap: 8px;
+  width: 100%;
 }
 
 body[data-display-mode="log"] .log-timestamp {
   color: var(--vscode-descriptionForeground);
-  flex-shrink: 0;
   width: 74px;
+  flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 
 body[data-display-mode="log"] .log-source {
-  flex-shrink: 0;
   width: 38px;
-  text-align: left;
+  flex-shrink: 0;
   font-weight: 600;
+  color: var(--vscode-descriptionForeground);
 }
 
 body[data-display-mode="log"] .log-source.info {
-  color: var(--vscode-terminal-ansiBlue);
+  color: var(--vscode-descriptionForeground);
 }
 
 body[data-display-mode="log"] .log-source.out {
-  color: var(--vscode-terminal-ansiGreen);
+  color: var(--vscode-descriptionForeground);
 }
 
 body[data-display-mode="log"] .log-content {
@@ -84,64 +71,55 @@ body[data-display-mode="log"] .log-content {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
+  gap: 2px;
 }
 
 body[data-display-mode="log"] .quote-preview-log {
   display: block;
   max-width: 100%;
-  margin-bottom: 2px;
-  padding: 2px 0 2px 6px;
-  border-left: 2px solid var(--vscode-terminal-ansiMagenta);
-  background: var(--vscode-editorWidget-background);
-  border-top-right-radius: 4px;
-  border-bottom-right-radius: 4px;
-  border-right: none;
-  border-top: none;
-  border-bottom: none;
-  cursor: pointer;
-  text-align: left;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 52%, transparent);
   color: inherit;
+  text-align: left;
+  padding: 2px 6px;
   font: inherit;
+  cursor: pointer;
 }
 
 body[data-display-mode="log"] .quote-preview-log .quote-text {
   display: block;
   max-width: 420px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
 }
 
 body[data-display-mode="log"] .log-body {
-  width: 100%;
   white-space: normal;
-  word-break: break-word;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 body[data-display-mode="log"] .log-text {
-  display: inline;
   white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
 }
 
 body[data-display-mode="log"] .quote-action-btn.log {
-  border: none;
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 40%, transparent);
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
-  font-size: 11px;
-  padding: 0 4px;
-  margin-top: 1px;
-  align-self: flex-start;
-  flex-shrink: 0;
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.5;
   opacity: 0;
   transition: opacity 0.15s ease;
+  align-self: flex-start;
 }
 
 body[data-display-mode="log"] .message-wrapper:hover .quote-action-btn.log,
@@ -149,40 +127,33 @@ body[data-display-mode="log"] .message-wrapper:focus-within .quote-action-btn.lo
   opacity: 1;
 }
 
-body[data-display-mode="log"] .quote-action-btn.log:hover {
-  color: var(--vscode-textLink-foreground);
-}
-
-/* Image tag in log mode */
 body[data-display-mode="log"] .img-tag {
   position: relative;
   display: inline-flex;
   align-items: center;
-  margin-right: 4px;
-  color: var(--vscode-terminal-ansiYellow);
+  margin-right: 6px;
+  color: var(--vscode-editor-foreground);
   cursor: pointer;
-  text-decoration: none;
+  opacity: 0.86;
 }
 
 body[data-display-mode="log"] .img-tag:hover {
+  opacity: 1;
   text-decoration: underline;
 }
 
-/* Image preview tooltip */
 body[data-display-mode="log"] .img-preview-tooltip {
   display: none;
   position: absolute;
   left: 0;
   bottom: 100%;
-  top: auto;
   margin-bottom: 4px;
-  margin-top: 0;
   z-index: 1000;
-  background: var(--vscode-editorWidget-background);
-  border: 1px solid var(--vscode-widget-border);
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 42%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 85%, transparent);
   padding: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
 }
 
 body[data-display-mode="log"] .img-tag:hover .img-preview-tooltip {
@@ -190,24 +161,23 @@ body[data-display-mode="log"] .img-tag:hover .img-preview-tooltip {
 }
 
 body[data-display-mode="log"] .img-preview-tooltip img {
-  max-width: 200px;
+  max-width: 220px;
   max-height: 150px;
+  border-radius: 5px;
   display: block;
-  border-radius: 2px;
 }
 
-/* Date divider in log mode */
 body[data-display-mode="log"] .time-divider {
   margin: 2px 0;
   text-align: left;
 }
 
 body[data-display-mode="log"] .time-divider span {
-  background: none;
   border: none;
-  border-radius: 0;
+  background: transparent;
   padding: 0;
+  border-radius: 0;
+  font-family: var(--vscode-editor-font-family), "Cascadia Code", monospace;
   font-size: 12px;
-  font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-descriptionForeground);
 }

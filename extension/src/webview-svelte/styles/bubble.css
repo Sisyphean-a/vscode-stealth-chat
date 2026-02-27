@@ -1,0 +1,138 @@
+body[data-display-mode="bubble"] .message-wrapper {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+  position: relative;
+  gap: 5px;
+}
+
+body[data-display-mode="bubble"] .message-wrapper.own {
+  align-items: flex-end;
+}
+
+body[data-display-mode="bubble"] .message-wrapper.remote {
+  align-items: flex-start;
+}
+
+body[data-display-mode="bubble"] .message-time {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.82;
+  padding: 0 2px;
+}
+
+body[data-display-mode="bubble"] .message-bubble {
+  max-width: 86%;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 66%, transparent);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 70%, transparent);
+  color: var(--vscode-editor-foreground);
+  padding: 9px 11px;
+  line-height: 1.48;
+  font-size: 12px;
+  word-break: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+body[data-display-mode="bubble"] .message-bubble.own {
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--vscode-button-background) 88%, transparent) 0%,
+    color-mix(in srgb, var(--vscode-textLink-foreground) 56%, var(--vscode-button-background)) 100%
+  );
+  color: var(--vscode-button-foreground);
+  border-bottom-right-radius: 5px;
+}
+
+body[data-display-mode="bubble"] .message-bubble.remote {
+  border-bottom-left-radius: 5px;
+}
+
+body[data-display-mode="bubble"] .quote-preview-bubble {
+  display: flex;
+  align-items: center;
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  background: color-mix(in srgb, var(--vscode-editor-background) 74%, transparent);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+body[data-display-mode="bubble"] .quote-preview-bubble .quote-text {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-display-mode="bubble"] .quote-action-btn.bubble {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 55%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 82%, transparent);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+body[data-display-mode="bubble"] .message-wrapper.own .quote-action-btn.bubble {
+  right: auto;
+  left: 0;
+}
+
+body[data-display-mode="bubble"] .message-wrapper:hover .quote-action-btn.bubble,
+body[data-display-mode="bubble"] .message-wrapper:focus-within .quote-action-btn.bubble {
+  opacity: 1;
+}
+
+body[data-display-mode="bubble"] .message-image {
+  display: block;
+  cursor: pointer;
+  max-width: 100%;
+  max-height: 300px;
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 50%, transparent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+}
+
+body[data-display-mode="bubble"] .time-divider {
+  text-align: center;
+  margin: 16px 0;
+}
+
+body[data-display-mode="bubble"] .time-divider span {
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 55%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 74%, transparent);
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  letter-spacing: 0.15px;
+  padding: 3px 10px;
+}
+
+.message-wrapper.message-highlight {
+  animation: message-highlight 1.2s ease-out;
+}
+
+.archived-message .message-bubble {
+  border-style: dashed;
+}
+
+@keyframes message-highlight {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--vscode-focusBorder) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}

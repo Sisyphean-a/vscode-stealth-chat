@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, tick } from "svelte";
-  import type { SearchResult } from "../lib/messageStore";
-  import { formatShortTime } from "../lib/format";
+  import type { SearchResult } from "../../lib/messageStore";
+  import { formatShortTime } from "../../lib/format";
 
   export let visible = false;
   export let results: SearchResult[] = [];

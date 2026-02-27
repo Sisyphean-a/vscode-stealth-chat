@@ -2,14 +2,14 @@
  * WebView Provider
  */
 import * as vscode from "vscode";
-import { getChatHtml } from "../webview/chatContent";
+import { getChatHtml } from "../webview-bridge/chatContent";
 import { getNonce, getActiveConnection } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as messageCache from "../services/messageCache";
 import * as configService from "../services/configService";
 import * as statusBar from "../ui/statusBar";
 import { openImagePreview } from "../ui/imagePreview";
-import { parseWebviewMessage } from "../webview/protocol";
+import { parseWebviewMessage } from "../webview-bridge/protocol";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -40,7 +40,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [
-        vscode.Uri.joinPath(this._extensionUri, "src", "webview"),
         vscode.Uri.joinPath(this._extensionUri, "dist", "webview"),
       ],
     };

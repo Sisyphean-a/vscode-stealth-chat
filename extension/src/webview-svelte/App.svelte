@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import type { ChatMessage, Connection, GlobalSettings, MessageQuote } from "../types";
-  import type { HostMessage } from "../webview/protocol";
-  import Composer from "./components/Composer.svelte";
-  import MessageList from "./components/MessageList.svelte";
-  import SearchPanel from "./components/SearchPanel.svelte";
-  import SettingsPanel from "./components/SettingsPanel.svelte";
-  import StatusBar from "./components/StatusBar.svelte";
+  import type { HostMessage } from "../webview-bridge/protocol";
+  import Composer from "./components/layout/Composer.svelte";
+  import MessageList from "./components/layout/MessageList.svelte";
+  import SearchPanel from "./components/features/SearchPanel.svelte";
+  import SettingsPanel from "./components/features/SettingsPanel.svelte";
+  import StatusBar from "./components/layout/StatusBar.svelte";
   import { HISTORY_PAGE_SIZE } from "./lib/constants";
   import { normalizeServerUrl } from "./lib/format";
   import { uploadAll, type PendingAttachment } from "./lib/attachments";

@@ -1,0 +1,183 @@
+:root {
+  --chat-radius-sm: 8px;
+  --chat-radius-md: 12px;
+  --chat-radius-lg: 18px;
+  --chat-surface-1: color-mix(in srgb, var(--vscode-editorWidget-background) 78%, transparent);
+  --chat-surface-2: color-mix(in srgb, var(--vscode-editor-background) 84%, transparent);
+  --chat-border-soft: color-mix(in srgb, var(--vscode-widget-border) 70%, transparent);
+  --chat-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.18);
+  --chat-shadow-card: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--vscode-font-family), "Segoe UI", sans-serif;
+  color: var(--vscode-foreground);
+  background:
+    radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--vscode-textLink-foreground) 16%, transparent), transparent 55%),
+    radial-gradient(140% 90% at 100% 100%, color-mix(in srgb, var(--vscode-terminal-ansiBlue) 14%, transparent), transparent 60%),
+    var(--vscode-sideBar-background);
+  border-left: 1px solid var(--vscode-sideBar-border);
+  overflow: hidden;
+}
+
+#app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--vscode-statusBar-background) 90%, transparent) 0%,
+    color-mix(in srgb, var(--vscode-editorWidget-background) 78%, transparent) 100%
+  );
+  border-bottom: 1px solid var(--chat-border-soft);
+  backdrop-filter: blur(6px);
+  flex-shrink: 0;
+}
+
+#status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+  flex-shrink: 0;
+}
+
+#status-indicator.status-connected {
+  color: var(--vscode-testing-iconPassed);
+  background: var(--vscode-testing-iconPassed);
+}
+
+#status-indicator.status-disconnected {
+  color: var(--vscode-testing-iconFailed);
+  background: var(--vscode-testing-iconFailed);
+}
+
+#status-indicator.status-connecting {
+  color: var(--vscode-editorWarning-foreground);
+  background: var(--vscode-editorWarning-foreground);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+#status-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+.status-meta {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+
+#search-btn,
+#settings-btn {
+  margin-left: auto;
+  background: color-mix(in srgb, var(--vscode-button-secondaryBackground) 74%, transparent);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  padding: 5px 10px;
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+}
+
+#settings-btn {
+  margin-left: 0;
+}
+
+#search-btn:hover,
+#settings-btn:hover {
+  opacity: 0.96;
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--vscode-button-background) 34%, transparent);
+}
+
+#messages-container {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scroll-behavior: auto;
+}
+
+#empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  border: 1px dashed var(--chat-border-soft);
+  border-radius: var(--chat-radius-md);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 66%, transparent);
+  padding: 20px 16px;
+  font-size: 12px;
+  min-width: 180px;
+}
+
+#messages-container::-webkit-scrollbar,
+.settings-content::-webkit-scrollbar,
+#search-results::-webkit-scrollbar {
+  width: 9px;
+}
+
+#messages-container::-webkit-scrollbar-thumb,
+.settings-content::-webkit-scrollbar-thumb,
+#search-results::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-scrollbarSlider-background) 85%, transparent);
+}
+
+#messages-container::-webkit-scrollbar-thumb:hover,
+.settings-content::-webkit-scrollbar-thumb:hover,
+#search-results::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--vscode-scrollbarSlider-hoverBackground) 90%, transparent);
+}
+
+.image-link {
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.image-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
