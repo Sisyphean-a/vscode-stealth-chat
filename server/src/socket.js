@@ -3,15 +3,22 @@ const { sendNotification } = require("./services/gotify");
 const db = require("./db");
 const { processImage } = require("./utils/imageStorage");
 const config = require("./config");
+const {
+  DEFAULT_AROUND_WINDOW_SIZE,
+  MAX_AROUND_WINDOW_SIZE,
+  QUOTE_SNIPPET_MAX_LENGTH,
+  SEARCH_RESULT_LIMIT,
+} = require("../../packages/chat-core/index.cjs");
+const {
+  SOCKET_EVENTS,
+  buildAckError,
+  buildAckOk,
+} = require("../../packages/protocol/socket-events.cjs");
 
 // Global click URL (can be overridden by app config if we extended it, 
 // but currently clickUrl is passed in msg or falls back to global env)
 const CLICK_URL = config.CLICK_URL;
-const DEFAULT_AROUND_WINDOW_SIZE = 25;
-const MAX_AROUND_WINDOW_SIZE = 100;
-const QUOTE_SNIPPET_MAX_LENGTH = 120;
 const MAX_SEARCH_LIMIT = 100;
-const DEFAULT_SEARCH_LIMIT = 50;
 const VALID_CLIENT_TYPES = new Set(["mobile", "vscode", "unknown"]);
 
 function normalizeWindowSize(input) {
@@ -25,7 +32,7 @@ function normalizeWindowSize(input) {
 function normalizeSearchLimit(input) {
   const parsed = Number.parseInt(String(input ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_SEARCH_LIMIT;
+    return SEARCH_RESULT_LIMIT;
   }
   return Math.min(parsed, MAX_SEARCH_LIMIT);
 }
@@ -63,7 +70,7 @@ function buildPresencePayload(io, appId) {
 }
 
 function emitPresenceUpdate(io, appId) {
-  io.to(appId).emit("presence update", buildPresencePayload(io, appId));
+  io.to(appId).emit(SOCKET_EVENTS.PRESENCE_UPDATE, buildPresencePayload(io, appId));
 }
 
 function getMessagePreviewText(message) {
@@ -145,7 +152,7 @@ function initSocket(httpServer) {
     emitPresenceUpdate(io, appId);
 
     // Handle chat messages
-    socket.on("chat message", async (msg, ack) => {
+    socket.on(SOCKET_EVENTS.CHAT_MESSAGE, async (msg, ack) => {
       try {
         const source = msg.source === "mobile" || msg.source === "vscode" ? msg.source : null;
         if (!source) {
@@ -227,12 +234,11 @@ function initSocket(httpServer) {
         }
 
         // Broadcast ONLY to this App's room
-        io.to(appId).emit("chat message", savedMessage);
-        safeAck(ack, {
-          ok: true,
+        io.to(appId).emit(SOCKET_EVENTS.CHAT_MESSAGE, savedMessage);
+        safeAck(ack, buildAckOk({
           clientMessageId: clientMessageId || null,
           message: savedMessage,
-        });
+        }));
 
         // Handle VS Code -> Mobile Notification
         if (source === "vscode") {
@@ -250,11 +256,11 @@ function initSocket(httpServer) {
         }
       } catch (error) {
         console.error("[Socket] Error processing message:", error);
-        safeAck(ack, {
-          ok: false,
-          clientMessageId: typeof msg?.clientMessageId === "string" ? msg.clientMessageId : null,
-          error: error.message || "Failed to process message",
-        });
+        safeAck(ack, buildAckError(
+          "CHAT_MESSAGE_FAILED",
+          error.message || "Failed to process message",
+          { clientMessageId: typeof msg?.clientMessageId === "string" ? msg.clientMessageId : null },
+        ));
         socket.emit("error", {
           message: error.message || "Failed to process message",
         });
@@ -262,35 +268,35 @@ function initSocket(httpServer) {
     });
 
     // Handle history loading request
-    socket.on("load history", (limit = 50) => {
+    socket.on(SOCKET_EVENTS.LOAD_HISTORY, (limit = 50) => {
       console.log(
         `[Socket] Loading history (limit: ${limit}) for ${socket.id} (App: ${app.name})`,
       );
       // Load history for this App ID
       const messages = db.getRecentMessages(limit, appId);
-      socket.emit("history loaded", messages);
+      socket.emit(SOCKET_EVENTS.HISTORY_LOADED, messages);
     });
 
     // Handle load more history request
-    socket.on("load more history", (data) => {
+    socket.on(SOCKET_EVENTS.LOAD_MORE_HISTORY, (data) => {
       try {
         const { limit = 50, beforeTimestamp } = data || {};
         console.log(
           `[Socket] Loading more history (limit: ${limit}, before: ${beforeTimestamp}) for ${socket.id} (App: ${app.name})`,
         );
         const messages = db.getRecentMessages(limit, appId, beforeTimestamp);
-        socket.emit("more history loaded", { messages, hasMore: messages.length === limit });
+        socket.emit(SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages, hasMore: messages.length === limit });
       } catch (err) {
         console.error(`[Socket] "load more history" error:`, err);
-        socket.emit("more history loaded", { messages: [], hasMore: false });
+        socket.emit(SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages: [], hasMore: false });
       }
     });
 
-    socket.on("load around message", (data) => {
+    socket.on(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, (data) => {
       try {
         const targetMessageId = Number.parseInt(String(data?.targetMessageId ?? ""), 10);
         if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) {
-          socket.emit("around message loaded", {
+          socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
             messages: [],
             targetMessageId: null,
             error: "Invalid target message id",
@@ -300,7 +306,7 @@ function initSocket(httpServer) {
 
         const targetMessage = db.getMessageById(targetMessageId, appId);
         if (!targetMessage) {
-          socket.emit("around message loaded", {
+          socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
             messages: [],
             targetMessageId,
             error: "Target message not found",
@@ -310,14 +316,14 @@ function initSocket(httpServer) {
 
         const windowSize = normalizeWindowSize(data?.windowSize);
         const messages = db.getMessagesAroundMessage(targetMessageId, appId, windowSize, windowSize);
-        socket.emit("around message loaded", {
+        socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
           messages,
           targetMessageId,
           error: null,
         });
       } catch (error) {
         console.error(`[Socket] "load around message" error:`, error);
-        socket.emit("around message loaded", {
+        socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
           messages: [],
           targetMessageId: null,
           error: error.message || "Failed to load message context",
@@ -325,11 +331,11 @@ function initSocket(httpServer) {
       }
     });
 
-    socket.on("load around archived message", (data) => {
+    socket.on(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, (data) => {
       try {
         const targetArchiveId = Number.parseInt(String(data?.targetArchiveId ?? ""), 10);
         if (!Number.isFinite(targetArchiveId) || targetArchiveId <= 0) {
-          socket.emit("around archived message loaded", {
+          socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
             messages: [],
             targetArchiveId: null,
             error: "Invalid target archive id",
@@ -340,21 +346,21 @@ function initSocket(httpServer) {
         const windowSize = normalizeWindowSize(data?.windowSize);
         const messages = db.getArchivedMessagesAround(targetArchiveId, appId, windowSize, windowSize);
         if (messages.length === 0) {
-          socket.emit("around archived message loaded", {
+          socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
             messages: [],
             targetArchiveId,
             error: "Target archive message not found",
           });
           return;
         }
-        socket.emit("around archived message loaded", {
+        socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
           messages,
           targetArchiveId,
           error: null,
         });
       } catch (error) {
         console.error(`[Socket] "load around archived message" error:`, error);
-        socket.emit("around archived message loaded", {
+        socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
           messages: [],
           targetArchiveId: null,
           error: error.message || "Failed to load archived context",
@@ -362,23 +368,23 @@ function initSocket(httpServer) {
       }
     });
 
-    socket.on("search messages", (data, ack) => {
+    socket.on(SOCKET_EVENTS.SEARCH_MESSAGES, (data, ack) => {
       try {
         const keyword = typeof data?.keyword === "string" ? data.keyword.trim() : "";
         if (!keyword) {
-          safeAck(ack, { ok: false, error: "Keyword is required", results: [] });
+          safeAck(ack, buildAckError("SEARCH_KEYWORD_REQUIRED", "Keyword is required"));
           return;
         }
         const limit = normalizeSearchLimit(data?.limit);
         const results = db.searchMessages({ appId, keyword, limit });
-        safeAck(ack, { ok: true, results, keyword, limit });
+        safeAck(ack, buildAckOk({ results, keyword, limit }));
       } catch (error) {
         console.error(`[Socket] "search messages" error:`, error);
-        safeAck(ack, { ok: false, error: error.message || "Search failed", results: [] });
+        safeAck(ack, buildAckError("SEARCH_FAILED", error.message || "Search failed"));
       }
     });
 
-    socket.on("mark read", (data) => {
+    socket.on(SOCKET_EVENTS.MARK_READ, (data) => {
       try {
         const lastReadTimestamp = Number.parseInt(String(data?.lastReadTimestamp ?? ""), 10);
         if (!Number.isFinite(lastReadTimestamp) || lastReadTimestamp <= 0) {
@@ -393,7 +399,7 @@ function initSocket(httpServer) {
             ? lastReadMessageId
             : null,
         };
-        socket.to(appId).emit("read receipt", payload);
+        socket.to(appId).emit(SOCKET_EVENTS.READ_RECEIPT, payload);
       } catch (error) {
         console.error(`[Socket] "mark read" error:`, error);
       }

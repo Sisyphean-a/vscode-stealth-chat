@@ -2,34 +2,19 @@
  * 消息管理 Composable
  * 管理消息列表、去重和合并逻辑
  */
+import {
+    buildMessageKey,
+    compareMessages,
+    parsePositiveInt,
+} from '/packages/chat-core/index.js'
 const { reactive } = Vue
-
-function parsePositiveId(value) {
-    const parsed = Number.parseInt(String(value ?? ''), 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-}
-
-function messageKey(msg) {
-    const id = parsePositiveId(msg?.id)
-    if (id) {
-        return `id:${id}`
-    }
-    return `ts:${msg?.timestamp || 0}-src:${msg?.source || 'unknown'}-txt:${msg?.text || ''}`
-}
-
-function compareMessages(a, b) {
-    if (a.timestamp === b.timestamp) {
-        return (parsePositiveId(a.id) || 0) - (parsePositiveId(b.id) || 0)
-    }
-    return a.timestamp - b.timestamp
-}
 
 /**
  * 将服务端消息映射为视图模型
  */
 const mapServerMessage = (msg) => ({
-    id: parsePositiveId(msg.id),
-    archiveId: parsePositiveId(msg.archiveId),
+    id: parsePositiveInt(msg.id),
+    archiveId: parsePositiveInt(msg.archiveId),
     archived: msg.archived === true,
     text: typeof msg.text === 'string' ? msg.text : '',
     type: msg.source === 'mobile' ? 'own' : (msg.source === 'system' ? 'system' : 'remote'),
@@ -37,9 +22,9 @@ const mapServerMessage = (msg) => ({
     source: msg.source === 'mobile' ? 'mobile' : 'vscode',
     timestamp: msg.timestamp || Date.now(),
     attachments: msg.attachments,
-    quote: msg.quote && parsePositiveId(msg.quote.messageId)
+    quote: msg.quote && parsePositiveInt(msg.quote.messageId)
         ? {
-            messageId: parsePositiveId(msg.quote.messageId),
+            messageId: parsePositiveInt(msg.quote.messageId),
             textSnippet: typeof msg.quote.textSnippet === 'string' ? msg.quote.textSnippet : '',
             source: msg.quote.source === 'mobile' ? 'mobile' : 'vscode',
             timestamp: msg.quote.timestamp || Date.now(),
@@ -54,8 +39,8 @@ export function useMessages() {
         const mapped = (serverMessages || [])
             .filter((msg) => msg && typeof msg === 'object')
             .map(mapServerMessage)
-        const keyMap = new Map(messages.map((msg) => [messageKey(msg), msg]))
-        mapped.forEach((msg) => keyMap.set(messageKey(msg), msg))
+        const keyMap = new Map(messages.map((msg) => [buildMessageKey(msg), msg]))
+        mapped.forEach((msg) => keyMap.set(buildMessageKey(msg), msg))
         const merged = Array.from(keyMap.values()).sort(compareMessages)
         messages.splice(0, messages.length, ...merged)
     }

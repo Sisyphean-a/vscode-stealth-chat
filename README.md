@@ -36,6 +36,9 @@ vscode-stealth-chat/
 │   │   ├── config.js          # App 配置持久化与加载
 │   │   └── settings.js        # 管理员密码与会话令牌
 │   └── data/                  # 运行时数据（卷挂载）
+├── packages/                  # 跨端共享协议与消息核心
+│   ├── protocol/              # Socket 事件常量与 ACK 结构
+│   └── chat-core/             # 消息去重/排序/ID/常量等纯逻辑
 ├── docker-compose.yml
 └── restart-deploy.sh          # 服务器更新后的一键重启脚本
 ```

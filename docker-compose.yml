@@ -13,7 +13,9 @@ services:
       - ./gotify_data:/app/data
 
   chat-server:
-    build: ./server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     container_name: stealth-chat-server
     restart: unless-stopped
     ports:

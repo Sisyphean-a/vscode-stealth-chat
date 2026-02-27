@@ -6,19 +6,27 @@ import { ChatMessage, MessageQuote, SocketCallbacks } from "../types";
 import * as messageCache from "./messageCache";
 import * as statusBar from "../ui/statusBar";
 import { getActiveConnection, getCurrentTimestamp, formatTimestamp, getDateKey } from "../utils/helpers";
+import {
+  ACK_TIMEOUT_MS,
+  DEFAULT_AROUND_WINDOW_SIZE,
+  HISTORY_PAGE_SIZE,
+  MAX_SEND_RETRIES,
+  RETRY_DELAY_MS,
+  SEARCH_RESULT_LIMIT,
+  buildClientMessageId,
+} from "../../../packages/chat-core/index.js";
+import {
+  SOCKET_EVENTS,
+  getAckData,
+  getAckErrorMessage,
+  isAckOk,
+} from "../../../packages/protocol/socket-events.js";
 
 let socket: Socket | undefined;
 let outputChannel: import("vscode").OutputChannel | undefined;
 let historyLoaded = false;
 let lastDisplayedDate = "";
 let activeCallbacks: SocketCallbacks = {};
-
-const HISTORY_LOAD_LIMIT = 50;
-const AROUND_WINDOW_SIZE = 25;
-const SEARCH_RESULT_LIMIT = 50;
-const ACK_TIMEOUT_MS = 4000;
-const MAX_SEND_RETRIES = 3;
-const RETRY_DELAY_MS = 1200;
 
 type SendMessageInput = {
   text: string;
@@ -55,10 +63,7 @@ function logError(message: string): void {
 }
 
 function ensureClientMessageId(input?: string): string {
-  if (typeof input === "string" && input.trim().length > 0) {
-    return input.trim();
-  }
-  return `vscode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  return buildClientMessageId("vscode", input);
 }
 
 function scheduleFlush(delayMs = 0): void {
@@ -70,15 +75,19 @@ function scheduleFlush(delayMs = 0): void {
   }, delayMs);
 }
 
-function normalizeAckError(payload: unknown): Error {
-  if (!payload || typeof payload !== "object") {
-    return new Error("发送失败");
+function parseAckChatMessage(payload: unknown): ChatMessage | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
   }
-  const maybeError = (payload as { error?: unknown }).error;
-  if (typeof maybeError === "string" && maybeError.trim().length > 0) {
-    return new Error(maybeError);
+  const maybeData = getAckData<{ message?: ChatMessage }>(payload);
+  if (maybeData && typeof maybeData === "object" && maybeData.message) {
+    return maybeData.message;
   }
-  return new Error("发送失败");
+  const legacy = payload as { message?: ChatMessage };
+  if (legacy.message) {
+    return legacy.message;
+  }
+  return null;
 }
 
 function emitChatMessageWithAck(payload: SendMessageInput): Promise<ChatMessage> {
@@ -93,20 +102,21 @@ function emitChatMessageWithAck(payload: SendMessageInput): Promise<ChatMessage>
       reject(new Error("消息确认超时"));
     }, ACK_TIMEOUT_MS);
 
-    socket?.emit("chat message", payload, (ack: unknown) => {
+    socket?.emit(SOCKET_EVENTS.CHAT_MESSAGE, payload, (ack: unknown) => {
       if (timedOut) {
         return;
       }
       clearTimeout(timer);
-      const response = ack as {
-        ok?: boolean;
-        message?: ChatMessage;
-      };
-      if (response?.ok && response.message) {
-        resolve(response.message);
+      if (isAckOk(ack)) {
+        const message = parseAckChatMessage(ack);
+        if (message) {
+          resolve(message);
+          return;
+        }
+        reject(new Error("发送响应缺少消息内容"));
         return;
       }
-      reject(normalizeAckError(ack));
+      reject(new Error(getAckErrorMessage(ack, "发送失败")));
     });
   });
 }
@@ -175,7 +185,7 @@ export function connectToServer(
       statusBar.setTooltip("TS-Lint Service 已连接");
       statusBar.updateStatusBar();
       if (!historyLoaded) {
-        socket?.emit("load history", HISTORY_LOAD_LIMIT);
+        socket?.emit(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
       }
       scheduleFlush(0);
       callbacks.onConnect?.();
@@ -193,7 +203,7 @@ export function connectToServer(
       callbacks.onConnectError?.(error);
     });
 
-    socket.on("history loaded", (messages: ChatMessage[]) => {
+    socket.on(SOCKET_EVENTS.HISTORY_LOADED, (messages: ChatMessage[]) => {
       historyLoaded = true;
       const safeMessages = Array.isArray(messages) ? messages : [];
 
@@ -224,18 +234,18 @@ export function connectToServer(
       callbacks.onHistoryLoaded?.(messageCache.getCachedMessages());
     });
 
-    socket.on("more history loaded", (data: { messages: ChatMessage[]; hasMore: boolean }) => {
+    socket.on(SOCKET_EVENTS.MORE_HISTORY_LOADED, (data: { messages: ChatMessage[]; hasMore: boolean }) => {
       if (data.messages.length > 0) {
         messageCache.prependHistory(data.messages);
       }
       callbacks.onMoreHistoryLoaded?.(data.messages, data.hasMore);
     });
 
-    socket.on("chat message", (data: ChatMessage) => {
+    socket.on(SOCKET_EVENTS.CHAT_MESSAGE, (data: ChatMessage) => {
       callbacks.onMessage?.(data);
     });
 
-    socket.on("around message loaded", (payload: {
+    socket.on(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, (payload: {
       messages?: ChatMessage[];
       targetMessageId?: number | null;
       error?: string | null;
@@ -247,7 +257,7 @@ export function connectToServer(
       });
     });
 
-    socket.on("around archived message loaded", (payload: {
+    socket.on(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, (payload: {
       messages?: ChatMessage[];
       targetArchiveId?: number | null;
       error?: string | null;
@@ -259,7 +269,7 @@ export function connectToServer(
       });
     });
 
-    socket.on("presence update", (payload) => {
+    socket.on(SOCKET_EVENTS.PRESENCE_UPDATE, (payload) => {
       callbacks.onPresenceUpdate?.({
         appId: typeof payload?.appId === "string" ? payload.appId : "default",
         total: Number.isFinite(payload?.total) ? payload.total : 0,
@@ -268,7 +278,7 @@ export function connectToServer(
       });
     });
 
-    socket.on("read receipt", (payload) => {
+    socket.on(SOCKET_EVENTS.READ_RECEIPT, (payload) => {
       callbacks.onReadReceipt?.({
         appId: typeof payload?.appId === "string" ? payload.appId : "default",
         clientType: payload?.clientType === "mobile" || payload?.clientType === "vscode" ? payload.clientType : "unknown",
@@ -327,24 +337,22 @@ export function searchMessages(
   }
 
   return new Promise((resolve, reject) => {
-    socket?.emit("search messages", { keyword: safeKeyword, limit }, (ack: unknown) => {
-      const response = ack as {
-        ok?: boolean;
-        error?: string;
-        results?: Array<{
-          targetType: "hot" | "archive";
-          messageId: number | null;
-          archiveId: number | null;
-          source: "mobile" | "vscode";
-          timestamp: number;
-          preview: string;
-        }>;
-      };
-      if (!response?.ok) {
-        reject(new Error(response?.error || "搜索失败"));
+    socket?.emit(SOCKET_EVENTS.SEARCH_MESSAGES, { keyword: safeKeyword, limit }, (ack: unknown) => {
+      if (!isAckOk(ack)) {
+        reject(new Error(getAckErrorMessage(ack, "搜索失败")));
         return;
       }
-      resolve(Array.isArray(response.results) ? response.results : []);
+      const data = getAckData<{ results?: Array<{
+        targetType: "hot" | "archive";
+        messageId: number | null;
+        archiveId: number | null;
+        source: "mobile" | "vscode";
+        timestamp: number;
+        preview: string;
+      }> }>(ack);
+      const legacy = ack as { results?: unknown };
+      const results = data?.results ?? legacy.results;
+      resolve(Array.isArray(results) ? results : []);
     });
   });
 }
@@ -356,7 +364,7 @@ export function markRead(lastReadTimestamp: number, lastReadMessageId?: number):
   if (!socket?.connected) {
     return;
   }
-  socket.emit("mark read", {
+  socket.emit(SOCKET_EVENTS.MARK_READ, {
     clientType: "vscode",
     lastReadTimestamp,
     lastReadMessageId,
@@ -421,28 +429,34 @@ export function resetLastDisplayedDate(): void {
  * 加载历史消息
  */
 export function loadHistory(): void {
-  socket?.emit("load history", HISTORY_LOAD_LIMIT);
+  socket?.emit(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
 }
 
 /**
  * 加载更多历史消息
  */
 export function loadMoreHistory(beforeTimestamp: number): void {
-  socket?.emit("load more history", { limit: HISTORY_LOAD_LIMIT, beforeTimestamp });
+  socket?.emit(SOCKET_EVENTS.LOAD_MORE_HISTORY, { limit: HISTORY_PAGE_SIZE, beforeTimestamp });
 }
 
 /**
  * 按目标消息加载上下文窗口
  */
 export function loadAroundMessage(targetMessageId: number): void {
-  socket?.emit("load around message", { targetMessageId, windowSize: AROUND_WINDOW_SIZE });
+  socket?.emit(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, {
+    targetMessageId,
+    windowSize: DEFAULT_AROUND_WINDOW_SIZE,
+  });
 }
 
 /**
  * 按归档消息加载上下文窗口
  */
 export function loadAroundArchivedMessage(targetArchiveId: number): void {
-  socket?.emit("load around archived message", { targetArchiveId, windowSize: AROUND_WINDOW_SIZE });
+  socket?.emit(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, {
+    targetArchiveId,
+    windowSize: DEFAULT_AROUND_WINDOW_SIZE,
+  });
 }
 
 /**

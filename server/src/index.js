@@ -43,6 +43,7 @@ async function startServer() {
 
   app.use("/api/admin", adminRoutes);
   app.use("/api/upload", uploadRoutes);
+  app.use("/packages", express.static(path.join(__dirname, "../../packages")));
   app.use(express.static(path.join(__dirname, "public")));
 
   app.use("/uploads", express.static(IMAGES_DIR));

@@ -4,13 +4,12 @@ import { useChatConnection } from '../composables/useChatConnection.js'
 import { useImageHandler } from '../composables/useImageHandler.js'
 import { useImagePreview } from '../composables/useImagePreview.js'
 import { formatTime, formatDividerDate, showTimeDivider, parseMarkdown, getImageSrc } from '../utils/formatters.js'
+import { buildClientMessageId, buildQuoteSnippet } from '/packages/chat-core/index.js'
 
 import AuthScreen from '../components/AuthScreen.js'
 import ConnectionManager from '../components/ConnectionManager.js'
 import ConnectionEditor from '../components/ConnectionEditor.js'
 import ImagePreviewModal from '../components/ImagePreviewModal.js'
-
-const QUOTE_SNIPPET_MAX_LENGTH = 120
 
 function parsePositiveId(value) {
     const parsed = Number.parseInt(String(value ?? ''), 10)
@@ -19,19 +18,6 @@ function parsePositiveId(value) {
 
 function getSourceLabel(source) {
     return source === 'mobile' ? '我' : 'VSCode'
-}
-
-function buildQuoteSnippet(msg) {
-    const hasAttachments = Array.isArray(msg?.attachments) && msg.attachments.length > 0
-    const text = typeof msg?.text === 'string' ? msg.text.trim() : ''
-    const raw = hasAttachments ? `[图片] ${text}`.trim() : text
-    if (!raw) {
-        return '(空消息)'
-    }
-    if (raw.length <= QUOTE_SNIPPET_MAX_LENGTH) {
-        return raw
-    }
-    return `${raw.slice(0, QUOTE_SNIPPET_MAX_LENGTH - 3)}...`
 }
 
 export default {
@@ -423,7 +409,7 @@ export default {
                     source: 'mobile',
                     attachments: attachments && attachments.length > 0 ? attachments : undefined,
                     quote: quotedMessage.value || undefined,
-                    clientMessageId: `mobile-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+                    clientMessageId: buildClientMessageId('mobile'),
                 })
 
                 inputText.value = ''

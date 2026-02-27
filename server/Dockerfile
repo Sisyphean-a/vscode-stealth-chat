@@ -2,16 +2,17 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package.json and package-lock.json
-COPY package*.json ./
+# Copy package manifests first for layer cache
+COPY server/package*.json ./server/
 
 # Install dependencies
 # Using npmmirror just in case, but much lighter now
 RUN npm config set registry https://registry.npmmirror.com
-RUN npm install --production
+RUN cd server && npm install --production
 
-# Copy source code
-COPY . .
+# Copy source code and shared packages
+COPY server ./server
+COPY packages ./packages
 
 # Environment variables
 ENV NODE_ENV=production
@@ -22,4 +23,4 @@ VOLUME ["/app/data"]
 
 EXPOSE 3000
 
-CMD ["node", "src/index.js"]
+CMD ["node", "server/src/index.js"]

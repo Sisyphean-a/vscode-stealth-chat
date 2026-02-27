@@ -5,44 +5,15 @@ import type {
   GlobalSettings,
   MessageQuote,
 } from "../types";
-
-const KNOWN_WEBVIEW_TYPES = new Set([
-  "ready",
-  "sendMessage",
-  "loadMoreHistory",
-  "loadAroundMessage",
-  "loadAroundArchivedMessage",
-  "searchMessages",
-  "markRead",
-  "openImage",
-  "getConfig",
-  "saveGlobalSettings",
-  "saveConnection",
-  "deleteConnection",
-  "setActiveConnection",
-  "testConnection",
-] as const);
-
-const KNOWN_HOST_TYPES = new Set([
-  "addMessage",
-  "loadHistory",
-  "prependHistory",
-  "aroundMessagesLoaded",
-  "aroundArchivedMessagesLoaded",
-  "updateStatus",
-  "presenceUpdate",
-  "readReceipt",
-  "sendFailed",
-  "searchResults",
-  "setDisplayMode",
-  "clearMessages",
-  "configLoaded",
-  "operationResult",
-  "testResult",
-] as const);
-
-type WebviewMessageType = (typeof KNOWN_WEBVIEW_TYPES extends Set<infer T> ? T : never);
-type HostMessageType = (typeof KNOWN_HOST_TYPES extends Set<infer T> ? T : never);
+import {
+  KNOWN_HOST_TYPES,
+  KNOWN_WEBVIEW_TYPES,
+  isMessageEnvelope,
+} from "../../../packages/protocol/host-webview.js";
+const WEBVIEW_MESSAGE_TYPES = new Set(KNOWN_WEBVIEW_TYPES);
+const HOST_MESSAGE_TYPES = new Set(KNOWN_HOST_TYPES);
+type WebviewMessageType = (typeof KNOWN_WEBVIEW_TYPES)[number];
+type HostMessageType = (typeof KNOWN_HOST_TYPES)[number];
 
 export type WebviewMessage =
   | { type: "ready" }
@@ -135,13 +106,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isMessageEnvelope(value: unknown): value is { type: string; payload?: unknown } {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.type === "string";
-}
-
 function assertPayloadObject(payload: unknown, type: string): Record<string, unknown> {
   if (!isRecord(payload)) {
     throw new Error(`Invalid payload for message type "${type}"`);
@@ -164,7 +128,7 @@ function assertNonEmptyString(value: unknown, field: string, type: string): stri
 }
 
 function assertMessageType(type: string): asserts type is WebviewMessageType {
-  if (!KNOWN_WEBVIEW_TYPES.has(type as WebviewMessageType)) {
+  if (!WEBVIEW_MESSAGE_TYPES.has(type as WebviewMessageType)) {
     throw new Error(`Unknown webview message type: ${type}`);
   }
 }
@@ -262,5 +226,5 @@ export function isHostMessage(raw: unknown): raw is HostMessage {
   if (!isMessageEnvelope(raw)) {
     return false;
   }
-  return KNOWN_HOST_TYPES.has(raw.type as HostMessageType);
+  return HOST_MESSAGE_TYPES.has(raw.type as HostMessageType);
 }

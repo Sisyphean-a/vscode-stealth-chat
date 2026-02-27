@@ -10,6 +10,7 @@
   import { HISTORY_PAGE_SIZE } from "./lib/constants";
   import { normalizeServerUrl } from "./lib/format";
   import { uploadAll, type PendingAttachment } from "./lib/attachments";
+  import { buildClientMessageId } from "../../../packages/chat-core/index.js";
   import {
     compareMessages,
     makeQuoteFromMessage,
@@ -367,7 +368,7 @@
       }
       attachments = await uploadAll(serverUrl, authToken, pendingAttachments);
     }
-    const clientMessageId = `vscode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    const clientMessageId = buildClientMessageId("vscode");
     postToHost({
       type: "sendMessage",
       payload: {
