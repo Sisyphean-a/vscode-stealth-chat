@@ -7,6 +7,44 @@ const SEARCH_RESULT_LIMIT = 50;
 const DEFAULT_AROUND_WINDOW_SIZE = 25;
 const MAX_AROUND_WINDOW_SIZE = 100;
 const QUOTE_SNIPPET_MAX_LENGTH = 120;
+const DEFAULT_EMOJI_SET = Object.freeze([
+  "🙂",
+  "😀",
+  "😃",
+  "😄",
+  "😁",
+  "😆",
+  "😅",
+  "😂",
+  "🤣",
+  "😊",
+  "😉",
+  "😍",
+  "😘",
+  "😗",
+  "😙",
+  "😚",
+  "😋",
+  "😜",
+  "🤪",
+  "🤨",
+  "🧐",
+  "🤓",
+  "😎",
+  "🥳",
+  "😤",
+  "😢",
+  "😭",
+  "😡",
+  "🤯",
+  "😱",
+  "😴",
+  "🤢",
+  "🤮",
+  "🥺",
+  "😇",
+  "🤔",
+]);
 
 function parsePositiveInt(value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -91,6 +129,7 @@ module.exports = {
   DEFAULT_AROUND_WINDOW_SIZE,
   MAX_AROUND_WINDOW_SIZE,
   QUOTE_SNIPPET_MAX_LENGTH,
+  DEFAULT_EMOJI_SET,
   parsePositiveInt,
   buildClientMessageId,
   buildMessageKey,

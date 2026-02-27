@@ -4,7 +4,7 @@ import { useChatConnection } from '../composables/useChatConnection.js'
 import { useImageHandler } from '../composables/useImageHandler.js'
 import { useImagePreview } from '../composables/useImagePreview.js'
 import { formatTime, formatDividerDate, showTimeDivider, parseMarkdown, getImageSrc } from '../utils/formatters.js'
-import { buildClientMessageId, buildQuoteSnippet } from '/packages/chat-core/index.js'
+import { buildClientMessageId, buildQuoteSnippet, DEFAULT_EMOJI_SET } from '/packages/chat-core/index.js'
 
 import AuthScreen from '../components/AuthScreen.js'
 import ConnectionManager from '../components/ConnectionManager.js'
@@ -156,6 +156,20 @@ export default {
                             <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
                         </svg>
                     </button>
+                    <div class="emoji-picker-wrap" ref="emojiPickerWrap">
+                        <button type="button" class="emoji-btn" @click="toggleEmojiPicker" title="表情">🙂</button>
+                        <div v-if="emojiPickerVisible" class="emoji-panel">
+                            <button
+                                v-for="(emoji, idx) in emojiList"
+                                :key="emoji + '-' + idx"
+                                type="button"
+                                class="emoji-item"
+                                @click="insertEmoji(emoji)"
+                            >
+                                {{ emoji }}
+                            </button>
+                        </div>
+                    </div>
                     <input type="file" ref="fileInput" accept="image/*" style="display: none" @change="handleFileSelect" multiple>
                     <input type="file" ref="cameraInput" accept="image/*" capture="environment" style="display: none" @change="handleFileSelect">
                     <textarea
@@ -218,6 +232,71 @@ export default {
         const searchError = ref('')
         const showSearchPanel = ref(false)
         const lastReadTimestamp = ref(0)
+        const emojiList = DEFAULT_EMOJI_SET
+        const emojiPickerVisible = ref(false)
+        const emojiPickerWrap = ref(null)
+
+        const adjustInputHeight = () => {
+            if (!inputArea.value) {
+                return
+            }
+            inputArea.value.style.height = 'auto'
+            inputArea.value.style.height = `${inputArea.value.scrollHeight}px`
+        }
+
+        const closeEmojiPicker = () => {
+            emojiPickerVisible.value = false
+        }
+
+        const toggleEmojiPicker = () => {
+            emojiPickerVisible.value = !emojiPickerVisible.value
+            if (emojiPickerVisible.value) {
+                nextTick(() => {
+                    inputArea.value?.focus()
+                })
+            }
+        }
+
+        const insertEmoji = (emoji) => {
+            if (!inputArea.value) {
+                chat.errorMsg.value = '输入框未就绪，无法插入表情'
+                return
+            }
+            const text = inputText.value || ''
+            const start = Number.isFinite(inputArea.value.selectionStart) ? inputArea.value.selectionStart : text.length
+            const end = Number.isFinite(inputArea.value.selectionEnd) ? inputArea.value.selectionEnd : text.length
+            inputText.value = `${text.slice(0, start)}${emoji}${text.slice(end)}`
+            const cursor = start + emoji.length
+            closeEmojiPicker()
+            nextTick(() => {
+                if (!inputArea.value) {
+                    return
+                }
+                inputArea.value.focus()
+                inputArea.value.setSelectionRange(cursor, cursor)
+                adjustInputHeight()
+            })
+        }
+
+        const handleDocumentPointerDown = (event) => {
+            if (!emojiPickerVisible.value || !emojiPickerWrap.value || !(event.target instanceof Node)) {
+                return
+            }
+            if (emojiPickerWrap.value.contains(event.target)) {
+                return
+            }
+            closeEmojiPicker()
+        }
+
+        const handleDocumentKeydown = (event) => {
+            if (event.key !== 'Escape' || !emojiPickerVisible.value) {
+                return
+            }
+            closeEmojiPicker()
+            nextTick(() => {
+                inputArea.value?.focus()
+            })
+        }
 
         const quoteDraftLabel = computed(() => {
             if (!quotedMessage.value) {
@@ -415,6 +494,7 @@ export default {
                 inputText.value = ''
                 imageHandler.clearPendingImages()
                 clearQuote()
+                closeEmojiPicker()
                 nextTick(() => {
                     if (inputArea.value) inputArea.value.style.height = 'auto'
                     chat.scrollToBottom()
@@ -457,6 +537,8 @@ export default {
                 chat.connect()
             }
             readTimer = setInterval(reportRead, 1500)
+            document.addEventListener('mousedown', handleDocumentPointerDown)
+            document.addEventListener('keydown', handleDocumentKeydown)
         })
 
         onUnmounted(() => {
@@ -465,14 +547,18 @@ export default {
                 clearInterval(readTimer)
                 readTimer = null
             }
+            document.removeEventListener('mousedown', handleDocumentPointerDown)
+            document.removeEventListener('keydown', handleDocumentKeydown)
         })
 
         return {
             ...chat,
-            inputText, inputArea, fileInput, cameraInput,
+            inputText, inputArea, fileInput, cameraInput, emojiPickerWrap,
             pendingImages, previewImage, previewScale,
+            emojiList, emojiPickerVisible,
             quotedMessage, quoteDraftLabel,
             sendMessage, handlePaste, handleFileSelect, removePendingImage,
+            toggleEmojiPicker, closeEmojiPicker, insertEmoji,
             triggerFileInput, triggerCameraInput, handleConnectionSave,
             openImage, closePreview, zoomIn, zoomOut, resetZoom,
             selectQuote, clearQuote, jumpToQuotedMessage, jumpToSearchResult, runSearch, toggleSearchPanel, getSourceLabel,

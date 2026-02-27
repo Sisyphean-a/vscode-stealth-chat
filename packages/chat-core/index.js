@@ -8,6 +8,45 @@ export const DEFAULT_AROUND_WINDOW_SIZE = 25;
 export const MAX_AROUND_WINDOW_SIZE = 100;
 export const QUOTE_SNIPPET_MAX_LENGTH = 120;
 
+export const DEFAULT_EMOJI_SET = Object.freeze([
+  "🙂",
+  "😀",
+  "😃",
+  "😄",
+  "😁",
+  "😆",
+  "😅",
+  "😂",
+  "🤣",
+  "😊",
+  "😉",
+  "😍",
+  "😘",
+  "😗",
+  "😙",
+  "😚",
+  "😋",
+  "😜",
+  "🤪",
+  "🤨",
+  "🧐",
+  "🤓",
+  "😎",
+  "🥳",
+  "😤",
+  "😢",
+  "😭",
+  "😡",
+  "🤯",
+  "😱",
+  "😴",
+  "🤢",
+  "🤮",
+  "🥺",
+  "😇",
+  "🤔",
+]);
+
 export function parsePositiveInt(value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;

@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onMount } from "svelte";
+  import { DEFAULT_EMOJI_SET } from "../../../../../packages/chat-core/index.js";
   import type { MessageQuote } from "../../../types";
   import { MAX_IMAGE_SIZE } from "../../lib/constants";
   import { readFileAsDataUrl, type PendingAttachment } from "../../lib/attachments";
 
-export let selectedQuote: MessageQuote | null = null;
-export let disabled = false;
-export let resetToken = 0;
+  export let selectedQuote: MessageQuote | null = null;
+  export let disabled = false;
+  export let resetToken = 0;
 
   const dispatch = createEventDispatcher<{
     send: { text: string; pendingAttachments: PendingAttachment[] };
@@ -14,16 +15,30 @@ export let resetToken = 0;
     composing: { active: boolean };
   }>();
 
-let inputValue = "";
-let inputEl: HTMLTextAreaElement | null = null;
-let pendingAttachments: PendingAttachment[] = [];
-let lastResetToken = 0;
+  const emojiOptions = DEFAULT_EMOJI_SET;
 
-$: quoteVisible = !!selectedQuote;
-$: if (resetToken !== lastResetToken) {
-  lastResetToken = resetToken;
-  clearInput();
-}
+  let inputValue = "";
+  let inputEl: HTMLTextAreaElement | null = null;
+  let pendingAttachments: PendingAttachment[] = [];
+  let lastResetToken = 0;
+  let emojiPickerOpen = false;
+  let emojiPanelEl: HTMLDivElement | null = null;
+  let emojiTriggerEl: HTMLButtonElement | null = null;
+
+  $: quoteVisible = !!selectedQuote;
+  $: if (resetToken !== lastResetToken) {
+    lastResetToken = resetToken;
+    clearInput();
+  }
+
+  onMount(() => {
+    document.addEventListener("mousedown", onDocumentMousedown);
+    document.addEventListener("keydown", onDocumentKeydown);
+    return () => {
+      document.removeEventListener("mousedown", onDocumentMousedown);
+      document.removeEventListener("keydown", onDocumentKeydown);
+    };
+  });
 
   function autoGrow(): void {
     if (!inputEl) {
@@ -31,6 +46,24 @@ $: if (resetToken !== lastResetToken) {
     }
     inputEl.style.height = "auto";
     inputEl.style.height = `${inputEl.scrollHeight}px`;
+  }
+
+  function onDocumentMousedown(event: MouseEvent): void {
+    if (!emojiPickerOpen || !(event.target instanceof Node)) {
+      return;
+    }
+    if (emojiPanelEl?.contains(event.target) || emojiTriggerEl?.contains(event.target)) {
+      return;
+    }
+    emojiPickerOpen = false;
+  }
+
+  function onDocumentKeydown(event: KeyboardEvent): void {
+    if (event.key !== "Escape" || !emojiPickerOpen) {
+      return;
+    }
+    emojiPickerOpen = false;
+    inputEl?.focus();
   }
 
   async function handleImageFile(file: File): Promise<void> {
@@ -69,6 +102,32 @@ $: if (resetToken !== lastResetToken) {
     }
   }
 
+  function toggleEmojiPicker(): void {
+    emojiPickerOpen = !emojiPickerOpen;
+    inputEl?.focus();
+  }
+
+  function insertEmoji(emoji: string): void {
+    if (!inputEl) {
+      console.error("[WebView] Failed to insert emoji: message input is not ready");
+      return;
+    }
+    const currentText = inputValue;
+    const start = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : currentText.length;
+    const end = typeof inputEl.selectionEnd === "number" ? inputEl.selectionEnd : currentText.length;
+    inputValue = `${currentText.slice(0, start)}${emoji}${currentText.slice(end)}`;
+    const cursor = start + emoji.length;
+    emojiPickerOpen = false;
+    queueMicrotask(() => {
+      if (!inputEl) {
+        return;
+      }
+      inputEl.focus();
+      inputEl.setSelectionRange(cursor, cursor);
+      autoGrow();
+    });
+  }
+
   function removeAttachment(index: number): void {
     pendingAttachments = pendingAttachments.filter((_, i) => i !== index);
   }
@@ -76,16 +135,17 @@ $: if (resetToken !== lastResetToken) {
   function clearInput(): void {
     inputValue = "";
     pendingAttachments = [];
+    emojiPickerOpen = false;
     autoGrow();
   }
 
-function triggerSend(): void {
-  const text = inputValue.trim();
-  if (!text && pendingAttachments.length === 0) {
-    return;
+  function triggerSend(): void {
+    const text = inputValue.trim();
+    if (!text && pendingAttachments.length === 0) {
+      return;
+    }
+    dispatch("send", { text, pendingAttachments: [...pendingAttachments] });
   }
-  dispatch("send", { text, pendingAttachments: [...pendingAttachments] });
-}
 
   function onKeydown(event: KeyboardEvent): void {
     if (event.key !== "Enter" || event.shiftKey) {
@@ -126,6 +186,34 @@ function triggerSend(): void {
   </div>
 
   <div id="input-row">
+    <div class="emoji-picker-wrap">
+      <button
+        id="emoji-trigger"
+        type="button"
+        title="表情"
+        bind:this={emojiTriggerEl}
+        aria-expanded={emojiPickerOpen}
+        on:click={toggleEmojiPicker}
+        disabled={disabled}
+      >
+        🙂
+      </button>
+      <div
+        class="emoji-picker-panel {emojiPickerOpen ? '' : 'hidden'}"
+        bind:this={emojiPanelEl}
+      >
+        {#each emojiOptions as emoji}
+          <button
+            type="button"
+            class="emoji-item"
+            on:click={() => insertEmoji(emoji)}
+            title={`插入 ${emoji}`}
+          >
+            {emoji}
+          </button>
+        {/each}
+      </div>
+    </div>
     <textarea
       id="message-input"
       rows="1"

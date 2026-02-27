@@ -7,6 +7,7 @@ export const SEARCH_RESULT_LIMIT: number;
 export const DEFAULT_AROUND_WINDOW_SIZE: number;
 export const MAX_AROUND_WINDOW_SIZE: number;
 export const QUOTE_SNIPPET_MAX_LENGTH: number;
+export const DEFAULT_EMOJI_SET: readonly string[];
 
 export type MessageLike = {
   id?: unknown;
