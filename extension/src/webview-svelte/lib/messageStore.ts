@@ -4,7 +4,7 @@ import {
   buildQuoteSnippet as buildQuoteSnippetCore,
   compareMessages,
   mergeMessages,
-  normalizeIncomingMessages,
+  normalizeIncomingMessages as normalizeIncomingMessagesCore,
   parsePositiveInt,
 } from "../../../../packages/chat-core/index.js";
 import { TIME_GAP_THRESHOLD_MS } from "./constants";
@@ -24,7 +24,12 @@ export type SearchResult = {
 export type RenderItem =
   | { kind: "divider"; key: string; label: string; log: boolean; gap: boolean }
   | { kind: "message"; key: string; message: ChatMessage };
-export { buildMessageKey, compareMessages, normalizeIncomingMessages, parsePositiveInt };
+export { buildMessageKey, compareMessages, parsePositiveInt };
+
+export function normalizeIncomingMessages(messages: unknown): ChatMessage[] {
+  return normalizeIncomingMessagesCore<ChatMessage>(messages);
+}
+
 export function mergeMessageStore(store: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   return mergeMessages(store, incoming);
 }

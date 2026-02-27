@@ -14,13 +14,12 @@ export type MessageLike = {
   text?: unknown;
   timestamp?: unknown;
   attachments?: unknown;
-  [key: string]: unknown;
 };
 
 export function parsePositiveInt(value: unknown): number | null;
 export function buildClientMessageId(prefix: string, provided?: string): string;
 export function buildMessageKey<T extends MessageLike>(message: T): string;
 export function compareMessages<T extends MessageLike>(a: T, b: T): number;
-export function normalizeIncomingMessages<T extends MessageLike>(messages: unknown): T[];
+export function normalizeIncomingMessages<T extends MessageLike = MessageLike>(messages: unknown): T[];
 export function mergeMessages<T extends MessageLike>(existing: readonly T[], incoming: readonly T[]): T[];
 export function buildQuoteSnippet(message: MessageLike, maxLength?: number): string;
