@@ -74,6 +74,7 @@
     flex-direction: column;
     gap: 4px;
     min-width: 0;
+    position: relative;
 }
 
 .avatar {
@@ -151,7 +152,6 @@
 }
 
 .quote-btn {
-    align-self: flex-start;
     border: 1px solid rgba(0, 0, 0, 0.08);
     background: rgba(255, 255, 255, 0.75);
     color: var(--text-secondary);
@@ -161,10 +161,17 @@
     border-radius: 999px;
     opacity: 0;
     transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 6px);
+    transform: translateY(-50%);
+    z-index: 2;
+    white-space: nowrap;
 }
 
 .message-row.own .quote-btn {
-    align-self: flex-end;
+    left: auto;
+    right: calc(100% + 6px);
 }
 
 .message-row:hover .quote-btn,

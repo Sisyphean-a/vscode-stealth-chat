@@ -81,17 +81,17 @@ export default {
                 <div class="header-right">
                     <span class="meta-pill">在线 {{ presence.total }} (M{{ presence.mobile }}/V{{ presence.vscode }})</span>
                     <span v-if="peerReadText" class="meta-pill">{{ peerReadText }}</span>
-                    <button class="text-btn" @click="runSearch">搜索</button>
+                    <button class="text-btn" @click="toggleSearchPanel">{{ showSearchPanel ? '收起' : '搜索' }}</button>
                     <button class="text-btn" @click="disconnect">断开</button>
                 </div>
             </header>
 
-            <div class="search-inline">
+            <div v-if="showSearchPanel" class="search-inline">
                 <input v-model.trim="searchKeyword" @keyup.enter="runSearch" placeholder="搜索热库+归档消息..." />
                 <button class="text-btn" @click="runSearch">查找</button>
             </div>
-            <div v-if="searchError" class="search-error">{{ searchError }}</div>
-            <div v-if="searchResults.length > 0" class="search-results">
+            <div v-if="showSearchPanel && searchError" class="search-error">{{ searchError }}</div>
+            <div v-if="showSearchPanel && searchResults.length > 0" class="search-results">
                 <button
                     v-for="item in searchResults"
                     :key="(item.targetType || 'hot') + '-' + (item.messageId || item.archiveId || item.timestamp)"
@@ -230,6 +230,7 @@ export default {
         const searchKeyword = ref('')
         const searchResults = ref([])
         const searchError = ref('')
+        const showSearchPanel = ref(false)
         const lastReadTimestamp = ref(0)
 
         const quoteDraftLabel = computed(() => {
@@ -383,6 +384,10 @@ export default {
             }
         }
 
+        const toggleSearchPanel = () => {
+            showSearchPanel.value = !showSearchPanel.value
+        }
+
         const reportRead = () => {
             if (!chat.messages || chat.messages.length === 0) {
                 return
@@ -484,9 +489,9 @@ export default {
             sendMessage, handlePaste, handleFileSelect, removePendingImage,
             triggerFileInput, triggerCameraInput, handleConnectionSave,
             openImage, closePreview, zoomIn, zoomOut, resetZoom,
-            selectQuote, clearQuote, jumpToQuotedMessage, jumpToSearchResult, runSearch, getSourceLabel,
+            selectQuote, clearQuote, jumpToQuotedMessage, jumpToSearchResult, runSearch, toggleSearchPanel, getSourceLabel,
             parseMarkdown, formatTime, showTimeDivider, formatDividerDate, getImageSrc,
-            searchKeyword, searchResults, searchError,
+            searchKeyword, searchResults, searchError, showSearchPanel,
             reportRead,
         }
     }
