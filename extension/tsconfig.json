@@ -8,5 +8,6 @@
     "rootDir": "src",
     "strict": true
   },
-  "exclude": ["node_modules", ".vscode-test", "src/webview-svelte"]
+  "include": ["src/**/*.ts", "src/**/*.svelte"],
+  "exclude": ["node_modules", ".vscode-test", "src/webview-svelte/**/*.ts"]
 }

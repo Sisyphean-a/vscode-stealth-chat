@@ -48,11 +48,14 @@
 }
 
 .search-item {
+  width: 100%;
   border: 1px solid var(--chat-border-soft);
   border-radius: var(--chat-radius-md);
   background: color-mix(in srgb, var(--vscode-editor-background) 78%, transparent);
   padding: 8px;
   cursor: pointer;
+  text-align: left;
+  font: inherit;
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
@@ -159,7 +162,8 @@
   margin-bottom: 10px;
 }
 
-.form-group > label {
+.form-group > label,
+.form-group > .form-label {
   display: block;
   margin-bottom: 4px;
   font-size: 11px;

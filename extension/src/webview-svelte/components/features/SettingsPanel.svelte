@@ -122,7 +122,7 @@
       </div>
 
       <div class="form-group">
-        <label>传输方式</label>
+        <div class="form-label">传输方式</div>
         <div class="radio-group">
           <label class="radio-label">
             <input

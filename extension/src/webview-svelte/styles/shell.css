@@ -32,6 +32,10 @@ body {
   overflow: hidden;
 }
 
+body[data-display-mode="log"] {
+  background: var(--vscode-sideBar-background);
+}
+
 #app {
   position: relative;
   display: flex;
@@ -53,6 +57,11 @@ body {
   border-bottom: 1px solid var(--chat-border-soft);
   backdrop-filter: blur(6px);
   flex-shrink: 0;
+}
+
+body[data-display-mode="log"] #status-bar {
+  background: var(--vscode-statusBar-background);
+  backdrop-filter: none;
 }
 
 #status-indicator {

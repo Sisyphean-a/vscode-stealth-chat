@@ -50,7 +50,7 @@ $: if (resetToken !== lastResetToken) {
     if (!items) {
       return;
     }
-    for (const item of items) {
+    for (const item of Array.from(items)) {
       if (!item.type.startsWith("image/")) {
         continue;
       }

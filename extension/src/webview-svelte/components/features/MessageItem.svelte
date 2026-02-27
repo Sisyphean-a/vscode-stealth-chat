@@ -53,6 +53,18 @@
   function onImageClick(url: string): void {
     dispatch("openImage", { url });
   }
+
+  function useContentClick(node: HTMLElement): { destroy: () => void } {
+    const handleClick = (event: MouseEvent): void => {
+      onContentClick(event);
+    };
+    node.addEventListener("click", handleClick);
+    return {
+      destroy(): void {
+        node.removeEventListener("click", handleClick);
+      },
+    };
+  }
 </script>
 
 <div
@@ -64,34 +76,38 @@
     <div class="message-time">{formatShortTime(message.timestamp || Date.now())}</div>
     <div class="message-bubble {isOwn ? 'own' : 'remote'}">
       {#if quoteMessageId}
-        <div
+        <button
+          type="button"
           class="quote-preview-bubble"
           data-quote-message-id={quoteMessageId}
-          role="button"
-          tabindex="0"
           on:click={onQuotePreviewClick}
         >
           <span class="quote-text">{message.quote?.textSnippet || "(空消息)"}</span>
-        </div>
+        </button>
       {/if}
 
       {#if message.attachments && message.attachments.length > 0}
         {#each message.attachments as attachment}
           {#if attachment.type === "image"}
-            <img
-              src={resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
-              class="message-image"
-              alt={attachment.filename || "image"}
+            <button
+              type="button"
+              class="message-image-btn"
               on:click={() => onImageClick(resolveAttachmentUrl(attachment.data || attachment.url, serverUrl))}
-            />
+            >
+              <img
+                src={resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
+                class="message-image"
+                alt={attachment.filename || "image"}
+              />
+            </button>
           {/if}
         {/each}
       {/if}
 
       {#if message.text}
-        <span on:click={onContentClick}>
+        <div class="message-text" use:useContentClick>
           {@html textHtml}
-        </span>
+        </div>
       {/if}
     </div>
 
@@ -110,7 +126,7 @@
       <div class="log-entry">
         <span class="log-timestamp">[{formatLogTime(message.timestamp || Date.now())}]</span>
         <span class="log-source {isOwn ? 'out' : 'info'}">{isOwn ? "OUT" : "INFO"}</span>
-        <div class="log-content" on:click={onContentClick}>
+        <div class="log-content" use:useContentClick>
           {#if quoteMessageId}
             <button
               type="button"
@@ -127,12 +143,12 @@
               {#each message.attachments as attachment}
                 {#if attachment.type === "image"}
                   {@const resolved = resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
-                  <span class="img-tag" on:click={() => onImageClick(resolved)}>
+                  <button type="button" class="img-tag" on:click={() => onImageClick(resolved)}>
                     [IMG:{attachment.filename || "image.png"}]
                     <span class="img-preview-tooltip">
                       <img src={resolved} alt="Preview" />
                     </span>
-                  </span>
+                  </button>
                 {/if}
               {/each}
             {/if}

@@ -59,11 +59,11 @@ body[data-display-mode="log"] .log-source {
 }
 
 body[data-display-mode="log"] .log-source.info {
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-terminal-ansiBlue);
 }
 
 body[data-display-mode="log"] .log-source.out {
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-terminal-ansiGreen);
 }
 
 body[data-display-mode="log"] .log-content {
@@ -78,9 +78,9 @@ body[data-display-mode="log"] .quote-preview-log {
   display: block;
   max-width: 100%;
   border: none;
-  border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
+  border-left: 2px solid var(--vscode-terminal-ansiMagenta);
   border-radius: 0 8px 8px 0;
-  background: color-mix(in srgb, var(--vscode-editorWidget-background) 52%, transparent);
+  background: var(--vscode-editorWidget-background);
   color: inherit;
   text-align: left;
   padding: 2px 6px;
@@ -132,7 +132,11 @@ body[data-display-mode="log"] .img-tag {
   display: inline-flex;
   align-items: center;
   margin-right: 6px;
-  color: var(--vscode-editor-foreground);
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--vscode-terminal-ansiYellow);
   cursor: pointer;
   opacity: 0.86;
 }

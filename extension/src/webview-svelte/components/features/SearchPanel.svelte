@@ -53,12 +53,12 @@
   <div id="search-result-meta">{errorText || metaText}</div>
   <div id="search-results">
     {#each results as item}
-      <div class="search-item" on:click={() => dispatch("select", { result: item })}>
+      <button type="button" class="search-item" on:click={() => dispatch("select", { result: item })}>
         <div>{item.preview || "(空消息)"}</div>
         <div class="search-item-meta">
           {item.targetType === "archive" ? "归档" : "热库"} · {item.source} · {formatShortTime(item.timestamp)}
         </div>
-      </div>
+      </button>
     {/each}
   </div>
 </div>

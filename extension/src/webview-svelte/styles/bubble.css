@@ -52,12 +52,18 @@ body[data-display-mode="bubble"] .message-bubble.remote {
 body[data-display-mode="bubble"] .quote-preview-bubble {
   display: flex;
   align-items: center;
+  width: 100%;
   border-left: 3px solid var(--vscode-textLink-foreground);
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
   background: color-mix(in srgb, var(--vscode-editor-background) 74%, transparent);
   border-radius: 8px;
   padding: 6px 8px;
   margin-bottom: 8px;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 body[data-display-mode="bubble"] .quote-preview-bubble .quote-text {
@@ -95,13 +101,20 @@ body[data-display-mode="bubble"] .message-wrapper:focus-within .quote-action-btn
 
 body[data-display-mode="bubble"] .message-image {
   display: block;
-  cursor: pointer;
   max-width: 100%;
   max-height: 300px;
-  margin-top: 8px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 50%, transparent);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+}
+
+body[data-display-mode="bubble"] .message-image-btn {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 body[data-display-mode="bubble"] .time-divider {

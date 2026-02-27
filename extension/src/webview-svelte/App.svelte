@@ -357,7 +357,7 @@
     if (!text.trim() && pendingAttachments.length === 0) {
       return;
     }
-    let attachments;
+    let attachments: Awaited<ReturnType<typeof uploadAll>> = [];
     if (pendingAttachments.length > 0) {
       if (!serverUrl) {
         throw new Error("Image upload failed: missing server URL");

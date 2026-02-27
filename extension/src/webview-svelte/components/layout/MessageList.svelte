@@ -106,15 +106,15 @@
 
 <div id="messages-container" bind:this={containerEl} on:scroll={onScroll}>
   {#if hasMoreHistory}
-    <div
+    <button
+      type="button"
       id="load-more-btn"
       class="load-more-btn {isLoadingMore ? 'loading' : ''}"
-      role="button"
-      tabindex="0"
+      disabled={isLoadingMore}
       on:click={() => dispatch("loadMore")}
     >
       {isLoadingMore ? "加载中..." : "加载更多历史"}
-    </div>
+    </button>
   {/if}
 
   {#if messages.length === 0}
