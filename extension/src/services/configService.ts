@@ -57,6 +57,7 @@ export async function ensureDefaultConnection(): Promise<void> {
     name: "本地默认",
     serverUrl,
     token,
+    backgroundSync: true,
   };
 
   await config.update("connections", [defaultConn], true);
@@ -93,6 +94,7 @@ export async function saveConnection(
     serverUrl: connection.serverUrl
       ? normalizeServerUrl(connection.serverUrl)
       : undefined,
+    backgroundSync: connection.backgroundSync !== false,
   };
 
   const searchName = originalName || normalizedConnection.name;

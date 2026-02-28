@@ -6,6 +6,7 @@ export interface Connection {
   name: string;
   serverUrl?: string;
   token: string;
+  backgroundSync?: boolean;
 }
 
 export interface Attachment {

@@ -198,6 +198,9 @@ function validatePayload(type: WebviewMessageType, payload: unknown): void {
     if (connection.serverUrl !== undefined && typeof connection.serverUrl !== "string") {
       throw new Error(`Invalid "connection.serverUrl" in message type "${type}"`);
     }
+    if (connection.backgroundSync !== undefined && typeof connection.backgroundSync !== "boolean") {
+      throw new Error(`Invalid "connection.backgroundSync" in message type "${type}"`);
+    }
     if (data.originalName !== undefined && typeof data.originalName !== "string") {
       throw new Error(`Invalid "originalName" in message type "${type}"`);
     }

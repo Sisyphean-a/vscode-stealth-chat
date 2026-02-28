@@ -81,6 +81,7 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
       name: found.name,
       serverUrl: found.serverUrl ? normalizeServerUrl(found.serverUrl) : globalServerUrl,
       token: found.token,
+      backgroundSync: found.backgroundSync !== false,
     };
   }
 
@@ -89,6 +90,7 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
     name: "Default",
     serverUrl: globalServerUrl,
     token: config.get<string>("secret") || "ChangeMeInProduction",
+    backgroundSync: true,
   };
 }
 
@@ -107,6 +109,7 @@ export function getAllConnections(): Array<Connection & { serverUrl: string }> {
       name: "Default",
       serverUrl: globalServerUrl,
       token: config.get<string>("secret") || "ChangeMeInProduction",
+      backgroundSync: true,
     }];
   }
 
@@ -114,5 +117,6 @@ export function getAllConnections(): Array<Connection & { serverUrl: string }> {
     name: connection.name,
     serverUrl: connection.serverUrl ? normalizeServerUrl(connection.serverUrl) : globalServerUrl,
     token: connection.token,
+    backgroundSync: connection.backgroundSync !== false,
   }));
 }

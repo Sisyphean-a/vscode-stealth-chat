@@ -38,6 +38,7 @@
   let connName = "";
   let connServerUrl = "";
   let connToken = "";
+  let connBackgroundSync = true;
 
   $: if (globalSettings !== previousSettingsRef) {
     previousSettingsRef = globalSettings;
@@ -53,6 +54,7 @@
     connName = connection?.name || "";
     connServerUrl = connection?.serverUrl || "";
     connToken = connection?.token || "";
+    connBackgroundSync = connection?.backgroundSync !== false;
     modalVisible = true;
   }
 
@@ -62,6 +64,7 @@
     connName = "";
     connServerUrl = "";
     connToken = "";
+    connBackgroundSync = true;
   }
 
   function saveGlobalSettings(): void {
@@ -86,6 +89,7 @@
         name,
         token,
         serverUrl: connServerUrl.trim() || undefined,
+        backgroundSync: connBackgroundSync,
       },
       originalName: editingName,
     });
@@ -179,6 +183,9 @@
             <div class="connection-info">
               <div class="connection-name">{connection.name}</div>
               <div class="connection-url">{connection.serverUrl || "默认"}</div>
+              <div class="connection-url">
+                后台轮询: {connection.backgroundSync === false ? "关闭" : "开启"}
+              </div>
               {#if testBadges[connection.name]}
                 <span class="status-badge {testBadges[connection.name].success ? 'success' : 'error'}">
                   {testBadges[connection.name].success
@@ -222,6 +229,12 @@
     <div class="form-group">
       <label for="connToken">密钥</label>
       <input id="connToken" type="password" bind:value={connToken} placeholder="输入密钥" />
+    </div>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" bind:checked={connBackgroundSync} />
+        <span>启用后台轮询</span>
+      </label>
     </div>
     <div class="modal-actions">
       <button id="modalCancelBtn" class="btn btn-secondary" on:click={closeModal}>取消</button>

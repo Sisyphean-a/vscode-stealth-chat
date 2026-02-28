@@ -71,9 +71,13 @@ function applyBackgroundSyncConfig(): void {
   const enabled = config.get<boolean>("backgroundSyncEnabled") ?? true;
   const pollIntervalMs = config.get<number>("backgroundSyncIntervalMs")
     ?? DEFAULT_BACKGROUND_SYNC_INTERVAL_MS;
+  const syncConnections = getAllConnections()
+    .filter((connection) => connection.backgroundSync !== false);
+
+  statusBar.setSyncIssue("");
 
   backgroundSync.configure({
-    connections: getAllConnections(),
+    connections: syncConnections,
     enabled,
     pollIntervalMs,
     limitPerApp: 50,
