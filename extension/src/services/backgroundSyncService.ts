@@ -87,6 +87,16 @@ function isUnsetCursor(cursor: { timestamp: number; id: number }): boolean {
   return cursor.timestamp <= 0 || cursor.id <= 0;
 }
 
+function isCursorAfter(
+  left: { timestamp: number; id: number },
+  right: { timestamp: number; id: number }
+): boolean {
+  if (left.timestamp === right.timestamp) {
+    return left.id > right.id;
+  }
+  return left.timestamp > right.timestamp;
+}
+
 export class BackgroundSyncService {
   private readonly globalState: vscode.Memento;
   private readonly onUpdates: (updates: SyncPullUpdate[]) => void;
@@ -214,7 +224,13 @@ export class BackgroundSyncService {
     for (const app of session.apps) {
       conversationStore.assignAppId(app.connectionName, app.appId);
       const currentCursor = conversationStore.getCursor(app.connectionName);
-      if (isUnsetCursor(currentCursor) && app.initialCursor) {
+      const hasBufferedMessages = conversationStore.getMessages(app.connectionName).length > 0;
+      if (
+        app.initialCursor
+        && (!hasBufferedMessages
+          || isUnsetCursor(currentCursor)
+          || isCursorAfter(currentCursor, app.initialCursor))
+      ) {
         conversationStore.setCursor(app.connectionName, app.initialCursor);
       }
     }
