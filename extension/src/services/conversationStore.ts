@@ -1,5 +1,6 @@
 import { ChatMessage } from "../types";
 import {
+  buildMessageKey,
   mergeMessages,
   normalizeIncomingMessages,
   parsePositiveInt,
@@ -81,16 +82,33 @@ function updateCursorByTail(state: ConversationState): void {
   state.cursor = { timestamp, id };
 }
 
+function countAddedMessages(existing: ChatMessage[], incoming: ChatMessage[]): number {
+  const seen = new Set(existing.map((message) => buildMessageKey(message)));
+  let added = 0;
+  for (const message of incoming) {
+    const key = buildMessageKey(message);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    added += 1;
+  }
+  return added;
+}
+
 function mergeIntoConversation(state: ConversationState, incoming: unknown): number {
   const normalized = normalizeIncomingMessages<ChatMessage>(incoming);
   if (normalized.length === 0) {
     return 0;
   }
 
-  const before = state.messages.length;
+  const added = countAddedMessages(state.messages, normalized);
+  if (added <= 0) {
+    return 0;
+  }
   state.messages = trimMessages(mergeMessages(state.messages, normalized));
   updateCursorByTail(state);
-  return state.messages.length - before;
+  return added;
 }
 
 export function syncConnections(connectionNames: string[]): void {

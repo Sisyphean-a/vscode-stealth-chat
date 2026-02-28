@@ -83,6 +83,10 @@ function readErrorCode(error: Error): string {
   return message.slice(0, separatorIndex).trim();
 }
 
+function isUnsetCursor(cursor: { timestamp: number; id: number }): boolean {
+  return cursor.timestamp <= 0 || cursor.id <= 0;
+}
+
 export class BackgroundSyncService {
   private readonly globalState: vscode.Memento;
   private readonly onUpdates: (updates: SyncPullUpdate[]) => void;
@@ -209,6 +213,10 @@ export class BackgroundSyncService {
     pool.expiresAt = Date.now() + session.expiresInMs;
     for (const app of session.apps) {
       conversationStore.assignAppId(app.connectionName, app.appId);
+      const currentCursor = conversationStore.getCursor(app.connectionName);
+      if (isUnsetCursor(currentCursor) && app.initialCursor) {
+        conversationStore.setCursor(app.connectionName, app.initialCursor);
+      }
     }
   }
 

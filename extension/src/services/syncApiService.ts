@@ -14,6 +14,7 @@ export type SyncSessionApp = {
   appId: string;
   name: string;
   connectionName: string;
+  initialCursor?: CursorPayload;
 };
 
 export type SyncSessionResponse = {

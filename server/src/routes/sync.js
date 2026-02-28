@@ -57,6 +57,18 @@ function nextCursorFromMessages(messages, fallback) {
   return { timestamp: tail.timestamp, id: tail.id };
 }
 
+function buildInitialCursor(appId) {
+  const recent = db.getRecentMessages(1, appId);
+  if (!Array.isArray(recent) || recent.length === 0) {
+    return { timestamp: 0, id: 0 };
+  }
+  const tail = recent[recent.length - 1];
+  if (!Number.isFinite(tail?.timestamp) || !Number.isFinite(tail?.id)) {
+    return { timestamp: 0, id: 0 };
+  }
+  return { timestamp: tail.timestamp, id: tail.id };
+}
+
 function normalizeSessionConnections(rawConnections) {
   if (!Array.isArray(rawConnections) || rawConnections.length === 0) {
     throw new Error("connections must be a non-empty array");
@@ -100,7 +112,11 @@ router.post("/session", (req, res) => {
   try {
     const apps = normalizeSessionConnections(req.body?.connections);
     const payload = createSession({ apps, pollIntervalMs: req.body?.pollIntervalMs });
-    res.json({ ok: true, ...payload });
+    const enrichedApps = payload.apps.map((app) => ({
+      ...app,
+      initialCursor: buildInitialCursor(app.appId),
+    }));
+    res.json({ ok: true, ...payload, apps: enrichedApps });
   } catch (error) {
     sendError(res, 400, "SYNC_SESSION_CREATE_FAILED", error.message || "Failed to create sync session");
   }
