@@ -8,7 +8,13 @@ import {
   SEARCH_RESULT_LIMIT,
   buildClientMessageId,
 } from "../../../packages/chat-core/index.js";
-import { SOCKET_EVENTS } from "../../../packages/protocol/socket-events.js";
+import {
+  SOCKET_EVENTS,
+  parseSocketClientPayload,
+  parseSocketServerPayload,
+  type SocketClientPayloadMap,
+  type SocketServerPayloadMap,
+} from "../../../packages/protocol/socket-events.js";
 import { HistoryLogger } from "./socket/historyLogger";
 import { OutboxService, SendMessageInput } from "./socket/outboxService";
 import {
@@ -32,11 +38,38 @@ function emitWithAck(event: string, payload: unknown, handler: (ack: unknown) =>
   if (!socket?.connected) {
     throw new Error("当前未连接");
   }
-  socket.emit(event, payload, handler);
+  const safeEvent = event as keyof SocketClientPayloadMap;
+  const validatedPayload = parseSocketClientPayload(safeEvent, payload);
+  socket.emit(safeEvent, validatedPayload, handler);
 }
 
 function ensureClientMessageId(input?: string): string {
   return buildClientMessageId("vscode", input);
+}
+
+function onValidatedServerPayload<E extends keyof SocketServerPayloadMap>(
+  event: E,
+  payload: unknown,
+  handler: (validated: SocketServerPayloadMap[E]) => void
+): void {
+  try {
+    const validated = parseSocketServerPayload(event, payload);
+    handler(validated);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    historyLogger.logError(message);
+  }
+}
+
+function emitValidatedClientPayload<E extends keyof SocketClientPayloadMap>(
+  event: E,
+  payload: SocketClientPayloadMap[E]
+): void {
+  if (!socket) {
+    return;
+  }
+  const validated = parseSocketClientPayload(event, payload);
+  socket.emit(event, validated);
 }
 
 function bindSocketEvents(callbacks: SocketCallbacks): void {
@@ -68,35 +101,60 @@ function bindSocketEvents(callbacks: SocketCallbacks): void {
     callbacks.onConnectError?.(error);
   });
 
-  socket.on(SOCKET_EVENTS.HISTORY_LOADED, (messages: ChatMessage[]) => {
-    historyLoaded = true;
-    const safeMessages = Array.isArray(messages) ? messages : [];
-    historyLogger.logHistoryLoaded(safeMessages);
-    callbacks.onHistoryLoaded?.(safeMessages);
+  socket.on(SOCKET_EVENTS.HISTORY_LOADED, (messages: unknown) => {
+    onValidatedServerPayload(SOCKET_EVENTS.HISTORY_LOADED, messages, (validated) => {
+      historyLoaded = true;
+      historyLogger.logHistoryLoaded(validated);
+      callbacks.onHistoryLoaded?.(validated);
+    });
   });
 
-  socket.on(SOCKET_EVENTS.MORE_HISTORY_LOADED, (data: { messages: ChatMessage[]; hasMore: boolean }) => {
-    callbacks.onMoreHistoryLoaded?.(data.messages, data.hasMore);
+  socket.on(SOCKET_EVENTS.MORE_HISTORY_LOADED, (data: unknown) => {
+    onValidatedServerPayload(SOCKET_EVENTS.MORE_HISTORY_LOADED, data, (validated) => {
+      callbacks.onMoreHistoryLoaded?.(validated.messages, validated.hasMore);
+    });
   });
 
-  socket.on(SOCKET_EVENTS.CHAT_MESSAGE, (data: ChatMessage) => {
-    callbacks.onMessage?.(data);
+  socket.on(SOCKET_EVENTS.CHAT_MESSAGE, (data: unknown) => {
+    onValidatedServerPayload(SOCKET_EVENTS.CHAT_MESSAGE, data, (validated) => {
+      callbacks.onMessage?.(validated);
+    });
   });
 
-  socket.on(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, (payload) => {
-    callbacks.onAroundMessageLoaded?.(parseAroundMessagePayload(payload));
+  socket.on(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, (payload: unknown) => {
+    try {
+      callbacks.onAroundMessageLoaded?.(parseAroundMessagePayload(payload));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      historyLogger.logError(message);
+    }
   });
 
-  socket.on(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, (payload) => {
-    callbacks.onAroundArchivedMessageLoaded?.(parseAroundArchivedPayload(payload));
+  socket.on(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, (payload: unknown) => {
+    try {
+      callbacks.onAroundArchivedMessageLoaded?.(parseAroundArchivedPayload(payload));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      historyLogger.logError(message);
+    }
   });
 
-  socket.on(SOCKET_EVENTS.PRESENCE_UPDATE, (payload) => {
-    callbacks.onPresenceUpdate?.(parsePresencePayload(payload));
+  socket.on(SOCKET_EVENTS.PRESENCE_UPDATE, (payload: unknown) => {
+    try {
+      callbacks.onPresenceUpdate?.(parsePresencePayload(payload));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      historyLogger.logError(message);
+    }
   });
 
-  socket.on(SOCKET_EVENTS.READ_RECEIPT, (payload) => {
-    callbacks.onReadReceipt?.(parseReadReceiptPayload(payload));
+  socket.on(SOCKET_EVENTS.READ_RECEIPT, (payload: unknown) => {
+    try {
+      callbacks.onReadReceipt?.(parseReadReceiptPayload(payload));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      historyLogger.logError(message);
+    }
   });
 }
 
@@ -164,7 +222,11 @@ export function searchMessages(
     return Promise.resolve([]);
   }
   return new Promise((resolve, reject) => {
-    socket?.emit(SOCKET_EVENTS.SEARCH_MESSAGES, { keyword: safeKeyword, limit }, (ack: unknown) => {
+    const payload = parseSocketClientPayload(SOCKET_EVENTS.SEARCH_MESSAGES, {
+      keyword: safeKeyword,
+      limit,
+    });
+    socket?.emit(SOCKET_EVENTS.SEARCH_MESSAGES, payload, (ack: unknown) => {
       try {
         resolve(parseSearchAck(ack));
       } catch (error) {
@@ -178,7 +240,7 @@ export function markRead(lastReadTimestamp: number, lastReadMessageId?: number):
   if (!socket?.connected) {
     return;
   }
-  socket.emit(SOCKET_EVENTS.MARK_READ, {
+  emitValidatedClientPayload(SOCKET_EVENTS.MARK_READ, {
     clientType: "vscode",
     lastReadTimestamp,
     lastReadMessageId,
@@ -216,22 +278,25 @@ export function resetLastDisplayedDate(): void {
 }
 
 export function loadHistory(): void {
-  socket?.emit(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
+  emitValidatedClientPayload(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
 }
 
 export function loadMoreHistory(beforeTimestamp: number): void {
-  socket?.emit(SOCKET_EVENTS.LOAD_MORE_HISTORY, { limit: HISTORY_PAGE_SIZE, beforeTimestamp });
+  emitValidatedClientPayload(SOCKET_EVENTS.LOAD_MORE_HISTORY, {
+    limit: HISTORY_PAGE_SIZE,
+    beforeTimestamp,
+  });
 }
 
 export function loadAroundMessage(targetMessageId: number): void {
-  socket?.emit(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, {
+  emitValidatedClientPayload(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, {
     targetMessageId,
     windowSize: DEFAULT_AROUND_WINDOW_SIZE,
   });
 }
 
 export function loadAroundArchivedMessage(targetArchiveId: number): void {
-  socket?.emit(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, {
+  emitValidatedClientPayload(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, {
     targetArchiveId,
     windowSize: DEFAULT_AROUND_WINDOW_SIZE,
   });

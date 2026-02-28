@@ -4,6 +4,7 @@
   "description": "Backend for Stealth Chat",
   "main": "src/index.js",
   "scripts": {
+    "protocol:generate": "node ../packages/protocol/scripts/generate-protocol.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "dev:debug": "nodemon --inspect src/index.js",

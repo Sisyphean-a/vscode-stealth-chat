@@ -13,6 +13,8 @@ const {
   SOCKET_EVENTS,
   buildAckError,
   buildAckOk,
+  parseSocketClientPayload,
+  parseSocketServerPayload,
 } = require("../../packages/protocol/socket-events.cjs");
 
 // Global click URL (can be overridden by app config if we extended it, 
@@ -48,6 +50,15 @@ function safeAck(ack, payload) {
   }
 }
 
+function parseClientPayload(event, payload) {
+  return parseSocketClientPayload(event, payload);
+}
+
+function emitServerPayload(target, event, payload) {
+  const validated = parseSocketServerPayload(event, payload);
+  target.emit(event, validated);
+}
+
 function buildPresencePayload(io, appId) {
   const room = io.sockets.adapter.rooms.get(appId);
   if (!room || room.size === 0) {
@@ -70,7 +81,7 @@ function buildPresencePayload(io, appId) {
 }
 
 function emitPresenceUpdate(io, appId) {
-  io.to(appId).emit(SOCKET_EVENTS.PRESENCE_UPDATE, buildPresencePayload(io, appId));
+  emitServerPayload(io.to(appId), SOCKET_EVENTS.PRESENCE_UPDATE, buildPresencePayload(io, appId));
 }
 
 function getMessagePreviewText(message) {
@@ -154,27 +165,25 @@ function initSocket(httpServer) {
     // Handle chat messages
     socket.on(SOCKET_EVENTS.CHAT_MESSAGE, async (msg, ack) => {
       try {
-        const source = msg.source === "mobile" || msg.source === "vscode" ? msg.source : null;
-        if (!source) {
-          throw new Error("Invalid message source");
-        }
-        const text = typeof msg.text === "string" ? msg.text : "";
-        const hasAttachments = msg.attachments && msg.attachments.length > 0;
-        console.log(`[Socket] Message from ${source} (App: ${app.name}): text=${text ? text.substring(0, 30) : "(empty)"}, attachments=${hasAttachments ? msg.attachments.length : 0}`);
+        const request = parseClientPayload(SOCKET_EVENTS.CHAT_MESSAGE, msg);
+        const source = request.source;
+        const text = request.text;
+        const hasAttachments = request.attachments && request.attachments.length > 0;
+        console.log(`[Socket] Message from ${source} (App: ${app.name}): text=${text ? text.substring(0, 30) : "(empty)"}, attachments=${hasAttachments ? request.attachments.length : 0}`);
 
-        const clientMessageId = typeof msg.clientMessageId === "string" ? msg.clientMessageId.trim() : "";
+        const clientMessageId = typeof request.clientMessageId === "string" ? request.clientMessageId.trim() : "";
         let finalMessage = { text, source };
         const timestamp = Date.now();
-        const quote = buildQuoteSnapshot(msg.quote, appId);
+        const quote = buildQuoteSnapshot(request.quote, appId);
         if (quote) {
           finalMessage.quote = quote;
         }
 
         // Process image attachments if present
-        if (msg.attachments && msg.attachments.length > 0) {
+        if (request.attachments && request.attachments.length > 0) {
           const processedAttachments = [];
 
-          for (const attachment of msg.attachments) {
+          for (const attachment of request.attachments) {
             if (attachment.type === "image") {
               try {
                 // 已通过 HTTP 上传的图片（已有 url 或处理后的 data），直接使用
@@ -234,7 +243,7 @@ function initSocket(httpServer) {
         }
 
         // Broadcast ONLY to this App's room
-        io.to(appId).emit(SOCKET_EVENTS.CHAT_MESSAGE, savedMessage);
+        emitServerPayload(io.to(appId), SOCKET_EVENTS.CHAT_MESSAGE, savedMessage);
         safeAck(ack, buildAckOk({
           clientMessageId: clientMessageId || null,
           message: savedMessage,
@@ -245,7 +254,7 @@ function initSocket(httpServer) {
           // 重新读取最新配置，避免使用连接时缓存的旧对象（Admin 面板更新后 token 可能已变）
           const latestApp = config.findAppById(appId) || app;
           console.log(`[Socket] Message from VS Code (App: ${latestApp.name}), triggering Gotify...`);
-          const targetUrl = latestApp.clickUrl || msg.clickUrl || CLICK_URL;
+          const targetUrl = latestApp.clickUrl || request.clickUrl || CLICK_URL;
           const priority = latestApp.gotifyPriority ?? 10;
           const pushText = savedMessage.attachments
             ? "[图片]"
@@ -269,34 +278,44 @@ function initSocket(httpServer) {
 
     // Handle history loading request
     socket.on(SOCKET_EVENTS.LOAD_HISTORY, (limit = 50) => {
-      console.log(
-        `[Socket] Loading history (limit: ${limit}) for ${socket.id} (App: ${app.name})`,
-      );
-      // Load history for this App ID
-      const messages = db.getRecentMessages(limit, appId);
-      socket.emit(SOCKET_EVENTS.HISTORY_LOADED, messages);
+      try {
+        const safeLimit = parseClientPayload(SOCKET_EVENTS.LOAD_HISTORY, limit);
+        console.log(
+          `[Socket] Loading history (limit: ${safeLimit}) for ${socket.id} (App: ${app.name})`,
+        );
+        const messages = db.getRecentMessages(safeLimit, appId);
+        emitServerPayload(socket, SOCKET_EVENTS.HISTORY_LOADED, messages);
+      } catch (error) {
+        console.error(`[Socket] "load history" error:`, error);
+        emitServerPayload(socket, SOCKET_EVENTS.HISTORY_LOADED, []);
+      }
     });
 
     // Handle load more history request
     socket.on(SOCKET_EVENTS.LOAD_MORE_HISTORY, (data) => {
       try {
-        const { limit = 50, beforeTimestamp } = data || {};
+        const request = parseClientPayload(SOCKET_EVENTS.LOAD_MORE_HISTORY, data);
+        const { limit, beforeTimestamp } = request;
         console.log(
           `[Socket] Loading more history (limit: ${limit}, before: ${beforeTimestamp}) for ${socket.id} (App: ${app.name})`,
         );
         const messages = db.getRecentMessages(limit, appId, beforeTimestamp);
-        socket.emit(SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages, hasMore: messages.length === limit });
+        emitServerPayload(socket, SOCKET_EVENTS.MORE_HISTORY_LOADED, {
+          messages,
+          hasMore: messages.length === limit,
+        });
       } catch (err) {
         console.error(`[Socket] "load more history" error:`, err);
-        socket.emit(SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages: [], hasMore: false });
+        emitServerPayload(socket, SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages: [], hasMore: false });
       }
     });
 
     socket.on(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, (data) => {
       try {
-        const targetMessageId = Number.parseInt(String(data?.targetMessageId ?? ""), 10);
+        const request = parseClientPayload(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, data);
+        const targetMessageId = Number.parseInt(String(request.targetMessageId ?? ""), 10);
         if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) {
-          socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
+          emitServerPayload(socket, SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
             messages: [],
             targetMessageId: null,
             error: "Invalid target message id",
@@ -306,7 +325,7 @@ function initSocket(httpServer) {
 
         const targetMessage = db.getMessageById(targetMessageId, appId);
         if (!targetMessage) {
-          socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
+          emitServerPayload(socket, SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
             messages: [],
             targetMessageId,
             error: "Target message not found",
@@ -314,16 +333,16 @@ function initSocket(httpServer) {
           return;
         }
 
-        const windowSize = normalizeWindowSize(data?.windowSize);
+        const windowSize = normalizeWindowSize(request.windowSize);
         const messages = db.getMessagesAroundMessage(targetMessageId, appId, windowSize, windowSize);
-        socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
+        emitServerPayload(socket, SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
           messages,
           targetMessageId,
           error: null,
         });
       } catch (error) {
         console.error(`[Socket] "load around message" error:`, error);
-        socket.emit(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
+        emitServerPayload(socket, SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
           messages: [],
           targetMessageId: null,
           error: error.message || "Failed to load message context",
@@ -333,9 +352,10 @@ function initSocket(httpServer) {
 
     socket.on(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, (data) => {
       try {
-        const targetArchiveId = Number.parseInt(String(data?.targetArchiveId ?? ""), 10);
+        const request = parseClientPayload(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, data);
+        const targetArchiveId = Number.parseInt(String(request.targetArchiveId ?? ""), 10);
         if (!Number.isFinite(targetArchiveId) || targetArchiveId <= 0) {
-          socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
+          emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
             messages: [],
             targetArchiveId: null,
             error: "Invalid target archive id",
@@ -343,24 +363,24 @@ function initSocket(httpServer) {
           return;
         }
 
-        const windowSize = normalizeWindowSize(data?.windowSize);
+        const windowSize = normalizeWindowSize(request.windowSize);
         const messages = db.getArchivedMessagesAround(targetArchiveId, appId, windowSize, windowSize);
         if (messages.length === 0) {
-          socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
+          emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
             messages: [],
             targetArchiveId,
             error: "Target archive message not found",
           });
           return;
         }
-        socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
+        emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
           messages,
           targetArchiveId,
           error: null,
         });
       } catch (error) {
         console.error(`[Socket] "load around archived message" error:`, error);
-        socket.emit(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
+        emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
           messages: [],
           targetArchiveId: null,
           error: error.message || "Failed to load archived context",
@@ -370,12 +390,13 @@ function initSocket(httpServer) {
 
     socket.on(SOCKET_EVENTS.SEARCH_MESSAGES, (data, ack) => {
       try {
-        const keyword = typeof data?.keyword === "string" ? data.keyword.trim() : "";
+        const request = parseClientPayload(SOCKET_EVENTS.SEARCH_MESSAGES, data);
+        const keyword = request.keyword.trim();
         if (!keyword) {
           safeAck(ack, buildAckError("SEARCH_KEYWORD_REQUIRED", "Keyword is required"));
           return;
         }
-        const limit = normalizeSearchLimit(data?.limit);
+        const limit = normalizeSearchLimit(request.limit);
         const results = db.searchMessages({ appId, keyword, limit });
         safeAck(ack, buildAckOk({ results, keyword, limit }));
       } catch (error) {
@@ -386,20 +407,21 @@ function initSocket(httpServer) {
 
     socket.on(SOCKET_EVENTS.MARK_READ, (data) => {
       try {
-        const lastReadTimestamp = Number.parseInt(String(data?.lastReadTimestamp ?? ""), 10);
+        const request = parseClientPayload(SOCKET_EVENTS.MARK_READ, data);
+        const lastReadTimestamp = Number.parseInt(String(request.lastReadTimestamp ?? ""), 10);
         if (!Number.isFinite(lastReadTimestamp) || lastReadTimestamp <= 0) {
           return;
         }
-        const lastReadMessageId = Number.parseInt(String(data?.lastReadMessageId ?? ""), 10);
+        const lastReadMessageId = Number.parseInt(String(request.lastReadMessageId ?? ""), 10);
         const payload = {
           appId,
-          clientType: normalizeClientType(data?.clientType || socket.data.clientType),
+          clientType: normalizeClientType(request.clientType || socket.data.clientType),
           lastReadTimestamp,
           lastReadMessageId: Number.isFinite(lastReadMessageId) && lastReadMessageId > 0
             ? lastReadMessageId
             : null,
         };
-        socket.to(appId).emit(SOCKET_EVENTS.READ_RECEIPT, payload);
+        emitServerPayload(socket.to(appId), SOCKET_EVENTS.READ_RECEIPT, payload);
       } catch (error) {
         console.error(`[Socket] "mark read" error:`, error);
       }

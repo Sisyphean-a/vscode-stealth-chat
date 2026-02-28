@@ -13,6 +13,9 @@ import {
 } from "/packages/chat-core/index.js";
 import {
   SOCKET_EVENTS,
+  parseSocketAck,
+  parseSocketClientPayload,
+  parseSocketServerPayload,
   getAckData,
   getAckErrorMessage,
   isAckOk,
@@ -37,6 +40,36 @@ export function useSocket() {
   let aroundMessageCallback = null;
   let aroundArchivedMessageCallback = null;
 
+  const readErrorText = (error, fallback) => {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    if (typeof error === "string" && error.trim()) {
+      return error.trim();
+    }
+    return fallback;
+  };
+
+  const parseServerPayloadOrThrow = (event, payload) => {
+    try {
+      return parseSocketServerPayload(event, payload);
+    } catch (error) {
+      const message = readErrorText(error, "服务端消息格式错误");
+      errorMsg.value = `协议错误: ${message}`;
+      throw error;
+    }
+  };
+
+  const validateClientPayloadOrThrow = (event, payload) => {
+    try {
+      return parseSocketClientPayload(event, payload);
+    } catch (error) {
+      const message = readErrorText(error, "客户端消息格式错误");
+      errorMsg.value = `协议错误: ${message}`;
+      throw error;
+    }
+  };
+
   const connect = (token, callbacks = {}) => {
     if (!token) {
       errorMsg.value = "请输入密钥";
@@ -54,7 +87,8 @@ export function useSocket() {
       socketConnected.value = true;
       isConnecting.value = false;
       errorMsg.value = "";
-      socket.emit(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
+      const historyPayload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
+      socket.emit(SOCKET_EVENTS.LOAD_HISTORY, historyPayload);
       callbacks.onConnect?.();
     });
 
@@ -73,55 +107,74 @@ export function useSocket() {
     });
 
     socket.on(SOCKET_EVENTS.CHAT_MESSAGE, (msg) => {
-      callbacks.onMessage?.(msg);
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.CHAT_MESSAGE, msg);
+        callbacks.onMessage?.(validated);
+      } catch (error) {
+        console.error("[Mobile] Invalid chat message payload:", error);
+      }
     });
 
     socket.on(SOCKET_EVENTS.HISTORY_LOADED, (history) => {
-      hasMoreHistory.value = history && history.length >= HISTORY_PAGE_SIZE;
-      callbacks.onHistoryLoaded?.(history);
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.HISTORY_LOADED, history);
+        hasMoreHistory.value = validated.length >= HISTORY_PAGE_SIZE;
+        callbacks.onHistoryLoaded?.(validated);
+      } catch (error) {
+        console.error("[Mobile] Invalid history payload:", error);
+      }
     });
 
-    socket.on(SOCKET_EVENTS.MORE_HISTORY_LOADED, ({ messages, hasMore }) => {
-      isLoadingMore.value = false;
-      hasMoreHistory.value = hasMore;
-      moreHistoryCallback?.(messages);
+    socket.on(SOCKET_EVENTS.MORE_HISTORY_LOADED, (payload) => {
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.MORE_HISTORY_LOADED, payload);
+        isLoadingMore.value = false;
+        hasMoreHistory.value = validated.hasMore;
+        moreHistoryCallback?.(validated.messages);
+      } catch (error) {
+        isLoadingMore.value = false;
+        console.error("[Mobile] Invalid more history payload:", error);
+      }
     });
 
     socket.on(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, (payload) => {
       const callback = aroundMessageCallback;
       aroundMessageCallback = null;
-      callback?.(payload || { messages: [], targetMessageId: null, error: "Invalid payload" });
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, payload);
+        callback?.(validated);
+      } catch (error) {
+        console.error("[Mobile] Invalid around message payload:", error);
+      }
     });
 
     socket.on(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, (payload) => {
       const callback = aroundArchivedMessageCallback;
       aroundArchivedMessageCallback = null;
-      callback?.(payload || { messages: [], targetArchiveId: null, error: "Invalid payload" });
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, payload);
+        callback?.(validated);
+      } catch (error) {
+        console.error("[Mobile] Invalid around archived payload:", error);
+      }
     });
 
     socket.on(SOCKET_EVENTS.PRESENCE_UPDATE, (payload) => {
-      callbacks.onPresenceUpdate?.({
-        appId: typeof payload?.appId === "string" ? payload.appId : "default",
-        total: Number.isFinite(payload?.total) ? payload.total : 0,
-        mobile: Number.isFinite(payload?.mobile) ? payload.mobile : 0,
-        vscode: Number.isFinite(payload?.vscode) ? payload.vscode : 0,
-      });
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.PRESENCE_UPDATE, payload);
+        callbacks.onPresenceUpdate?.(validated);
+      } catch (error) {
+        console.error("[Mobile] Invalid presence payload:", error);
+      }
     });
 
     socket.on(SOCKET_EVENTS.READ_RECEIPT, (payload) => {
-      callbacks.onReadReceipt?.({
-        appId: typeof payload?.appId === "string" ? payload.appId : "default",
-        clientType:
-          payload?.clientType === "mobile" || payload?.clientType === "vscode"
-            ? payload.clientType
-            : "unknown",
-        lastReadTimestamp: Number.isFinite(payload?.lastReadTimestamp)
-          ? payload.lastReadTimestamp
-          : Date.now(),
-        lastReadMessageId: Number.isFinite(payload?.lastReadMessageId)
-          ? payload.lastReadMessageId
-          : null,
-      });
+      try {
+        const validated = parseServerPayloadOrThrow(SOCKET_EVENTS.READ_RECEIPT, payload);
+        callbacks.onReadReceipt?.(validated);
+      } catch (error) {
+        console.error("[Mobile] Invalid read receipt payload:", error);
+      }
     });
 
     return socket;
@@ -141,8 +194,13 @@ export function useSocket() {
 
   const emit = (event, data) => {
     if (socket?.connected) {
-      socket.emit(event, data);
-      return true;
+      try {
+        const validated = validateClientPayloadOrThrow(event, data);
+        socket.emit(event, validated);
+        return true;
+      } catch (error) {
+        console.error("[Mobile] Invalid outbound payload:", error);
+      }
     }
     return false;
   };
@@ -162,7 +220,16 @@ export function useSocket() {
         reject(new Error("确认超时"));
       }, timeoutMs);
 
-      socket.emit(event, data, (ack) => {
+      let validatedData;
+      try {
+        validatedData = validateClientPayloadOrThrow(event, data);
+      } catch (error) {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+
+      socket.emit(event, validatedData, (ack) => {
         if (finished) {
           return;
         }
@@ -179,10 +246,15 @@ export function useSocket() {
     while (retriesLeft >= 0) {
       try {
         const ack = await emitWithAck(SOCKET_EVENTS.CHAT_MESSAGE, payload, ACK_TIMEOUT_MS);
-        if (isAckOk(ack)) {
-          return getAckData(ack);
+        const parsedAck = parseSocketAck(SOCKET_EVENTS.CHAT_MESSAGE, ack);
+        if (isAckOk(parsedAck)) {
+          const data = getAckData(parsedAck);
+          if (!data || !data.message) {
+            throw new Error("发送响应缺少 message 字段");
+          }
+          return data.message;
         }
-        throw new Error(getAckErrorMessage(ack, "发送失败"));
+        throw new Error(getAckErrorMessage(parsedAck, "发送失败"));
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (retriesLeft === 0) {
@@ -197,22 +269,27 @@ export function useSocket() {
 
   const searchMessages = async (keyword, limit = SEARCH_RESULT_LIMIT) => {
     const ack = await emitWithAck(SOCKET_EVENTS.SEARCH_MESSAGES, { keyword, limit }, 6000);
-    if (!isAckOk(ack)) {
-      throw new Error(getAckErrorMessage(ack, "搜索失败"));
+    const parsedAck = parseSocketAck(SOCKET_EVENTS.SEARCH_MESSAGES, ack);
+    if (!isAckOk(parsedAck)) {
+      throw new Error(getAckErrorMessage(parsedAck, "搜索失败"));
     }
-    const data = getAckData(ack);
-    return Array.isArray(data?.results) ? data.results : [];
+    const data = getAckData(parsedAck);
+    if (!data) {
+      throw new Error("搜索响应缺少 data 字段");
+    }
+    return data.results;
   };
 
   const markRead = (lastReadTimestamp, lastReadMessageId) => {
     if (!socket?.connected) {
       return;
     }
-    socket.emit(SOCKET_EVENTS.MARK_READ, {
+    const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.MARK_READ, {
       clientType: "mobile",
       lastReadTimestamp,
       lastReadMessageId,
     });
+    socket.emit(SOCKET_EVENTS.MARK_READ, payload);
   };
 
   const getSocket = () => socket;
@@ -223,10 +300,11 @@ export function useSocket() {
     }
     isLoadingMore.value = true;
     moreHistoryCallback = callback;
-    socket.emit(SOCKET_EVENTS.LOAD_MORE_HISTORY, {
+    const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_MORE_HISTORY, {
       limit: HISTORY_PAGE_SIZE,
       beforeTimestamp,
     });
+    socket.emit(SOCKET_EVENTS.LOAD_MORE_HISTORY, payload);
     return true;
   };
 
@@ -239,10 +317,11 @@ export function useSocket() {
       return false;
     }
     aroundMessageCallback = callback;
-    socket.emit(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, {
+    const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, {
       targetMessageId: parsed,
       windowSize: DEFAULT_AROUND_WINDOW_SIZE,
     });
+    socket.emit(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, payload);
     return true;
   };
 
@@ -255,10 +334,11 @@ export function useSocket() {
       return false;
     }
     aroundArchivedMessageCallback = callback;
-    socket.emit(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, {
+    const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, {
       targetArchiveId: parsed,
       windowSize: DEFAULT_AROUND_WINDOW_SIZE,
     });
+    socket.emit(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, payload);
     return true;
   };
 

@@ -1,6 +1,7 @@
 import type { ChatMessage, MessageQuote } from "../../types";
 import { ACK_TIMEOUT_MS, MAX_SEND_RETRIES, RETRY_DELAY_MS } from "../../../../packages/chat-core/index.js";
-import { SOCKET_EVENTS, getAckData, getAckErrorMessage, isAckOk } from "../../../../packages/protocol/socket-events.js";
+import { SOCKET_EVENTS } from "../../../../packages/protocol/socket-events.js";
+import { parseChatMessageAck } from "./payloadParser";
 
 export type SendMessageInput = {
   text: string;
@@ -29,18 +30,6 @@ type SendTask = {
   resolve: (message: ChatMessage) => void;
   reject: (error: Error) => void;
 };
-
-function parseAckChatMessage(payload: unknown): ChatMessage | null {
-  if (typeof payload !== "object" || payload === null) {
-    return null;
-  }
-  const wrapped = getAckData<{ message?: ChatMessage }>(payload);
-  if (wrapped && typeof wrapped === "object" && wrapped.message) {
-    return wrapped.message;
-  }
-  const legacy = payload as { message?: ChatMessage };
-  return legacy.message ?? null;
-}
 
 export class OutboxService {
   private readonly queue: SendTask[] = [];
@@ -115,16 +104,11 @@ export class OutboxService {
           return;
         }
         clearTimeout(timer);
-        if (!isAckOk(ack)) {
-          reject(new Error(getAckErrorMessage(ack, "发送失败")));
-          return;
+        try {
+          resolve(parseChatMessageAck(ack));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
-        const message = parseAckChatMessage(ack);
-        if (!message) {
-          reject(new Error("发送响应缺少消息内容"));
-          return;
-        }
-        resolve(message);
       });
     });
   }

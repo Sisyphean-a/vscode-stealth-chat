@@ -1,0 +1,293 @@
+const PROTOCOL_SCHEMA = __SCHEMA_JSON__;
+const DEFINITIONS = Object.freeze(PROTOCOL_SCHEMA.defs);
+const WEBVIEW_MESSAGE_MAP = Object.freeze(PROTOCOL_SCHEMA.webviewMap);
+const HOST_MESSAGE_MAP = Object.freeze(PROTOCOL_SCHEMA.hostMap);
+const SOCKET_EVENTS = Object.freeze(PROTOCOL_SCHEMA.socketEvents);
+const SOCKET_CLIENT_PAYLOAD_SCHEMAS = Object.freeze(PROTOCOL_SCHEMA.socketClientPayloads);
+const SOCKET_SERVER_PAYLOAD_SCHEMAS = Object.freeze(PROTOCOL_SCHEMA.socketServerPayloads);
+const SOCKET_ACK_DATA_SCHEMAS = Object.freeze(PROTOCOL_SCHEMA.socketAckData);
+const KNOWN_WEBVIEW_TYPES = Object.freeze(Object.keys(WEBVIEW_MESSAGE_MAP));
+const KNOWN_HOST_TYPES = Object.freeze(Object.keys(HOST_MESSAGE_MAP));
+const NON_EMPTY_STRING = Object.freeze({ kind: "string", minLength: 1 });
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function hasOwn(target, key) {
+  return Object.prototype.hasOwnProperty.call(target, key);
+}
+function appendPath(path, key) {
+  if (!path) {
+    return key;
+  }
+  return path + "." + key;
+}
+function throwValidationError(path, message) {
+  throw new Error("[Protocol] " + path + ": " + message);
+}
+function resolveSchema(schema, defs, path) {
+  if (!schema || typeof schema !== "object") {
+    throwValidationError(path, "Invalid schema node");
+  }
+  if (schema.kind !== "ref") {
+    return schema;
+  }
+  const target = defs[schema.name];
+  if (!target) {
+    throwValidationError(path, "Unknown schema ref: " + schema.name);
+  }
+  return target;
+}
+function validateString(schema, value, path) {
+  if (typeof value !== "string") {
+    throwValidationError(path, "Expected string");
+  }
+  if (Number.isFinite(schema.minLength) && value.length < schema.minLength) {
+    throwValidationError(path, "Expected string length >= " + schema.minLength);
+  }
+}
+function validateNumber(schema, value, path) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throwValidationError(path, "Expected finite number");
+  }
+  if (schema.integer && !Number.isInteger(value)) {
+    throwValidationError(path, "Expected integer");
+  }
+  if (Number.isFinite(schema.minimum) && value < schema.minimum) {
+    throwValidationError(path, "Expected number >= " + schema.minimum);
+  }
+  if (Number.isFinite(schema.maximum) && value > schema.maximum) {
+    throwValidationError(path, "Expected number <= " + schema.maximum);
+  }
+}
+function validateLiteral(schema, value, path) {
+  if (value !== schema.value) {
+    throwValidationError(path, "Expected literal " + JSON.stringify(schema.value));
+  }
+}
+function validateEnum(schema, value, path) {
+  if (!schema.values.includes(value)) {
+    throwValidationError(path, "Expected one of: " + schema.values.join(", "));
+  }
+}
+function validateArray(schema, value, defs, path) {
+  if (!Array.isArray(value)) {
+    throwValidationError(path, "Expected array");
+  }
+  for (let i = 0; i < value.length; i += 1) {
+    validateValue(schema.items, value[i], defs, path + "[" + i + "]");
+  }
+}
+function validateObject(schema, value, defs, path) {
+  if (!isRecord(value)) {
+    throwValidationError(path, "Expected object");
+  }
+  const required = new Set(schema.required || []);
+  const properties = schema.properties || {};
+  for (const field of required) {
+    if (!hasOwn(value, field) || value[field] === undefined) {
+      throwValidationError(appendPath(path, field), "Missing required field");
+    }
+  }
+  for (const [field, fieldSchema] of Object.entries(properties)) {
+    if (!hasOwn(value, field) || value[field] === undefined) {
+      continue;
+    }
+    validateValue(fieldSchema, value[field], defs, appendPath(path, field));
+  }
+  if (schema.allowUnknown === false) {
+    for (const key of Object.keys(value)) {
+      if (!hasOwn(properties, key)) {
+        throwValidationError(appendPath(path, key), "Unknown field");
+      }
+    }
+  }
+}
+function validateUnion(schema, value, defs, path) {
+  const errors = [];
+  for (const option of schema.anyOf || []) {
+    try {
+      validateValue(option, value, defs, path);
+      return;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  throwValidationError(path, "No union branch matched (" + errors.length + ")");
+}
+function validateValue(schema, value, defs, path) {
+  const resolved = resolveSchema(schema, defs, path);
+  if (resolved.kind === "unknown") {
+    return;
+  }
+  if (resolved.kind === "string") {
+    validateString(resolved, value, path);
+    return;
+  }
+  if (resolved.kind === "number") {
+    validateNumber(resolved, value, path);
+    return;
+  }
+  if (resolved.kind === "boolean") {
+    if (typeof value !== "boolean") {
+      throwValidationError(path, "Expected boolean");
+    }
+    return;
+  }
+  if (resolved.kind === "literal") {
+    validateLiteral(resolved, value, path);
+    return;
+  }
+  if (resolved.kind === "enum") {
+    validateEnum(resolved, value, path);
+    return;
+  }
+  if (resolved.kind === "array") {
+    validateArray(resolved, value, defs, path);
+    return;
+  }
+  if (resolved.kind === "object") {
+    validateObject(resolved, value, defs, path);
+    return;
+  }
+  if (resolved.kind === "union") {
+    validateUnion(resolved, value, defs, path);
+    return;
+  }
+  throwValidationError(path, "Unsupported schema kind: " + resolved.kind);
+}
+function isMessageEnvelope(value) {
+  return isRecord(value) && typeof value.type === "string";
+}
+function parseMessage(raw, schemaMap, label) {
+  if (!isMessageEnvelope(raw)) {
+    throw new Error("[Protocol] Invalid " + label + " message envelope");
+  }
+  const schema = schemaMap[raw.type];
+  if (!schema) {
+    throw new Error("[Protocol] Unknown " + label + " message type: " + raw.type);
+  }
+  if (hasOwn(schema, "payload")) {
+    validateValue(schema.payload, raw.payload, DEFINITIONS, label + "." + raw.type + ".payload");
+  } else if (hasOwn(raw, "payload") && raw.payload !== undefined) {
+    throw new Error("[Protocol] " + label + "." + raw.type + " should not contain payload");
+  }
+  return raw;
+}
+function parseWebviewMessage(raw) {
+  return parseMessage(raw, WEBVIEW_MESSAGE_MAP, "webview");
+}
+function parseHostMessage(raw) {
+  return parseMessage(raw, HOST_MESSAGE_MAP, "host");
+}
+function isWebviewMessage(raw) {
+  try {
+    parseWebviewMessage(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function isHostMessage(raw) {
+  try {
+    parseHostMessage(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function validateSocketPayload(event, payload, schemaMap, direction) {
+  const schema = schemaMap[event];
+  if (!schema) {
+    throw new Error("[Protocol] Unknown " + direction + " socket event: " + event);
+  }
+  validateValue(schema, payload, DEFINITIONS, direction + "." + event);
+  return payload;
+}
+function parseSocketClientPayload(event, payload) {
+  return validateSocketPayload(event, payload, SOCKET_CLIENT_PAYLOAD_SCHEMAS, "socket.client");
+}
+function parseSocketServerPayload(event, payload) {
+  return validateSocketPayload(event, payload, SOCKET_SERVER_PAYLOAD_SCHEMAS, "socket.server");
+}
+function parseSocketAck(event, ack) {
+  const dataSchema = SOCKET_ACK_DATA_SCHEMAS[event];
+  if (!dataSchema) {
+    throw new Error("[Protocol] Socket event does not support ACK schema: " + event);
+  }
+  if (!isRecord(ack) || typeof ack.ok !== "boolean") {
+    throw new Error("[Protocol] Invalid socket ack envelope for event: " + event);
+  }
+  if (ack.ok === true) {
+    if (!hasOwn(ack, "data")) {
+      throw new Error("[Protocol] Missing ack.data for event: " + event);
+    }
+    validateValue(dataSchema, ack.data, DEFINITIONS, "socket.ack." + event + ".data");
+    return ack;
+  }
+  if (!isRecord(ack.error)) {
+    throw new Error("[Protocol] Missing ack.error for event: " + event);
+  }
+  validateValue(NON_EMPTY_STRING, ack.error.code, DEFINITIONS, "socket.ack." + event + ".error.code");
+  validateValue(NON_EMPTY_STRING, ack.error.message, DEFINITIONS, "socket.ack." + event + ".error.message");
+  return ack;
+}
+function buildAckOk(data) {
+  return { ok: true, data };
+}
+function buildAckError(code, message, data = null) {
+  return {
+    ok: false,
+    error: {
+      code: typeof code === "string" && code.trim() ? code.trim() : "UNKNOWN_ERROR",
+      message: typeof message === "string" && message.trim() ? message.trim() : "请求失败",
+    },
+    data,
+  };
+}
+function isAckOk(ack) {
+  return isRecord(ack) && ack.ok === true && hasOwn(ack, "data");
+}
+function getAckData(ack) {
+  if (!isAckOk(ack)) {
+    return null;
+  }
+  return ack.data;
+}
+function getAckErrorMessage(ack, fallback = "请求失败") {
+  if (!isRecord(ack)) {
+    return fallback;
+  }
+  if (isRecord(ack.error) && typeof ack.error.message === "string" && ack.error.message.trim()) {
+    return ack.error.message;
+  }
+  if (typeof ack.error === "string" && ack.error.trim()) {
+    return ack.error;
+  }
+  if (typeof ack.message === "string" && ack.message.trim()) {
+    return ack.message;
+  }
+  return fallback;
+}
+export {
+  KNOWN_WEBVIEW_TYPES,
+  KNOWN_HOST_TYPES,
+  WEBVIEW_MESSAGE_MAP,
+  HOST_MESSAGE_MAP,
+  SOCKET_EVENTS,
+  SOCKET_CLIENT_PAYLOAD_SCHEMAS,
+  SOCKET_SERVER_PAYLOAD_SCHEMAS,
+  SOCKET_ACK_DATA_SCHEMAS,
+  isMessageEnvelope,
+  parseWebviewMessage,
+  parseHostMessage,
+  isWebviewMessage,
+  isHostMessage,
+  parseSocketClientPayload,
+  parseSocketServerPayload,
+  parseSocketAck,
+  buildAckOk,
+  buildAckError,
+  isAckOk,
+  getAckData,
+  getAckErrorMessage,
+};

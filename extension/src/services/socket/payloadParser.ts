@@ -1,91 +1,56 @@
-import type { ChatMessage } from "../../types";
-import { getAckData, getAckErrorMessage, isAckOk } from "../../../../packages/protocol/socket-events.js";
+import {
+  SOCKET_EVENTS,
+  getAckData,
+  getAckErrorMessage,
+  isAckOk,
+  parseSocketAck,
+  parseSocketServerPayload,
+  type AroundArchivedPayload,
+  type AroundMessagesPayload,
+  type ChatMessage,
+  type ChatMessageAckData,
+  type PresencePayload,
+  type ReadReceiptPayload,
+  type SearchAckData,
+  type SearchResult,
+} from "../../../../packages/protocol/socket-events.js";
 
-type AroundPayload = {
-  messages?: ChatMessage[];
-  targetMessageId?: number | null;
-  targetArchiveId?: number | null;
-  error?: string | null;
-};
-
-export function parsePresencePayload(payload: unknown): {
-  appId: string;
-  total: number;
-  mobile: number;
-  vscode: number;
-} {
-  const data = payload as Record<string, unknown> | undefined;
-  return {
-    appId: typeof data?.appId === "string" ? data.appId : "default",
-    total: Number.isFinite(data?.total) ? Number(data?.total) : 0,
-    mobile: Number.isFinite(data?.mobile) ? Number(data?.mobile) : 0,
-    vscode: Number.isFinite(data?.vscode) ? Number(data?.vscode) : 0,
-  };
+export function parsePresencePayload(payload: unknown): PresencePayload {
+  return parseSocketServerPayload(SOCKET_EVENTS.PRESENCE_UPDATE, payload);
 }
 
-export function parseReadReceiptPayload(payload: unknown): {
-  appId: string;
-  clientType: "mobile" | "vscode" | "unknown";
-  lastReadTimestamp: number;
-  lastReadMessageId: number | null;
-} {
-  const data = payload as Record<string, unknown> | undefined;
-  const clientType = data?.clientType;
-  const validClientType =
-    clientType === "mobile" || clientType === "vscode" ? clientType : "unknown";
-  return {
-    appId: typeof data?.appId === "string" ? data.appId : "default",
-    clientType: validClientType,
-    lastReadTimestamp: Number.isFinite(data?.lastReadTimestamp)
-      ? Number(data?.lastReadTimestamp)
-      : Date.now(),
-    lastReadMessageId: Number.isFinite(data?.lastReadMessageId)
-      ? Number(data?.lastReadMessageId)
-      : null,
-  };
+export function parseReadReceiptPayload(payload: unknown): ReadReceiptPayload {
+  return parseSocketServerPayload(SOCKET_EVENTS.READ_RECEIPT, payload);
 }
 
-export function parseAroundMessagePayload(payload: AroundPayload): {
-  messages: ChatMessage[];
-  targetMessageId: number | null;
-  error: string | null;
-} {
-  return {
-    messages: Array.isArray(payload?.messages) ? payload.messages : [],
-    targetMessageId: Number.isFinite(payload?.targetMessageId)
-      ? Number(payload?.targetMessageId)
-      : null,
-    error: payload?.error ?? null,
-  };
+export function parseAroundMessagePayload(payload: unknown): AroundMessagesPayload {
+  return parseSocketServerPayload(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, payload);
 }
 
-export function parseAroundArchivedPayload(payload: AroundPayload): {
-  messages: ChatMessage[];
-  targetArchiveId: number | null;
-  error: string | null;
-} {
-  return {
-    messages: Array.isArray(payload?.messages) ? payload.messages : [],
-    targetArchiveId: Number.isFinite(payload?.targetArchiveId)
-      ? Number(payload?.targetArchiveId)
-      : null,
-    error: payload?.error ?? null,
-  };
+export function parseAroundArchivedPayload(payload: unknown): AroundArchivedPayload {
+  return parseSocketServerPayload(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, payload);
 }
 
-export function parseSearchAck(ack: unknown): Array<{
-  targetType: "hot" | "archive";
-  messageId: number | null;
-  archiveId: number | null;
-  source: "mobile" | "vscode";
-  timestamp: number;
-  preview: string;
-}> {
-  if (!isAckOk(ack)) {
-    throw new Error(getAckErrorMessage(ack, "搜索失败"));
+export function parseSearchAck(ack: unknown): SearchResult[] {
+  const parsedAck = parseSocketAck(SOCKET_EVENTS.SEARCH_MESSAGES, ack);
+  if (!isAckOk(parsedAck)) {
+    throw new Error(getAckErrorMessage(parsedAck, "搜索失败"));
   }
-  const data = getAckData<{ results?: unknown }>(ack);
-  const legacy = ack as { results?: unknown };
-  const results = data?.results ?? legacy.results;
-  return Array.isArray(results) ? results : [];
+  const data = getAckData<SearchAckData>(parsedAck);
+  if (!data) {
+    throw new Error("搜索响应缺少 data 字段");
+  }
+  return data.results;
+}
+
+export function parseChatMessageAck(ack: unknown): ChatMessage {
+  const parsedAck = parseSocketAck(SOCKET_EVENTS.CHAT_MESSAGE, ack);
+  if (!isAckOk(parsedAck)) {
+    throw new Error(getAckErrorMessage(parsedAck, "发送失败"));
+  }
+  const data = getAckData<ChatMessageAckData>(parsedAck);
+  if (!data || !data.message) {
+    throw new Error("发送响应缺少 message 字段");
+  }
+  return data.message;
 }

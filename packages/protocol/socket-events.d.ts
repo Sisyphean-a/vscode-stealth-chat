@@ -1,3 +1,39 @@
+// AUTO-GENERATED FILE. DO NOT EDIT.
+export type Unknown = unknown;
+export type NonEmptyString = string;
+export type Source = "mobile" | "vscode";
+export type ClientType = "mobile" | "vscode" | "unknown";
+export type DisplayMode = "bubble" | "log";
+export type TargetType = "hot" | "archive";
+export type NullableNumber = number | null;
+export type NullableString = string | null;
+export type Attachment = { type: string; data?: string; url?: string; filename?: string; size?: number; mimeType?: string; };
+export type MessageQuote = { messageId: number; textSnippet: string; source: Source; timestamp: number; };
+export type ChatMessage = { id?: number; clientMessageId?: NullableString; archiveId?: NullableNumber; archived?: boolean; text: string; source: Source; timestamp: number; attachments?: Array<Attachment>; quote?: MessageQuote; };
+export type Connection = { name: string; serverUrl?: string; token: string; backgroundSync?: boolean; };
+export type GlobalSettings = { serverUrl: string; forceWebsocket: boolean; autoReveal: boolean; displayMode: DisplayMode; };
+export type SearchResult = { targetType: TargetType; messageId: NullableNumber; archiveId: NullableNumber; source: Source; timestamp: number; preview: string; };
+export type AroundMessagesPayload = { messages: Array<ChatMessage>; targetMessageId: NullableNumber; error?: string | null; };
+export type AroundArchivedPayload = { messages: Array<ChatMessage>; targetArchiveId: NullableNumber; error?: string | null; };
+export type PresencePayload = { appId: string; total: number; mobile: number; vscode: number; };
+export type ReadReceiptPayload = { appId: string; clientType: ClientType; lastReadTimestamp: number; lastReadMessageId: NullableNumber; };
+export type PrependHistoryPayload = { messages: Array<ChatMessage>; hasMore: boolean; };
+export type SendFailedPayload = { clientMessageId: NullableString; error: string; };
+export type SearchResultsPayload = { keyword: string; results: Array<SearchResult>; error: string | null; };
+export type SetDisplayModePayload = { mode: DisplayMode; serverUrl: string; token: string; };
+export type ConfigLoadedPayload = { globalSettings: GlobalSettings; connections: Array<Connection>; activeConnection: string; };
+export type OperationResultPayload = { success: boolean; message: string; };
+export type TestResultPayload = { name: string; success: boolean; message: string; latency?: number; };
+export type WebviewSendMessagePayload = { text: string; attachments?: Array<Attachment>; quote?: MessageQuote; clientMessageId?: string; };
+export type SocketChatMessagePayload = { text: string; source: Source; clickUrl?: string; attachments?: Array<Attachment>; quote?: MessageQuote; clientMessageId?: string; };
+export type SocketLoadMoreHistoryPayload = { limit: number; beforeTimestamp: number; };
+export type SocketLoadAroundMessagePayload = { targetMessageId: number; windowSize?: number; };
+export type SocketLoadAroundArchivedPayload = { targetArchiveId: number; windowSize?: number; };
+export type SocketSearchPayload = { keyword: string; limit?: number; };
+export type SocketMarkReadPayload = { clientType: ClientType; lastReadTimestamp: number; lastReadMessageId?: number; };
+export type ChatMessageAckData = { clientMessageId: NullableString; message: ChatMessage; };
+export type SearchAckData = { results: Array<SearchResult>; keyword: string; limit: number; };
+
 export const SOCKET_EVENTS: Readonly<{
   CHAT_MESSAGE: "chat message";
   LOAD_HISTORY: "load history";
@@ -14,22 +50,52 @@ export const SOCKET_EVENTS: Readonly<{
   READ_RECEIPT: "read receipt";
 }>;
 
-export type AckOk<T = unknown> = {
-  ok: true;
-  data: T;
+export type SocketClientPayloadMap = {
+  "chat message": SocketChatMessagePayload;
+  "load history": number;
+  "load more history": SocketLoadMoreHistoryPayload;
+  "load around message": SocketLoadAroundMessagePayload;
+  "load around archived message": SocketLoadAroundArchivedPayload;
+  "search messages": SocketSearchPayload;
+  "mark read": SocketMarkReadPayload;
 };
 
-export type AckError = {
-  ok: false;
-  error: {
-    code: string;
-    message: string;
-  };
-  data?: unknown;
+export type SocketServerPayloadMap = {
+  "chat message": ChatMessage;
+  "history loaded": Array<ChatMessage>;
+  "more history loaded": PrependHistoryPayload;
+  "around message loaded": AroundMessagesPayload;
+  "around archived message loaded": AroundArchivedPayload;
+  "presence update": PresencePayload;
+  "read receipt": ReadReceiptPayload;
 };
 
-export function buildAckOk<T>(data: T): AckOk<T>;
-export function buildAckError(code: string, message: string, data?: unknown): AckError;
-export function isAckOk<T = unknown>(ack: unknown): ack is AckOk<T>;
+export type SocketAckDataMap = {
+  "chat message": ChatMessageAckData;
+  "search messages": SearchAckData;
+};
+
+export type SocketAckOk<T> = { ok: true; data: T };
+export type SocketAckError = { ok: false; error: { code: string; message: string }; data?: unknown };
+export type SocketAck<T> = SocketAckOk<T> | SocketAckError;
+
+export function parseSocketClientPayload<E extends keyof SocketClientPayloadMap>(
+  event: E,
+  payload: unknown
+): SocketClientPayloadMap[E];
+
+export function parseSocketServerPayload<E extends keyof SocketServerPayloadMap>(
+  event: E,
+  payload: unknown
+): SocketServerPayloadMap[E];
+
+export function parseSocketAck<E extends keyof SocketAckDataMap>(
+  event: E,
+  ack: unknown
+): SocketAck<SocketAckDataMap[E]>;
+
+export function buildAckOk<T>(data: T): SocketAckOk<T>;
+export function buildAckError(code: string, message: string, data?: unknown): SocketAckError;
+export function isAckOk<T = unknown>(ack: unknown): ack is SocketAckOk<T>;
 export function getAckData<T = unknown>(ack: unknown): T | null;
 export function getAckErrorMessage(ack: unknown, fallback?: string): string;
