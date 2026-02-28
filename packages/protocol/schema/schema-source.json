@@ -57,20 +57,8 @@
         "text": { "kind": "string" },
         "source": { "kind": "ref", "name": "Source" },
         "timestamp": { "kind": "number", "finite": true },
-        "attachments": {
-          "kind": "union",
-          "anyOf": [
-            { "kind": "array", "items": { "kind": "ref", "name": "Attachment" } },
-            { "kind": "literal", "value": null }
-          ]
-        },
-        "quote": {
-          "kind": "union",
-          "anyOf": [
-            { "kind": "ref", "name": "MessageQuote" },
-            { "kind": "literal", "value": null }
-          ]
-        }
+        "attachments": { "kind": "array", "items": { "kind": "ref", "name": "Attachment" } },
+        "quote": { "kind": "ref", "name": "MessageQuote" }
       }
     },
 

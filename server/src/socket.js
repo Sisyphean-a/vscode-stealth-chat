@@ -120,14 +120,16 @@ function buildQuoteSnapshot(quoteInput, appId) {
 }
 
 function serializeMessagePayload(message) {
-  if (!message.attachments && !message.quote) {
-    return message.text;
-  }
-  return JSON.stringify({
+  const payload = {
     text: message.text,
-    attachments: message.attachments,
-    quote: message.quote,
-  });
+  };
+  if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+    payload.attachments = message.attachments;
+  }
+  if (message.quote) {
+    payload.quote = message.quote;
+  }
+  return JSON.stringify(payload);
 }
 
 function initSocket(httpServer) {

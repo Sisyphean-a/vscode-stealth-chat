@@ -103,6 +103,22 @@ App 配置加载顺序：
 - `server/data/images/`：大图文件存储
 - `gotify_data/`：Gotify 自身数据
 
+## 数据库迁移与升级
+
+后续会频繁进行数据库结构与消息 payload 升级，统一采用“先迁移数据库，再升级服务代码”的流程，不再依赖运行时兼容分支。
+
+推荐发布顺序：
+
+1. 先执行迁移脚本（可先 dry-run）：
+
+```bash
+cd server
+npm run db:migrate:payload-v2 -- --dry-run
+npm run db:migrate:payload-v2
+```
+
+2. 确认迁移完成后，再按标准流程重启部署最新代码。
+
 ## 代码更新后的标准发布
 
 拉完最新代码后，在项目根目录执行：

@@ -1,4 +1,8 @@
-import { isHostMessage, type HostMessage, type WebviewMessage } from "../../webview-bridge/protocol";
+import {
+  parseHostMessage,
+  type HostMessage,
+  type WebviewMessage,
+} from "../../webview-bridge/protocol";
 
 type VsCodeApi = {
   postMessage: (message: unknown) => void;
@@ -18,11 +22,13 @@ export function postToHost(message: WebviewMessage): void {
 
 export function listenHostMessages(handler: (message: HostMessage) => void): () => void {
   const listener = (event: MessageEvent<unknown>) => {
-    if (!isHostMessage(event.data)) {
-      console.error("[WebView] Invalid host message", event.data);
+    try {
+      handler(parseHostMessage(event.data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[WebView] Invalid host message:", message, event.data);
       return;
     }
-    handler(event.data);
   };
   window.addEventListener("message", listener);
   return () => {

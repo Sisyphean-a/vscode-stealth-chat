@@ -144,41 +144,101 @@ function parsePositiveMessageId(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function normalizeQuote(quote) {
-  if (!quote || typeof quote !== "object") {
-    return null;
+const VALID_QUOTE_SOURCES = new Set(["mobile", "vscode"]);
+
+function normalizeAttachment(rawAttachment, rowLabel, index) {
+  if (!rawAttachment || typeof rawAttachment !== "object" || Array.isArray(rawAttachment)) {
+    throw new Error(`[DB] Invalid attachment at ${rowLabel}.attachments[${index}]`);
+  }
+
+  const type = typeof rawAttachment.type === "string" ? rawAttachment.type.trim() : "";
+  if (!type) {
+    throw new Error(`[DB] Invalid attachment type at ${rowLabel}.attachments[${index}]`);
+  }
+
+  const attachment = { type };
+  for (const key of ["data", "url", "filename", "mimeType"]) {
+    if (rawAttachment[key] === undefined) {
+      continue;
+    }
+    if (typeof rawAttachment[key] !== "string") {
+      throw new Error(`[DB] Invalid attachment field ${key} at ${rowLabel}.attachments[${index}]`);
+    }
+    attachment[key] = rawAttachment[key];
+  }
+  if (rawAttachment.size !== undefined) {
+    if (typeof rawAttachment.size !== "number" || !Number.isFinite(rawAttachment.size)) {
+      throw new Error(`[DB] Invalid attachment size at ${rowLabel}.attachments[${index}]`);
+    }
+    attachment.size = rawAttachment.size;
+  }
+  return attachment;
+}
+
+function normalizeAttachments(rawAttachments, rowLabel) {
+  if (rawAttachments === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(rawAttachments)) {
+    throw new Error(`[DB] Invalid attachments at ${rowLabel}.attachments`);
+  }
+  const normalized = [];
+  for (let index = 0; index < rawAttachments.length; index += 1) {
+    normalized.push(normalizeAttachment(rawAttachments[index], rowLabel, index));
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeQuote(quote, rowLabel) {
+  if (quote === undefined) {
+    return undefined;
+  }
+  if (!quote || typeof quote !== "object" || Array.isArray(quote)) {
+    throw new Error(`[DB] Invalid quote payload at ${rowLabel}.quote`);
   }
 
   const messageId = parsePositiveMessageId(quote.messageId);
-  const source = quote.source === "mobile" || quote.source === "vscode" ? quote.source : null;
+  const source = typeof quote.source === "string" ? quote.source : "";
   const timestamp = Number.parseInt(String(quote.timestamp ?? ""), 10);
-  if (!messageId || !source || !Number.isFinite(timestamp) || timestamp <= 0) {
-    return null;
+  if (!messageId || !VALID_QUOTE_SOURCES.has(source) || !Number.isFinite(timestamp) || timestamp <= 0) {
+    throw new Error(`[DB] Invalid quote payload at ${rowLabel}.quote`);
   }
 
-  const textSnippet = typeof quote.textSnippet === "string" ? quote.textSnippet : "";
-  return { messageId, source, timestamp, textSnippet };
+  if (typeof quote.textSnippet !== "string") {
+    throw new Error(`[DB] Invalid quote textSnippet at ${rowLabel}.quote.textSnippet`);
+  }
+
+  return { messageId, source, timestamp, textSnippet: quote.textSnippet };
 }
 
-function parseMessageText(rowText) {
-  try {
-    const parsed = JSON.parse(rowText);
-    if (parsed && typeof parsed === "object") {
-      const text = typeof parsed.text === "string" ? parsed.text : "";
-      const attachments = Array.isArray(parsed.attachments) ? parsed.attachments : null;
-      const quote = normalizeQuote(parsed.quote);
-      if (attachments || quote || Object.prototype.hasOwnProperty.call(parsed, "text")) {
-        return { text, attachments, quote };
-      }
-    }
-  } catch (error) {
-    // plain text message
+function parseMessageText(rowText, rowId) {
+  const rowLabel = `message#${parsePositiveMessageId(rowId) || "unknown"}`;
+  if (typeof rowText !== "string") {
+    throw new Error(`[DB] Invalid message text type at ${rowLabel}`);
   }
-  return { text: typeof rowText === "string" ? rowText : "", attachments: null, quote: null };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rowText);
+  } catch (error) {
+    throw new Error(`[DB] Invalid message payload JSON at ${rowLabel}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`[DB] Invalid message payload object at ${rowLabel}`);
+  }
+
+  if (typeof parsed.text !== "string") {
+    throw new Error(`[DB] Invalid message text field at ${rowLabel}.text`);
+  }
+
+  const attachments = normalizeAttachments(parsed.attachments, rowLabel);
+  const quote = normalizeQuote(parsed.quote, rowLabel);
+  return { text: parsed.text, attachments, quote };
 }
 
 function mapMessageRow(row) {
-  const parsed = parseMessageText(row.text);
+  const parsed = parseMessageText(row.text, row.id);
   const messageId = parsePositiveMessageId(row.id);
   return {
     id: messageId,
@@ -323,7 +383,8 @@ function insertMessage(options) {
 }
 
 function saveMessage(text, source, timestamp, appId = "default") {
-  return insertMessage({ text, source, timestamp, appId }) !== null;
+  const payload = JSON.stringify({ text: typeof text === "string" ? text : "" });
+  return insertMessage({ text: payload, source, timestamp, appId }) !== null;
 }
 
 function getRawMessageById(messageId, appId = "default") {

@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "protocol:generate": "node ../packages/protocol/scripts/generate-protocol.js",
+    "db:migrate:payload-v2": "node scripts/migrate-message-payload-v2.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "dev:debug": "nodemon --inspect src/index.js",

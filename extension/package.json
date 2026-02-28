@@ -146,12 +146,13 @@
   "scripts": {
     "vscode:prepublish": "npm run package",
     "protocol:generate": "node ../packages/protocol/scripts/generate-protocol.js",
+    "protocol:test": "node ../packages/protocol/scripts/protocol-boundary-smoke.js",
     "compile": "npm run check-types && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && node esbuild.js --production",
-    "check-types": "npm run protocol:generate && tsc --noEmit"
+    "check-types": "npm run protocol:generate && npm run protocol:test && tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
