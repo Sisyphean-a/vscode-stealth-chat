@@ -6,6 +6,7 @@ import { getActiveConnection } from "../utils/helpers";
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let unreadCount = 0;
+let syncIssueText = "";
 
 /**
  * 创建状态栏项
@@ -30,8 +31,11 @@ export function updateStatusBar(): void {
   const conn = getActiveConnection();
   const name = conn.name;
 
+  const icon = syncIssueText ? "$(warning)" : "$(check)";
+  const label = syncIssueText ? `${name} ${syncIssueText}` : name;
+
   if (unreadCount > 0) {
-    statusBarItem.text = `$(alert) ${name} (${unreadCount})`;
+    statusBarItem.text = `$(alert) ${label} (${unreadCount})`;
     statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground"
     );
@@ -39,7 +43,7 @@ export function updateStatusBar(): void {
       "statusBarItem.warningForeground"
     );
   } else {
-    statusBarItem.text = `$(check) ${name}`;
+    statusBarItem.text = `${icon} ${label}`;
     statusBarItem.backgroundColor = undefined;
     statusBarItem.color = undefined;
   }
@@ -72,10 +76,26 @@ export function incrementUnread(): void {
 }
 
 /**
+ * 设置未读计数
+ */
+export function setUnreadCount(value: number): void {
+  unreadCount = Math.max(0, Number.isFinite(value) ? Math.floor(value) : 0);
+  updateStatusBar();
+}
+
+/**
  * 清除未读状态
  */
 export function clearUnreadStatus(): void {
   unreadCount = 0;
+  updateStatusBar();
+}
+
+/**
+ * 设置后台同步状态提示
+ */
+export function setSyncIssue(text: string): void {
+  syncIssueText = typeof text === "string" ? text.trim() : "";
   updateStatusBar();
 }
 

@@ -6,6 +6,7 @@ const db = require("./db");
 const { IMAGES_DIR, cleanupOldImages } = require("./utils/imageStorage");
 const adminRoutes = require("./routes/admin");
 const uploadRoutes = require("./routes/upload");
+const syncRoutes = require("./routes/sync");
 
 const app = express();
 const server = http.createServer(app);
@@ -43,6 +44,7 @@ async function startServer() {
 
   app.use("/api/admin", adminRoutes);
   app.use("/api/upload", uploadRoutes);
+  app.use("/api/sync", syncRoutes);
   app.use("/packages", express.static(path.join(__dirname, "../../packages")));
   app.use(express.static(path.join(__dirname, "public")));
 

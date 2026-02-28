@@ -91,3 +91,28 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
     token: config.get<string>("secret") || "ChangeMeInProduction",
   };
 }
+
+/**
+ * 获取全部连接配置（带规范化 serverUrl）
+ */
+export function getAllConnections(): Array<Connection & { serverUrl: string }> {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const connections = config.get<Connection[]>("connections") || [];
+  const globalServerUrl = normalizeServerUrl(
+    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+  );
+
+  if (connections.length === 0) {
+    return [{
+      name: "Default",
+      serverUrl: globalServerUrl,
+      token: config.get<string>("secret") || "ChangeMeInProduction",
+    }];
+  }
+
+  return connections.map((connection) => ({
+    name: connection.name,
+    serverUrl: connection.serverUrl ? normalizeServerUrl(connection.serverUrl) : globalServerUrl,
+    token: connection.token,
+  }));
+}

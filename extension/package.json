@@ -116,6 +116,18 @@
           "type": "string",
           "default": "",
           "description": "Active connection name"
+        },
+        "tsLint.backgroundSyncEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable server-side background sync for all configured conversations"
+        },
+        "tsLint.backgroundSyncIntervalMs": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 1000,
+          "maximum": 10000,
+          "description": "Background sync polling interval in milliseconds"
         }
       }
     },

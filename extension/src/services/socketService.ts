@@ -3,7 +3,6 @@
  */
 import { io, Socket } from "socket.io-client";
 import { ChatMessage, MessageQuote, SocketCallbacks } from "../types";
-import * as messageCache from "./messageCache";
 import * as statusBar from "../ui/statusBar";
 import { getActiveConnection, getCurrentTimestamp, formatTimestamp, getDateKey } from "../utils/helpers";
 import {
@@ -213,7 +212,6 @@ export function connectToServer(
         return;
       }
 
-      messageCache.mergeHistory(safeMessages);
       logInfo(`Loading ${safeMessages.length} historical messages...`);
 
       lastDisplayedDate = "";
@@ -231,13 +229,10 @@ export function connectToServer(
       });
 
       logInfo("History loaded successfully");
-      callbacks.onHistoryLoaded?.(messageCache.getCachedMessages());
+      callbacks.onHistoryLoaded?.(safeMessages);
     });
 
     socket.on(SOCKET_EVENTS.MORE_HISTORY_LOADED, (data: { messages: ChatMessage[]; hasMore: boolean }) => {
-      if (data.messages.length > 0) {
-        messageCache.prependHistory(data.messages);
-      }
       callbacks.onMoreHistoryLoaded?.(data.messages, data.hasMore);
     });
 

@@ -157,6 +157,8 @@ npm run watch
 - `tsLint.activeConnection`：当前连接
 - `tsLint.forceWebsocket`：是否强制 websocket 传输
 - `tsLint.displayMode`：`bubble | log`
+- `tsLint.backgroundSyncEnabled`：是否开启后台增量同步
+- `tsLint.backgroundSyncIntervalMs`：后台轮询间隔（默认 4000ms）
 
 默认发送命令：`Ctrl+Shift+T`（macOS：`Cmd+Shift+T`）
 
@@ -191,6 +193,13 @@ npm run watch
 
 - `POST /api/upload`
   - 需要 `Authorization: Bearer <app-token>`
+
+### 后台同步 API
+
+- `POST /api/sync/session`
+- `POST /api/sync/pull`
+- `POST /api/sync/refresh`
+- `POST /api/sync/close`
 
 ### 健康检查
 

@@ -1,11 +1,8 @@
-/**
- * WebView Provider
- */
 import * as vscode from "vscode";
 import { getChatHtml } from "../webview-bridge/chatContent";
 import { getNonce, getActiveConnection } from "../utils/helpers";
 import * as socketService from "../services/socketService";
-import * as messageCache from "../services/messageCache";
+import * as conversationStore from "../services/conversationStore";
 import * as configService from "../services/configService";
 import * as statusBar from "../ui/statusBar";
 import { openImagePreview } from "../ui/imagePreview";
@@ -26,9 +23,7 @@ export function setWebviewView(view: vscode.WebviewView | undefined): void {
 }
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  constructor(
-    private readonly _extensionUri: vscode.Uri
-  ) {}
+  constructor(private readonly _extensionUri: vscode.Uri) {}
 
   public resolveWebviewView(
     view: vscode.WebviewView,
@@ -54,17 +49,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       });
     }
 
-    // 监听可见性变化，清除未读计数
     view.onDidChangeVisibility(() => {
       if (view.visible) {
-        statusBar.clearUnreadStatus();
+        const active = conversationStore.getActiveConversationName();
+        if (active) {
+          conversationStore.clearUnread(active);
+        }
+        statusBar.setUnreadCount(conversationStore.getTotalUnread());
+        statusBar.updateStatusBar();
       }
     });
-
-    // 如果当前可见，也清除一次（比如刚打开）
-    if (view.visible) {
-      statusBar.clearUnreadStatus();
-    }
 
     this.setupMessageHandler(view);
   }
@@ -143,14 +137,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
     });
 
-    const cached = messageCache.getCachedMessages();
+    const activeName = conversationStore.getActiveConversationName();
+    const cached = activeName ? conversationStore.getMessages(activeName) : [];
     if (cached.length > 0) {
-      // 缓存中有消息，直接发送（包括历史加载后缓存的）
       view.webview.postMessage({ type: "loadHistory", payload: cached });
     } else if (socketService.isConnected() && !socketService.isHistoryLoaded()) {
-      // 无缓存且未加载过历史，请求服务器
       socketService.loadHistory();
-      // setHistoryLoaded 在 extension.ts 的 onHistoryLoaded 回调中调用
     }
   }
 
@@ -206,10 +198,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleSearchMessages(
-    view: vscode.WebviewView,
-    payload: { keyword: string; limit?: number }
-  ): Promise<void> {
+  private async handleSearchMessages(view: vscode.WebviewView, payload: { keyword: string; limit?: number }): Promise<void> {
     if (!socketService.isConnected()) {
       view.webview.postMessage({
         type: "searchResults",
@@ -294,10 +283,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleDeleteConnection(
-    view: vscode.WebviewView,
-    payload: { name: string }
-  ): Promise<void> {
+  private async handleDeleteConnection(view: vscode.WebviewView, payload: { name: string }): Promise<void> {
     try {
       await configService.deleteConnection(payload.name);
       view.webview.postMessage({
@@ -312,10 +298,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleSetActiveConnection(
-    view: vscode.WebviewView,
-    payload: { name: string }
-  ): Promise<void> {
+  private async handleSetActiveConnection(view: vscode.WebviewView, payload: { name: string }): Promise<void> {
     try {
       await configService.setActiveConnection(payload.name);
       view.webview.postMessage({
@@ -330,10 +313,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleTestConnection(
-    view: vscode.WebviewView,
-    payload: { name: string; serverUrl: string; token: string }
-  ): Promise<void> {
+  private async handleTestConnection(view: vscode.WebviewView, payload: { name: string; serverUrl: string; token: string }): Promise<void> {
     const { name, serverUrl, token } = payload;
     const result = await socketService.testConnection(serverUrl, token);
     view.webview.postMessage({

@@ -93,6 +93,7 @@ function createSchema(database) {
   database.run("CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp DESC);");
   database.run("CREATE INDEX IF NOT EXISTS idx_app_id ON messages(app_id);");
   database.run("CREATE INDEX IF NOT EXISTS idx_app_timestamp ON messages(app_id, timestamp DESC);");
+  database.run("CREATE INDEX IF NOT EXISTS idx_app_timestamp_id ON messages(app_id, timestamp ASC, id ASC);");
   database.run("CREATE INDEX IF NOT EXISTS idx_quote_message_id ON messages(quote_message_id);");
   database.run("CREATE INDEX IF NOT EXISTS idx_client_message_id ON messages(app_id, source, client_message_id);");
 }
@@ -438,6 +439,45 @@ function getRecentMessages(limit = 50, appId = "default", beforeTimestamp = null
     return messages.reverse();
   } catch (error) {
     console.error(`[DB] Failed to get messages: ${error.message}`);
+    return [];
+  }
+}
+
+function normalizeCursor(cursor = {}) {
+  const timestamp = Number.parseInt(String(cursor.timestamp ?? cursor.ts ?? ""), 10);
+  const id = parsePositiveMessageId(cursor.id);
+  if (!Number.isFinite(timestamp) || timestamp <= 0 || !id) {
+    return { timestamp: 0, id: 0 };
+  }
+  return { timestamp, id };
+}
+
+function getMessagesAfterCursor(appId = "default", cursor = {}, limit = 50) {
+  if (!ensureInitialized()) {
+    return [];
+  }
+
+  const safeLimit = parsePositiveInt(limit, 50);
+  const { timestamp, id } = normalizeCursor(cursor);
+  try {
+    const stmt = state.db.prepare(`
+      SELECT id, text, source, timestamp
+      , client_message_id
+      FROM messages
+      WHERE app_id = ?
+        AND (timestamp > ? OR (timestamp = ? AND id > ?))
+      ORDER BY timestamp ASC, id ASC
+      LIMIT ?
+    `);
+    stmt.bind([appId, timestamp, timestamp, id, safeLimit]);
+    const messages = [];
+    while (stmt.step()) {
+      messages.push(mapMessageRow(stmt.getAsObject()));
+    }
+    stmt.free();
+    return messages;
+  } catch (error) {
+    console.error(`[DB] Failed to get messages after cursor: ${error.message}`);
     return [];
   }
 }
@@ -849,6 +889,7 @@ module.exports = {
   saveMessage,
   saveMessageRecord,
   getRecentMessages,
+  getMessagesAfterCursor,
   getMessageById,
   getMessageByClientMessageId,
   getMessagesAroundMessage,
