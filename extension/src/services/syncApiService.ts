@@ -29,6 +29,8 @@ export type SyncPullUpdate = {
   connectionName: string;
   messages: Array<{
     id?: number;
+    serverMessageId: number | null;
+    cursor: { timestamp: number; id: number } | null;
     clientMessageId?: string | null;
     archiveId?: number | null;
     archived?: boolean;

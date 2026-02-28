@@ -240,24 +240,42 @@ function parseMessageText(rowText, rowId) {
 function mapMessageRow(row) {
   const parsed = parseMessageText(row.text, row.id);
   const messageId = parsePositiveMessageId(row.id);
-  return {
-    id: messageId,
+  const timestamp = Number.parseInt(String(row.timestamp ?? ""), 10);
+  const safeTimestamp = Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+  const cursor = messageId && safeTimestamp > 0
+    ? { timestamp: safeTimestamp, id: messageId }
+    : null;
+
+  const mapped = {
     text: parsed.text,
     source: row.source,
-    timestamp: row.timestamp,
+    timestamp: safeTimestamp,
     attachments: parsed.attachments,
     quote: parsed.quote,
+    serverMessageId: messageId,
+    cursor,
     clientMessageId: typeof row.client_message_id === "string" ? row.client_message_id : null,
   };
+
+  if (messageId) {
+    mapped.id = messageId;
+  }
+
+  return mapped;
 }
 
 function mapArchivedRow(row) {
   const message = mapMessageRow(row);
+  const archiveId = parsePositiveMessageId(row.archive_id);
+  const originalMessageId = parsePositiveMessageId(row.original_message_id);
   return {
     ...message,
     appId: row.app_id,
-    archiveId: row.archive_id,
-    originalMessageId: row.original_message_id,
+    archived: true,
+    archiveId,
+    originalMessageId,
+    serverMessageId: null,
+    cursor: null,
     archivedAt: row.archived_at,
     archiveReason: row.archive_reason,
     restoredAt: row.restored_at,

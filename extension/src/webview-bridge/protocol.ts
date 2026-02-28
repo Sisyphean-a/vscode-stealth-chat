@@ -1,6 +1,8 @@
 export {
   KNOWN_HOST_TYPES,
   KNOWN_WEBVIEW_TYPES,
+  buildHostMessage,
+  buildWebviewMessage,
   isHostMessage,
   isMessageEnvelope,
   isWebviewMessage,
@@ -14,6 +16,7 @@ export type {
   ConfigLoadedPayload,
   Connection,
   GlobalSettings,
+  HostMessageBody,
   HostMessage,
   MessageQuote,
   OperationResultPayload,
@@ -22,5 +25,6 @@ export type {
   SearchResult,
   SetDisplayModePayload,
   TestResultPayload,
+  WebviewMessageBody,
   WebviewMessage,
 } from "../../../packages/protocol/host-webview.js";

@@ -8,6 +8,7 @@ import { type SyncPullUpdate } from "../services/syncApiService";
 import * as statusBar from "../ui/statusBar";
 import { ChatViewProvider, getWebviewView } from "../providers/chatViewProvider";
 import { ensureDefaultConnection } from "../services/configService";
+import { buildHostMessage, type HostMessageBody } from "../webview-bridge/protocol";
 import { ConfigChangeKind, ConfigWatcher } from "./configWatcher";
 import { registerRuntimeCommands } from "./registerCommands";
 
@@ -234,8 +235,8 @@ export class ExtensionRuntime {
     this.outputChannel.appendLine(toMessageText(message));
   }
 
-  private postToWebview(message: { type: string; payload?: unknown }): void {
-    getWebviewView()?.webview.postMessage(message);
+  private postToWebview(message: HostMessageBody): void {
+    getWebviewView()?.webview.postMessage(buildHostMessage(message));
   }
 
   private pushActiveHistoryToWebview(clearBefore: boolean): void {
@@ -246,7 +247,7 @@ export class ExtensionRuntime {
     if (clearBefore) {
       this.postToWebview({ type: "clearMessages" });
     }
-    this.postToWebview({ type: "loadHistory", payload: conversationStore.getMessages(active) });
+    this.postToWebview({ type: "loadHistory", payload: [...conversationStore.getMessages(active)] });
   }
 
   private refreshUnreadStatus(): void {
@@ -255,7 +256,8 @@ export class ExtensionRuntime {
 
   private postWebviewRuntimeConfig(): void {
     const config = vscode.workspace.getConfiguration("tsLint");
-    const displayMode = config.get<string>("displayMode") || "bubble";
+    const rawDisplayMode = config.get<string>("displayMode");
+    const displayMode: "bubble" | "log" = rawDisplayMode === "log" ? "log" : "bubble";
     const connection = getActiveConnection();
     this.postToWebview({
       type: "setDisplayMode",

@@ -9,10 +9,12 @@ import {
   MAX_SEND_RETRIES,
   RETRY_DELAY_MS,
   SEARCH_RESULT_LIMIT,
+  buildClientMessageId,
   parsePositiveInt,
 } from "/packages/chat-core/index.js";
 import {
   SOCKET_EVENTS,
+  buildSocketClientEnvelope,
   parseSocketAck,
   parseSocketClientPayload,
   parseSocketServerPayload,
@@ -52,7 +54,7 @@ export function useSocket() {
 
   const parseServerPayloadOrThrow = (event, payload) => {
     try {
-      return parseSocketServerPayload(event, payload);
+      return parseSocketServerPayload(event, payload).payload;
     } catch (error) {
       const message = readErrorText(error, "服务端消息格式错误");
       errorMsg.value = `协议错误: ${message}`;
@@ -60,9 +62,10 @@ export function useSocket() {
     }
   };
 
-  const validateClientPayloadOrThrow = (event, payload) => {
+  const validateClientPayloadOrThrow = (event, payload, options = {}) => {
     try {
-      return parseSocketClientPayload(event, payload);
+      const envelope = buildSocketClientEnvelope(event, payload, options);
+      return parseSocketClientPayload(event, envelope);
     } catch (error) {
       const message = readErrorText(error, "客户端消息格式错误");
       errorMsg.value = `协议错误: ${message}`;
@@ -87,7 +90,9 @@ export function useSocket() {
       socketConnected.value = true;
       isConnecting.value = false;
       errorMsg.value = "";
-      const historyPayload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE);
+      const historyPayload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_HISTORY, HISTORY_PAGE_SIZE, {
+        traceId: buildClientMessageId("trace"),
+      });
       socket.emit(SOCKET_EVENTS.LOAD_HISTORY, historyPayload);
       callbacks.onConnect?.();
     });
@@ -192,10 +197,10 @@ export function useSocket() {
     socketConnected.value = false;
   };
 
-  const emit = (event, data) => {
+  const emit = (event, data, options = {}) => {
     if (socket?.connected) {
       try {
-        const validated = validateClientPayloadOrThrow(event, data);
+        const validated = validateClientPayloadOrThrow(event, data, options);
         socket.emit(event, validated);
         return true;
       } catch (error) {
@@ -205,7 +210,7 @@ export function useSocket() {
     return false;
   };
 
-  const emitWithAck = (event, data, timeoutMs = ACK_TIMEOUT_MS) => {
+  const emitWithAck = (event, data, timeoutMs = ACK_TIMEOUT_MS, options = {}) => {
     return new Promise((resolve, reject) => {
       if (!socket?.connected) {
         reject(new Error("当前未连接"));
@@ -222,7 +227,7 @@ export function useSocket() {
 
       let validatedData;
       try {
-        validatedData = validateClientPayloadOrThrow(event, data);
+        validatedData = validateClientPayloadOrThrow(event, data, options);
       } catch (error) {
         clearTimeout(timer);
         reject(error instanceof Error ? error : new Error(String(error)));
@@ -241,11 +246,20 @@ export function useSocket() {
   };
 
   const sendChatMessage = async (payload) => {
+    const clientMessageId = typeof payload?.clientMessageId === "string" && payload.clientMessageId.trim()
+      ? payload.clientMessageId.trim()
+      : buildClientMessageId("mobile");
+    const requestPayload = { ...payload, clientMessageId };
     let lastError = new Error("发送失败");
     let retriesLeft = MAX_SEND_RETRIES;
     while (retriesLeft >= 0) {
       try {
-        const ack = await emitWithAck(SOCKET_EVENTS.CHAT_MESSAGE, payload, ACK_TIMEOUT_MS);
+        const ack = await emitWithAck(
+          SOCKET_EVENTS.CHAT_MESSAGE,
+          requestPayload,
+          ACK_TIMEOUT_MS,
+          { traceId: clientMessageId }
+        );
         const parsedAck = parseSocketAck(SOCKET_EVENTS.CHAT_MESSAGE, ack);
         if (isAckOk(parsedAck)) {
           const data = getAckData(parsedAck);
@@ -268,7 +282,12 @@ export function useSocket() {
   };
 
   const searchMessages = async (keyword, limit = SEARCH_RESULT_LIMIT) => {
-    const ack = await emitWithAck(SOCKET_EVENTS.SEARCH_MESSAGES, { keyword, limit }, 6000);
+    const ack = await emitWithAck(
+      SOCKET_EVENTS.SEARCH_MESSAGES,
+      { keyword, limit },
+      6000,
+      { traceId: buildClientMessageId("trace") }
+    );
     const parsedAck = parseSocketAck(SOCKET_EVENTS.SEARCH_MESSAGES, ack);
     if (!isAckOk(parsedAck)) {
       throw new Error(getAckErrorMessage(parsedAck, "搜索失败"));
@@ -288,6 +307,8 @@ export function useSocket() {
       clientType: "mobile",
       lastReadTimestamp,
       lastReadMessageId,
+    }, {
+      traceId: buildClientMessageId("trace"),
     });
     socket.emit(SOCKET_EVENTS.MARK_READ, payload);
   };
@@ -303,6 +324,8 @@ export function useSocket() {
     const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_MORE_HISTORY, {
       limit: HISTORY_PAGE_SIZE,
       beforeTimestamp,
+    }, {
+      traceId: buildClientMessageId("trace"),
     });
     socket.emit(SOCKET_EVENTS.LOAD_MORE_HISTORY, payload);
     return true;
@@ -320,6 +343,8 @@ export function useSocket() {
     const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, {
       targetMessageId: parsed,
       windowSize: DEFAULT_AROUND_WINDOW_SIZE,
+    }, {
+      traceId: buildClientMessageId("trace"),
     });
     socket.emit(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, payload);
     return true;
@@ -337,6 +362,8 @@ export function useSocket() {
     const payload = validateClientPayloadOrThrow(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, {
       targetArchiveId: parsed,
       windowSize: DEFAULT_AROUND_WINDOW_SIZE,
+    }, {
+      traceId: buildClientMessageId("trace"),
     });
     socket.emit(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, payload);
     return true;

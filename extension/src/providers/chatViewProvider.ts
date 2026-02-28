@@ -6,7 +6,11 @@ import * as conversationStore from "../services/conversationStore";
 import * as configService from "../services/configService";
 import * as statusBar from "../ui/statusBar";
 import { openImagePreview } from "../ui/imagePreview";
-import { parseWebviewMessage } from "../webview-bridge/protocol";
+import {
+  buildHostMessage,
+  parseWebviewMessage,
+  type HostMessageBody,
+} from "../webview-bridge/protocol";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -24,6 +28,10 @@ export function setWebviewView(view: vscode.WebviewView | undefined): void {
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   constructor(private readonly _extensionUri: vscode.Uri) {}
+
+  private postHostMessage(view: vscode.WebviewView, message: HostMessageBody): void {
+    view.webview.postMessage(buildHostMessage(message));
+  }
 
   public resolveWebviewView(
     view: vscode.WebviewView,
@@ -43,7 +51,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const nonce = getNonce();
       view.webview.html = getChatHtml(view.webview, this._extensionUri, nonce);
     } else if (socketService.isConnected()) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "updateStatus",
         payload: { connected: true },
       });
@@ -120,15 +128,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private handleReady(view: vscode.WebviewView): void {
-    view.webview.postMessage({
+    this.postHostMessage(view, {
       type: "updateStatus",
       payload: { connected: socketService.isConnected() },
     });
 
     const config = vscode.workspace.getConfiguration("tsLint");
-    const displayMode = config.get<string>("displayMode") || "bubble";
+    const rawDisplayMode = config.get<string>("displayMode");
+    const displayMode: "bubble" | "log" = rawDisplayMode === "log" ? "log" : "bubble";
     const activeConnection = getActiveConnection();
-    view.webview.postMessage({
+    this.postHostMessage(view, {
       type: "setDisplayMode",
       payload: {
         mode: displayMode,
@@ -140,7 +149,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const activeName = conversationStore.getActiveConversationName();
     const cached = activeName ? conversationStore.getMessages(activeName) : [];
     if (cached.length > 0) {
-      view.webview.postMessage({ type: "loadHistory", payload: cached });
+      this.postHostMessage(view, { type: "loadHistory", payload: [...cached] });
     } else if (socketService.isConnected() && !socketService.isHistoryLoaded()) {
       socketService.loadHistory();
     }
@@ -188,7 +197,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         clientMessageId: payload.clientMessageId,
       });
     } catch (error) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "sendFailed",
         payload: {
           clientMessageId: payload.clientMessageId || null,
@@ -200,7 +209,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async handleSearchMessages(view: vscode.WebviewView, payload: { keyword: string; limit?: number }): Promise<void> {
     if (!socketService.isConnected()) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "searchResults",
         payload: { keyword: payload?.keyword || "", results: [], error: "当前未连接" },
       });
@@ -210,12 +219,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const keyword = typeof payload?.keyword === "string" ? payload.keyword.trim() : "";
       const limit = Number.isFinite(payload?.limit) ? Number(payload.limit) : 50;
       const results = await socketService.searchMessages(keyword, limit);
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "searchResults",
         payload: { keyword, results, error: null },
       });
     } catch (error) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "searchResults",
         payload: {
           keyword: payload?.keyword || "",
@@ -237,7 +246,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private sendConfig(view: vscode.WebviewView): void {
-    view.webview.postMessage({
+    this.postHostMessage(view, {
       type: "configLoaded",
       payload: {
         globalSettings: configService.getGlobalSettings(),
@@ -253,12 +262,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     try {
       await configService.saveGlobalSettings(payload);
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: true, message: "Settings saved" },
       });
     } catch (error) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: false, message: `Failed to save settings: ${getErrorMessage(error)}` },
       });
@@ -271,12 +280,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     try {
       await configService.saveConnection(payload.connection, payload.originalName);
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: true, message: "Connection saved" },
       });
     } catch (error) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: false, message: `Failed to save connection: ${getErrorMessage(error)}` },
       });
@@ -286,12 +295,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleDeleteConnection(view: vscode.WebviewView, payload: { name: string }): Promise<void> {
     try {
       await configService.deleteConnection(payload.name);
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: true, message: "Connection deleted" },
       });
     } catch (error) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: false, message: `Failed to delete connection: ${getErrorMessage(error)}` },
       });
@@ -301,12 +310,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleSetActiveConnection(view: vscode.WebviewView, payload: { name: string }): Promise<void> {
     try {
       await configService.setActiveConnection(payload.name);
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: true, message: "Active connection changed" },
       });
     } catch (error) {
-      view.webview.postMessage({
+      this.postHostMessage(view, {
         type: "operationResult",
         payload: { success: false, message: `Failed to change connection: ${getErrorMessage(error)}` },
       });
@@ -316,7 +325,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleTestConnection(view: vscode.WebviewView, payload: { name: string; serverUrl: string; token: string }): Promise<void> {
     const { name, serverUrl, token } = payload;
     const result = await socketService.testConnection(serverUrl, token);
-    view.webview.postMessage({
+    this.postHostMessage(view, {
       type: "testResult",
       payload: { name, ...result },
     });

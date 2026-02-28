@@ -9,6 +9,8 @@ module.exports = {
   parseSocketClientPayload: runtime.parseSocketClientPayload,
   parseSocketServerPayload: runtime.parseSocketServerPayload,
   parseSocketAck: runtime.parseSocketAck,
+  buildSocketClientEnvelope: runtime.buildSocketClientEnvelope,
+  buildSocketServerEnvelope: runtime.buildSocketServerEnvelope,
   buildAckOk: runtime.buildAckOk,
   buildAckError: runtime.buildAckError,
   isAckOk: runtime.isAckOk,

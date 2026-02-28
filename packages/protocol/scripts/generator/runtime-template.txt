@@ -8,7 +8,16 @@ const SOCKET_SERVER_PAYLOAD_SCHEMAS = Object.freeze(PROTOCOL_SCHEMA.socketServer
 const SOCKET_ACK_DATA_SCHEMAS = Object.freeze(PROTOCOL_SCHEMA.socketAckData);
 const KNOWN_WEBVIEW_TYPES = Object.freeze(Object.keys(WEBVIEW_MESSAGE_MAP));
 const KNOWN_HOST_TYPES = Object.freeze(Object.keys(HOST_MESSAGE_MAP));
+const PROTOCOL_VERSION = 2;
 const NON_EMPTY_STRING = Object.freeze({ kind: "string", minLength: 1 });
+const FINITE_NUMBER = Object.freeze({ kind: "number", finite: true });
+const DEFAULT_ACK_OK_CODE = "OK";
+const DEFAULT_ACK_OK_MESSAGE = "OK";
+const DEFAULT_ACK_ERROR_CODE = "UNKNOWN_ERROR";
+const DEFAULT_ACK_ERROR_MESSAGE = "请求失败";
+const TRACE_RANDOM_SLICE_START = 2;
+const TRACE_RANDOM_SLICE_END = 10;
+const FALLBACK_TRACE_PREFIX = "trace";
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -23,6 +32,30 @@ function appendPath(path, key) {
 }
 function throwValidationError(path, message) {
   throw new Error("[Protocol] " + path + ": " + message);
+}
+function normalizeNonEmptyString(value, fallback) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+function normalizeFiniteNumber(value, fallback) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return fallback;
+}
+function createTraceId(prefix = FALLBACK_TRACE_PREFIX) {
+  const safePrefix = normalizeNonEmptyString(prefix, FALLBACK_TRACE_PREFIX);
+  const randomPart = Math.random().toString(16).slice(TRACE_RANDOM_SLICE_START, TRACE_RANDOM_SLICE_END);
+  return safePrefix + "-" + Date.now() + "-" + randomPart;
+}
+function normalizeTraceId(value) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  return createTraceId();
 }
 function resolveSchema(schema, defs, path) {
   if (!schema || typeof schema !== "object") {
@@ -156,12 +189,20 @@ function validateValue(schema, value, defs, path) {
   throwValidationError(path, "Unsupported schema kind: " + resolved.kind);
 }
 function isMessageEnvelope(value) {
-  return isRecord(value) && typeof value.type === "string";
+  return isRecord(value)
+    && value.v === PROTOCOL_VERSION
+    && typeof value.type === "string"
+    && typeof value.traceId === "string"
+    && value.traceId.trim().length > 0
+    && typeof value.sentAt === "number"
+    && Number.isFinite(value.sentAt);
 }
 function parseMessage(raw, schemaMap, label) {
   if (!isMessageEnvelope(raw)) {
     throw new Error("[Protocol] Invalid " + label + " message envelope");
   }
+  validateValue(NON_EMPTY_STRING, raw.traceId, DEFINITIONS, label + "." + raw.type + ".traceId");
+  validateValue(FINITE_NUMBER, raw.sentAt, DEFINITIONS, label + "." + raw.type + ".sentAt");
   const schema = schemaMap[raw.type];
   if (!schema) {
     throw new Error("[Protocol] Unknown " + label + " message type: " + raw.type);
@@ -179,6 +220,27 @@ function parseWebviewMessage(raw) {
 function parseHostMessage(raw) {
   return parseMessage(raw, HOST_MESSAGE_MAP, "host");
 }
+function buildMessageEnvelope(raw, schemaMap, label, options = {}) {
+  if (!isRecord(raw) || typeof raw.type !== "string") {
+    throw new Error("[Protocol] Invalid " + label + " message body");
+  }
+  const built = {
+    v: PROTOCOL_VERSION,
+    type: raw.type,
+    traceId: normalizeTraceId(options.traceId),
+    sentAt: normalizeFiniteNumber(options.sentAt, Date.now()),
+  };
+  if (hasOwn(raw, "payload")) {
+    built.payload = raw.payload;
+  }
+  return parseMessage(built, schemaMap, label);
+}
+function buildWebviewMessage(message, options = {}) {
+  return buildMessageEnvelope(message, WEBVIEW_MESSAGE_MAP, "webview", options);
+}
+function buildHostMessage(message, options = {}) {
+  return buildMessageEnvelope(message, HOST_MESSAGE_MAP, "host", options);
+}
 function isWebviewMessage(raw) {
   try {
     parseWebviewMessage(raw);
@@ -195,19 +257,56 @@ function isHostMessage(raw) {
     return false;
   }
 }
-function validateSocketPayload(event, payload, schemaMap, direction) {
+function validateSocketPayload(event, envelope, schemaMap, direction) {
+  if (!isRecord(envelope)) {
+    throw new Error("[Protocol] Invalid " + direction + " socket envelope: expected object");
+  }
+  if (envelope.v !== PROTOCOL_VERSION) {
+    throw new Error("[Protocol] Invalid " + direction + " socket envelope version for event: " + event);
+  }
+  if (typeof envelope.event !== "string" || envelope.event !== event) {
+    throw new Error("[Protocol] Socket envelope event mismatch: expected " + event);
+  }
+  validateValue(NON_EMPTY_STRING, envelope.traceId, DEFINITIONS, direction + "." + event + ".traceId");
+  validateValue(FINITE_NUMBER, envelope.sentAt, DEFINITIONS, direction + "." + event + ".sentAt");
+  if (hasOwn(envelope, "sessionId") && envelope.sessionId !== undefined) {
+    validateValue(NON_EMPTY_STRING, envelope.sessionId, DEFINITIONS, direction + "." + event + ".sessionId");
+  }
   const schema = schemaMap[event];
   if (!schema) {
     throw new Error("[Protocol] Unknown " + direction + " socket event: " + event);
   }
-  validateValue(schema, payload, DEFINITIONS, direction + "." + event);
-  return payload;
+  if (!hasOwn(envelope, "payload")) {
+    throw new Error("[Protocol] Missing socket payload for event: " + event);
+  }
+  validateValue(schema, envelope.payload, DEFINITIONS, direction + "." + event + ".payload");
+  return envelope;
 }
 function parseSocketClientPayload(event, payload) {
   return validateSocketPayload(event, payload, SOCKET_CLIENT_PAYLOAD_SCHEMAS, "socket.client");
 }
 function parseSocketServerPayload(event, payload) {
   return validateSocketPayload(event, payload, SOCKET_SERVER_PAYLOAD_SCHEMAS, "socket.server");
+}
+function buildSocketEnvelope(event, payload, schemaMap, direction, options = {}) {
+  const built = {
+    v: PROTOCOL_VERSION,
+    event,
+    traceId: normalizeTraceId(options.traceId),
+    sentAt: normalizeFiniteNumber(options.sentAt, Date.now()),
+    payload,
+  };
+  const sessionId = normalizeNonEmptyString(options.sessionId, "");
+  if (sessionId) {
+    built.sessionId = sessionId;
+  }
+  return validateSocketPayload(event, built, schemaMap, direction);
+}
+function buildSocketClientEnvelope(event, payload, options = {}) {
+  return buildSocketEnvelope(event, payload, SOCKET_CLIENT_PAYLOAD_SCHEMAS, "socket.client", options);
+}
+function buildSocketServerEnvelope(event, payload, options = {}) {
+  return buildSocketEnvelope(event, payload, SOCKET_SERVER_PAYLOAD_SCHEMAS, "socket.server", options);
 }
 function parseSocketAck(event, ack) {
   const dataSchema = SOCKET_ACK_DATA_SCHEMAS[event];
@@ -217,6 +316,10 @@ function parseSocketAck(event, ack) {
   if (!isRecord(ack) || typeof ack.ok !== "boolean") {
     throw new Error("[Protocol] Invalid socket ack envelope for event: " + event);
   }
+  validateValue(NON_EMPTY_STRING, ack.code, DEFINITIONS, "socket.ack." + event + ".code");
+  validateValue(NON_EMPTY_STRING, ack.message, DEFINITIONS, "socket.ack." + event + ".message");
+  validateValue(NON_EMPTY_STRING, ack.traceId, DEFINITIONS, "socket.ack." + event + ".traceId");
+  validateValue(FINITE_NUMBER, ack.serverTime, DEFINITIONS, "socket.ack." + event + ".serverTime");
   if (ack.ok === true) {
     if (!hasOwn(ack, "data")) {
       throw new Error("[Protocol] Missing ack.data for event: " + event);
@@ -224,24 +327,26 @@ function parseSocketAck(event, ack) {
     validateValue(dataSchema, ack.data, DEFINITIONS, "socket.ack." + event + ".data");
     return ack;
   }
-  if (!isRecord(ack.error)) {
-    throw new Error("[Protocol] Missing ack.error for event: " + event);
-  }
-  validateValue(NON_EMPTY_STRING, ack.error.code, DEFINITIONS, "socket.ack." + event + ".error.code");
-  validateValue(NON_EMPTY_STRING, ack.error.message, DEFINITIONS, "socket.ack." + event + ".error.message");
   return ack;
 }
-function buildAckOk(data) {
-  return { ok: true, data };
+function buildAckOk(options = {}) {
+  return {
+    ok: true,
+    code: DEFAULT_ACK_OK_CODE,
+    message: normalizeNonEmptyString(options.message, DEFAULT_ACK_OK_MESSAGE),
+    traceId: normalizeTraceId(options.traceId),
+    serverTime: normalizeFiniteNumber(options.serverTime, Date.now()),
+    data: options.data,
+  };
 }
-function buildAckError(code, message, data = null) {
+function buildAckError(options = {}) {
   return {
     ok: false,
-    error: {
-      code: typeof code === "string" && code.trim() ? code.trim() : "UNKNOWN_ERROR",
-      message: typeof message === "string" && message.trim() ? message.trim() : "请求失败",
-    },
-    data,
+    code: normalizeNonEmptyString(options.code, DEFAULT_ACK_ERROR_CODE),
+    message: normalizeNonEmptyString(options.message, DEFAULT_ACK_ERROR_MESSAGE),
+    traceId: normalizeTraceId(options.traceId),
+    serverTime: normalizeFiniteNumber(options.serverTime, Date.now()),
+    data: options.data,
   };
 }
 function isAckOk(ack) {
@@ -256,12 +361,6 @@ function getAckData(ack) {
 function getAckErrorMessage(ack, fallback = "请求失败") {
   if (!isRecord(ack)) {
     return fallback;
-  }
-  if (isRecord(ack.error) && typeof ack.error.message === "string" && ack.error.message.trim()) {
-    return ack.error.message;
-  }
-  if (typeof ack.error === "string" && ack.error.trim()) {
-    return ack.error;
   }
   if (typeof ack.message === "string" && ack.message.trim()) {
     return ack.message;
@@ -282,9 +381,13 @@ export {
   parseHostMessage,
   isWebviewMessage,
   isHostMessage,
+  buildWebviewMessage,
+  buildHostMessage,
   parseSocketClientPayload,
   parseSocketServerPayload,
   parseSocketAck,
+  buildSocketClientEnvelope,
+  buildSocketServerEnvelope,
   buildAckOk,
   buildAckError,
   isAckOk,

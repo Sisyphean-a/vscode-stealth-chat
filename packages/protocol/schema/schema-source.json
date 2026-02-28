@@ -21,6 +21,21 @@
         { "kind": "literal", "value": null }
       ]
     },
+    "Cursor": {
+      "kind": "object",
+      "required": ["timestamp", "id"],
+      "properties": {
+        "timestamp": { "kind": "number", "finite": true },
+        "id": { "kind": "number", "finite": true }
+      }
+    },
+    "NullableCursor": {
+      "kind": "union",
+      "anyOf": [
+        { "kind": "ref", "name": "Cursor" },
+        { "kind": "literal", "value": null }
+      ]
+    },
 
     "Attachment": {
       "kind": "object",
@@ -48,9 +63,11 @@
 
     "ChatMessage": {
       "kind": "object",
-      "required": ["text", "source", "timestamp"],
+      "required": ["text", "source", "timestamp", "serverMessageId", "cursor"],
       "properties": {
         "id": { "kind": "number", "finite": true },
+        "serverMessageId": { "kind": "ref", "name": "NullableNumber" },
+        "cursor": { "kind": "ref", "name": "NullableCursor" },
         "clientMessageId": { "kind": "ref", "name": "NullableString" },
         "archiveId": { "kind": "ref", "name": "NullableNumber" },
         "archived": { "kind": "boolean" },
@@ -238,7 +255,7 @@
 
     "SocketChatMessagePayload": {
       "kind": "object",
-      "required": ["text", "source"],
+      "required": ["text", "source", "clientMessageId"],
       "properties": {
         "text": { "kind": "string" },
         "source": { "kind": "ref", "name": "Source" },

@@ -1,7 +1,8 @@
 import {
+  buildWebviewMessage,
   parseHostMessage,
   type HostMessage,
-  type WebviewMessage,
+  type WebviewMessageBody,
 } from "../../webview-bridge/protocol";
 
 type VsCodeApi = {
@@ -16,8 +17,8 @@ declare global {
 
 const vscode = acquireVsCodeApi();
 
-export function postToHost(message: WebviewMessage): void {
-  vscode.postMessage(message);
+export function postToHost(message: WebviewMessageBody): void {
+  vscode.postMessage(buildWebviewMessage(message));
 }
 
 export function listenHostMessages(handler: (message: HostMessage) => void): () => void {

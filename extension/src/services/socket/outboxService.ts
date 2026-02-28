@@ -1,6 +1,6 @@
 import type { ChatMessage, MessageQuote } from "../../types";
 import { ACK_TIMEOUT_MS, MAX_SEND_RETRIES, RETRY_DELAY_MS } from "../../../../packages/chat-core/index.js";
-import { SOCKET_EVENTS } from "../../../../packages/protocol/socket-events.js";
+import { SOCKET_EVENTS, type SocketClientPayloadMap } from "../../../../packages/protocol/socket-events.js";
 import { parseChatMessageAck } from "./payloadParser";
 
 export type SendMessageInput = {
@@ -18,14 +18,20 @@ export type SendMessageInput = {
   clientMessageId?: string;
 };
 
+type NormalizedSendMessageInput = SendMessageInput & {
+  clientMessageId: string;
+};
+
 type EmitWithAck = (
-  event: string,
-  payload: unknown,
-  handler: (ack: unknown) => void
+  event: keyof SocketClientPayloadMap,
+  payload: SocketClientPayloadMap[keyof SocketClientPayloadMap],
+  handler: (ack: unknown) => void,
+  options?: { traceId?: string; sessionId?: string }
 ) => void;
 
 type SendTask = {
-  payload: SendMessageInput;
+  payload: NormalizedSendMessageInput;
+  traceId: string;
   retriesLeft: number;
   resolve: (message: ChatMessage) => void;
   reject: (error: Error) => void;
@@ -41,10 +47,11 @@ export class OutboxService {
     this.emitWithAck = emitWithAck;
   }
 
-  public enqueue(payload: SendMessageInput): Promise<ChatMessage> {
+  public enqueue(payload: NormalizedSendMessageInput, traceId: string): Promise<ChatMessage> {
     return new Promise((resolve, reject) => {
       this.queue.push({
         payload,
+        traceId,
         retriesLeft: MAX_SEND_RETRIES,
         resolve,
         reject,
@@ -72,7 +79,7 @@ export class OutboxService {
       while (this.queue.length > 0) {
         const task = this.queue[0];
         try {
-          const sent = await this.sendWithAck(this.emitWithAck, task.payload);
+          const sent = await this.sendWithAck(this.emitWithAck, task);
           this.queue.shift();
           task.resolve(sent);
         } catch (error) {
@@ -91,7 +98,7 @@ export class OutboxService {
     }
   }
 
-  private sendWithAck(emitWithAck: EmitWithAck, payload: SendMessageInput): Promise<ChatMessage> {
+  private sendWithAck(emitWithAck: EmitWithAck, task: SendTask): Promise<ChatMessage> {
     return new Promise((resolve, reject) => {
       let timedOut = false;
       const timer = setTimeout(() => {
@@ -99,7 +106,7 @@ export class OutboxService {
         reject(new Error("消息确认超时"));
       }, ACK_TIMEOUT_MS);
 
-      emitWithAck(SOCKET_EVENTS.CHAT_MESSAGE, payload, (ack: unknown) => {
+      emitWithAck(SOCKET_EVENTS.CHAT_MESSAGE, task.payload, (ack: unknown) => {
         if (timedOut) {
           return;
         }
@@ -109,6 +116,8 @@ export class OutboxService {
         } catch (error) {
           reject(error instanceof Error ? error : new Error(String(error)));
         }
+      }, {
+        traceId: task.traceId,
       });
     });
   }

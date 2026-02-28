@@ -13,6 +13,7 @@ const {
   SOCKET_EVENTS,
   buildAckError,
   buildAckOk,
+  buildSocketServerEnvelope,
   parseSocketClientPayload,
   parseSocketServerPayload,
 } = require("../../packages/protocol/socket-events.cjs");
@@ -22,6 +23,9 @@ const {
 const CLICK_URL = config.CLICK_URL;
 const MAX_SEARCH_LIMIT = 100;
 const VALID_CLIENT_TYPES = new Set(["mobile", "vscode", "unknown"]);
+const TRACE_RANDOM_SLICE_START = 2;
+const TRACE_RANDOM_SLICE_END = 10;
+const TRACE_PREFIX_SERVER = "srv";
 
 function normalizeWindowSize(input) {
   const parsed = Number.parseInt(String(input ?? ""), 10);
@@ -50,12 +54,24 @@ function safeAck(ack, payload) {
   }
 }
 
-function parseClientPayload(event, payload) {
+function createTraceId(prefix = TRACE_PREFIX_SERVER) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(TRACE_RANDOM_SLICE_START, TRACE_RANDOM_SLICE_END)}`;
+}
+
+function parseClientEnvelope(event, payload) {
   return parseSocketClientPayload(event, payload);
 }
 
-function emitServerPayload(target, event, payload) {
-  const validated = parseSocketServerPayload(event, payload);
+function readTraceId(rawEnvelope, fallbackPrefix = TRACE_PREFIX_SERVER) {
+  if (rawEnvelope && typeof rawEnvelope === "object" && typeof rawEnvelope.traceId === "string" && rawEnvelope.traceId.trim()) {
+    return rawEnvelope.traceId.trim();
+  }
+  return createTraceId(fallbackPrefix);
+}
+
+function emitServerPayload(target, event, payload, traceId = createTraceId()) {
+  const envelope = buildSocketServerEnvelope(event, payload, { traceId });
+  const validated = parseSocketServerPayload(event, envelope);
   target.emit(event, validated);
 }
 
@@ -167,13 +183,15 @@ function initSocket(httpServer) {
     // Handle chat messages
     socket.on(SOCKET_EVENTS.CHAT_MESSAGE, async (msg, ack) => {
       try {
-        const request = parseClientPayload(SOCKET_EVENTS.CHAT_MESSAGE, msg);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.CHAT_MESSAGE, msg);
+        const requestTraceId = requestEnvelope.traceId;
+        const request = requestEnvelope.payload;
         const source = request.source;
         const text = request.text;
         const hasAttachments = request.attachments && request.attachments.length > 0;
         console.log(`[Socket] Message from ${source} (App: ${app.name}): text=${text ? text.substring(0, 30) : "(empty)"}, attachments=${hasAttachments ? request.attachments.length : 0}`);
 
-        const clientMessageId = typeof request.clientMessageId === "string" ? request.clientMessageId.trim() : "";
+        const clientMessageId = request.clientMessageId.trim();
         let finalMessage = { text, source };
         const timestamp = Date.now();
         const quote = buildQuoteSnapshot(request.quote, appId);
@@ -238,17 +256,20 @@ function initSocket(httpServer) {
           timestamp,
           appId,
           quoteMessageId: quote?.messageId ?? null,
-          clientMessageId: clientMessageId || null,
+          clientMessageId,
         });
-        if (!savedMessage || !savedMessage.id) {
+        if (!savedMessage || !savedMessage.serverMessageId) {
           throw new Error("Failed to persist message");
         }
 
         // Broadcast ONLY to this App's room
-        emitServerPayload(io.to(appId), SOCKET_EVENTS.CHAT_MESSAGE, savedMessage);
+        emitServerPayload(io.to(appId), SOCKET_EVENTS.CHAT_MESSAGE, savedMessage, requestTraceId);
         safeAck(ack, buildAckOk({
-          clientMessageId: clientMessageId || null,
-          message: savedMessage,
+          traceId: requestTraceId,
+          data: {
+            clientMessageId,
+            message: savedMessage,
+          },
         }));
 
         // Handle VS Code -> Mobile Notification
@@ -267,11 +288,16 @@ function initSocket(httpServer) {
         }
       } catch (error) {
         console.error("[Socket] Error processing message:", error);
-        safeAck(ack, buildAckError(
-          "CHAT_MESSAGE_FAILED",
-          error.message || "Failed to process message",
-          { clientMessageId: typeof msg?.clientMessageId === "string" ? msg.clientMessageId : null },
-        ));
+        safeAck(ack, buildAckError({
+          traceId: readTraceId(msg, "chat"),
+          code: "CHAT_MESSAGE_FAILED",
+          message: error.message || "Failed to process message",
+          data: {
+            clientMessageId: typeof msg?.payload?.clientMessageId === "string"
+              ? msg.payload.clientMessageId
+              : null,
+          },
+        }));
         socket.emit("error", {
           message: error.message || "Failed to process message",
         });
@@ -279,24 +305,26 @@ function initSocket(httpServer) {
     });
 
     // Handle history loading request
-    socket.on(SOCKET_EVENTS.LOAD_HISTORY, (limit = 50) => {
+    socket.on(SOCKET_EVENTS.LOAD_HISTORY, (data) => {
       try {
-        const safeLimit = parseClientPayload(SOCKET_EVENTS.LOAD_HISTORY, limit);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.LOAD_HISTORY, data);
+        const safeLimit = requestEnvelope.payload;
         console.log(
           `[Socket] Loading history (limit: ${safeLimit}) for ${socket.id} (App: ${app.name})`,
         );
         const messages = db.getRecentMessages(safeLimit, appId);
-        emitServerPayload(socket, SOCKET_EVENTS.HISTORY_LOADED, messages);
+        emitServerPayload(socket, SOCKET_EVENTS.HISTORY_LOADED, messages, requestEnvelope.traceId);
       } catch (error) {
         console.error(`[Socket] "load history" error:`, error);
-        emitServerPayload(socket, SOCKET_EVENTS.HISTORY_LOADED, []);
+        emitServerPayload(socket, SOCKET_EVENTS.HISTORY_LOADED, [], readTraceId(data, "history"));
       }
     });
 
     // Handle load more history request
     socket.on(SOCKET_EVENTS.LOAD_MORE_HISTORY, (data) => {
       try {
-        const request = parseClientPayload(SOCKET_EVENTS.LOAD_MORE_HISTORY, data);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.LOAD_MORE_HISTORY, data);
+        const request = requestEnvelope.payload;
         const { limit, beforeTimestamp } = request;
         console.log(
           `[Socket] Loading more history (limit: ${limit}, before: ${beforeTimestamp}) for ${socket.id} (App: ${app.name})`,
@@ -305,23 +333,24 @@ function initSocket(httpServer) {
         emitServerPayload(socket, SOCKET_EVENTS.MORE_HISTORY_LOADED, {
           messages,
           hasMore: messages.length === limit,
-        });
+        }, requestEnvelope.traceId);
       } catch (err) {
         console.error(`[Socket] "load more history" error:`, err);
-        emitServerPayload(socket, SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages: [], hasMore: false });
+        emitServerPayload(socket, SOCKET_EVENTS.MORE_HISTORY_LOADED, { messages: [], hasMore: false }, readTraceId(data, "history-more"));
       }
     });
 
     socket.on(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, (data) => {
       try {
-        const request = parseClientPayload(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, data);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.LOAD_AROUND_MESSAGE, data);
+        const request = requestEnvelope.payload;
         const targetMessageId = Number.parseInt(String(request.targetMessageId ?? ""), 10);
         if (!Number.isFinite(targetMessageId) || targetMessageId <= 0) {
           emitServerPayload(socket, SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
             messages: [],
             targetMessageId: null,
             error: "Invalid target message id",
-          });
+          }, requestEnvelope.traceId);
           return;
         }
 
@@ -331,7 +360,7 @@ function initSocket(httpServer) {
             messages: [],
             targetMessageId,
             error: "Target message not found",
-          });
+          }, requestEnvelope.traceId);
           return;
         }
 
@@ -341,27 +370,28 @@ function initSocket(httpServer) {
           messages,
           targetMessageId,
           error: null,
-        });
+        }, requestEnvelope.traceId);
       } catch (error) {
         console.error(`[Socket] "load around message" error:`, error);
         emitServerPayload(socket, SOCKET_EVENTS.AROUND_MESSAGE_LOADED, {
           messages: [],
           targetMessageId: null,
           error: error.message || "Failed to load message context",
-        });
+        }, readTraceId(data, "around-message"));
       }
     });
 
     socket.on(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, (data) => {
       try {
-        const request = parseClientPayload(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, data);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.LOAD_AROUND_ARCHIVED_MESSAGE, data);
+        const request = requestEnvelope.payload;
         const targetArchiveId = Number.parseInt(String(request.targetArchiveId ?? ""), 10);
         if (!Number.isFinite(targetArchiveId) || targetArchiveId <= 0) {
           emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
             messages: [],
             targetArchiveId: null,
             error: "Invalid target archive id",
-          });
+          }, requestEnvelope.traceId);
           return;
         }
 
@@ -372,44 +402,57 @@ function initSocket(httpServer) {
             messages: [],
             targetArchiveId,
             error: "Target archive message not found",
-          });
+          }, requestEnvelope.traceId);
           return;
         }
         emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
           messages,
           targetArchiveId,
           error: null,
-        });
+        }, requestEnvelope.traceId);
       } catch (error) {
         console.error(`[Socket] "load around archived message" error:`, error);
         emitServerPayload(socket, SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, {
           messages: [],
           targetArchiveId: null,
           error: error.message || "Failed to load archived context",
-        });
+        }, readTraceId(data, "around-archive"));
       }
     });
 
     socket.on(SOCKET_EVENTS.SEARCH_MESSAGES, (data, ack) => {
       try {
-        const request = parseClientPayload(SOCKET_EVENTS.SEARCH_MESSAGES, data);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.SEARCH_MESSAGES, data);
+        const request = requestEnvelope.payload;
         const keyword = request.keyword.trim();
         if (!keyword) {
-          safeAck(ack, buildAckError("SEARCH_KEYWORD_REQUIRED", "Keyword is required"));
+          safeAck(ack, buildAckError({
+            traceId: requestEnvelope.traceId,
+            code: "SEARCH_KEYWORD_REQUIRED",
+            message: "Keyword is required",
+          }));
           return;
         }
         const limit = normalizeSearchLimit(request.limit);
         const results = db.searchMessages({ appId, keyword, limit });
-        safeAck(ack, buildAckOk({ results, keyword, limit }));
+        safeAck(ack, buildAckOk({
+          traceId: requestEnvelope.traceId,
+          data: { results, keyword, limit },
+        }));
       } catch (error) {
         console.error(`[Socket] "search messages" error:`, error);
-        safeAck(ack, buildAckError("SEARCH_FAILED", error.message || "Search failed"));
+        safeAck(ack, buildAckError({
+          traceId: readTraceId(data, "search"),
+          code: "SEARCH_FAILED",
+          message: error.message || "Search failed",
+        }));
       }
     });
 
     socket.on(SOCKET_EVENTS.MARK_READ, (data) => {
       try {
-        const request = parseClientPayload(SOCKET_EVENTS.MARK_READ, data);
+        const requestEnvelope = parseClientEnvelope(SOCKET_EVENTS.MARK_READ, data);
+        const request = requestEnvelope.payload;
         const lastReadTimestamp = Number.parseInt(String(request.lastReadTimestamp ?? ""), 10);
         if (!Number.isFinite(lastReadTimestamp) || lastReadTimestamp <= 0) {
           return;
@@ -423,7 +466,7 @@ function initSocket(httpServer) {
             ? lastReadMessageId
             : null,
         };
-        emitServerPayload(socket.to(appId), SOCKET_EVENTS.READ_RECEIPT, payload);
+        emitServerPayload(socket.to(appId), SOCKET_EVENTS.READ_RECEIPT, payload, requestEnvelope.traceId);
       } catch (error) {
         console.error(`[Socket] "mark read" error:`, error);
       }

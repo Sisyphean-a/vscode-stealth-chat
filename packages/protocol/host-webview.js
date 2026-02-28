@@ -7,4 +7,6 @@ export {
   parseHostMessage,
   isWebviewMessage,
   isHostMessage,
+  buildWebviewMessage,
+  buildHostMessage,
 } from "./protocol-runtime.js";

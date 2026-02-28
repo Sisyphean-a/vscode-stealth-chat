@@ -7,6 +7,8 @@ export {
   parseSocketClientPayload,
   parseSocketServerPayload,
   parseSocketAck,
+  buildSocketClientEnvelope,
+  buildSocketServerEnvelope,
   buildAckOk,
   buildAckError,
   isAckOk,

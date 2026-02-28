@@ -7,6 +7,8 @@ function emitHostWebviewJs(generatedNote) {
   parseHostMessage,
   isWebviewMessage,
   isHostMessage,
+  buildWebviewMessage,
+  buildHostMessage,
 } from "./protocol-runtime.js";
 `;
 }
@@ -20,6 +22,8 @@ function emitSocketEventsJs(generatedNote) {
   parseSocketClientPayload,
   parseSocketServerPayload,
   parseSocketAck,
+  buildSocketClientEnvelope,
+  buildSocketServerEnvelope,
   buildAckOk,
   buildAckError,
   isAckOk,
@@ -40,6 +44,8 @@ module.exports = {
   parseSocketClientPayload: runtime.parseSocketClientPayload,
   parseSocketServerPayload: runtime.parseSocketServerPayload,
   parseSocketAck: runtime.parseSocketAck,
+  buildSocketClientEnvelope: runtime.buildSocketClientEnvelope,
+  buildSocketServerEnvelope: runtime.buildSocketServerEnvelope,
   buildAckOk: runtime.buildAckOk,
   buildAckError: runtime.buildAckError,
   isAckOk: runtime.isAckOk,

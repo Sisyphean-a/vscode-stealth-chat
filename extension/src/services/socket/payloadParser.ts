@@ -16,19 +16,19 @@ import {
 } from "../../../../packages/protocol/socket-events.js";
 
 export function parsePresencePayload(payload: unknown): PresencePayload {
-  return parseSocketServerPayload(SOCKET_EVENTS.PRESENCE_UPDATE, payload);
+  return parseSocketServerPayload(SOCKET_EVENTS.PRESENCE_UPDATE, payload).payload;
 }
 
 export function parseReadReceiptPayload(payload: unknown): ReadReceiptPayload {
-  return parseSocketServerPayload(SOCKET_EVENTS.READ_RECEIPT, payload);
+  return parseSocketServerPayload(SOCKET_EVENTS.READ_RECEIPT, payload).payload;
 }
 
 export function parseAroundMessagePayload(payload: unknown): AroundMessagesPayload {
-  return parseSocketServerPayload(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, payload);
+  return parseSocketServerPayload(SOCKET_EVENTS.AROUND_MESSAGE_LOADED, payload).payload;
 }
 
 export function parseAroundArchivedPayload(payload: unknown): AroundArchivedPayload {
-  return parseSocketServerPayload(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, payload);
+  return parseSocketServerPayload(SOCKET_EVENTS.AROUND_ARCHIVED_MESSAGE_LOADED, payload).payload;
 }
 
 export function parseSearchAck(ack: unknown): SearchResult[] {

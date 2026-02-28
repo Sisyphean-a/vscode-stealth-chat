@@ -10,6 +10,7 @@ import {
 } from "../../../packages/chat-core/index.js";
 import {
   SOCKET_EVENTS,
+  buildSocketClientEnvelope,
   parseSocketClientPayload,
   parseSocketServerPayload,
   type SocketClientPayloadMap,
@@ -34,17 +35,31 @@ let activeCallbacks: SocketCallbacks = {};
 const historyLogger = new HistoryLogger();
 const outboxService = new OutboxService();
 
-function emitWithAck(event: string, payload: unknown, handler: (ack: unknown) => void): void {
+type EmitOptions = {
+  traceId?: string;
+  sessionId?: string;
+};
+
+function emitWithAck<E extends keyof SocketClientPayloadMap>(
+  event: E,
+  payload: SocketClientPayloadMap[E],
+  handler: (ack: unknown) => void,
+  options: EmitOptions = {}
+): void {
   if (!socket?.connected) {
     throw new Error("当前未连接");
   }
-  const safeEvent = event as keyof SocketClientPayloadMap;
-  const validatedPayload = parseSocketClientPayload(safeEvent, payload);
-  socket.emit(safeEvent, validatedPayload, handler);
+  const envelope = buildSocketClientEnvelope(event, payload, options);
+  const validatedPayload = parseSocketClientPayload(event, envelope);
+  socket.emit(event, validatedPayload, handler);
 }
 
 function ensureClientMessageId(input?: string): string {
   return buildClientMessageId("vscode", input);
+}
+
+function ensureTraceId(input?: string): string {
+  return buildClientMessageId("trace", input);
 }
 
 function onValidatedServerPayload<E extends keyof SocketServerPayloadMap>(
@@ -54,7 +69,7 @@ function onValidatedServerPayload<E extends keyof SocketServerPayloadMap>(
 ): void {
   try {
     const validated = parseSocketServerPayload(event, payload);
-    handler(validated);
+    handler(validated.payload as SocketServerPayloadMap[E]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     historyLogger.logError(message);
@@ -63,12 +78,14 @@ function onValidatedServerPayload<E extends keyof SocketServerPayloadMap>(
 
 function emitValidatedClientPayload<E extends keyof SocketClientPayloadMap>(
   event: E,
-  payload: SocketClientPayloadMap[E]
+  payload: SocketClientPayloadMap[E],
+  options: EmitOptions = {}
 ): void {
   if (!socket) {
     return;
   }
-  const validated = parseSocketClientPayload(event, payload);
+  const envelope = buildSocketClientEnvelope(event, payload, options);
+  const validated = parseSocketClientPayload(event, envelope);
   socket.emit(event, validated);
 }
 
@@ -192,11 +209,11 @@ export function connectToServer(
 }
 
 export function sendChatMessage(input: SendMessageInput): Promise<ChatMessage> {
-  const payload: SendMessageInput = {
+  const payload: SendMessageInput & { clientMessageId: string } = {
     ...input,
     clientMessageId: ensureClientMessageId(input.clientMessageId),
   };
-  const pending = outboxService.enqueue(payload);
+  const pending = outboxService.enqueue(payload, ensureTraceId(payload.clientMessageId));
   if (socket?.connected) {
     void outboxService.flush();
   }
@@ -222,10 +239,13 @@ export function searchMessages(
     return Promise.resolve([]);
   }
   return new Promise((resolve, reject) => {
-    const payload = parseSocketClientPayload(SOCKET_EVENTS.SEARCH_MESSAGES, {
+    const envelope = buildSocketClientEnvelope(SOCKET_EVENTS.SEARCH_MESSAGES, {
       keyword: safeKeyword,
       limit,
+    }, {
+      traceId: ensureTraceId(),
     });
+    const payload = parseSocketClientPayload(SOCKET_EVENTS.SEARCH_MESSAGES, envelope);
     socket?.emit(SOCKET_EVENTS.SEARCH_MESSAGES, payload, (ack: unknown) => {
       try {
         resolve(parseSearchAck(ack));
