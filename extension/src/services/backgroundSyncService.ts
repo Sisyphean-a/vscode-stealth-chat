@@ -264,12 +264,10 @@ export class BackgroundSyncService {
       effective.push(update);
     }
 
-    if (effective.length > 0) {
+    if (effective.length > 0 && totalMessages > 0) {
       this.onUpdates(effective);
       this.persistCursorsSoon();
-      if (totalMessages > 0) {
-        this.log(`pull updates: ${pool.serverUrl}, conversations=${effective.length}, messages=${totalMessages}`);
-      }
+      this.log(`pull updates: ${pool.serverUrl}, conversations=${effective.length}, messages=${totalMessages}`);
     }
 
     if (pool.unhealthy) {

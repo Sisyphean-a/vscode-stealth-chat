@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { Connection } from "./types";
+import { ChatMessage, Connection, SocketCallbacks } from "./types";
 import { getActiveConnection, getAllConnections } from "./utils/helpers";
 import * as socketService from "./services/socketService";
 import * as conversationStore from "./services/conversationStore";
@@ -8,10 +8,8 @@ import { type SyncPullUpdate } from "./services/syncApiService";
 import * as statusBar from "./ui/statusBar";
 import { ChatViewProvider, getWebviewView } from "./providers/chatViewProvider";
 import { ensureDefaultConnection } from "./services/configService";
-
 const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 const DEFAULT_BACKGROUND_SYNC_INTERVAL_MS = 4000;
-
 let outputChannel: vscode.OutputChannel;
 let backgroundSync: BackgroundSyncService | undefined;
 export async function activate(context: vscode.ExtensionContext) {
@@ -74,7 +72,8 @@ function applyBackgroundSyncConfig(): void {
   const syncConnections = getAllConnections()
     .filter((connection) => connection.backgroundSync !== false);
 
-  statusBar.setSyncIssue(enabled ? "" : "sync-off");
+  const syncReady = enabled && syncConnections.length > 0;
+  statusBar.setSyncIssue(syncReady ? "" : "sync-off");
 
   backgroundSync.configure({
     connections: syncConnections,
@@ -84,20 +83,20 @@ function applyBackgroundSyncConfig(): void {
   });
 }
 
-function connectActiveSocket(): void {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  const connection = getActiveConnection();
-  const forceWebsocket = config.get<boolean>("forceWebsocket") || false;
-
-  conversationStore.setActiveConversation(connection.name);
-  conversationStore.clearUnread(connection.name);
+function activateConversation(connectionName: string): void {
+  conversationStore.setActiveConversation(connectionName);
+  conversationStore.clearUnread(connectionName);
   refreshUnreadStatus();
+}
 
+function resetSocketState(): void {
   socketService.disconnectSocket();
   socketService.resetHistoryLoaded();
   socketService.resetLastDisplayedDate();
+}
 
-  socketService.connectToServer(connection.serverUrl, connection.token, forceWebsocket, {
+function buildSocketCallbacks(connectionName: string): SocketCallbacks {
+  return {
     onConnect: () => {
       statusBar.updateStatusBar();
       postToWebview({ type: "updateStatus", payload: { connected: true } });
@@ -111,31 +110,27 @@ function connectActiveSocket(): void {
     },
     onMessage: (msg) => {
       applyIncomingMessages({
-        connectionName: connection.name,
+        connectionName,
         messages: [msg],
-        fromBackgroundSync: false,
       });
     },
     onHistoryLoaded: (messages) => {
-      conversationStore.mergeMessagesForConnection(connection.name, messages);
+      conversationStore.mergeMessagesForConnection(connectionName, messages);
       pushActiveHistoryToWebview(true);
     },
     onMoreHistoryLoaded: (messages, hasMore) => {
-      conversationStore.mergeMessagesForConnection(connection.name, messages);
-      postToWebview({
-        type: "prependHistory",
-        payload: { messages, hasMore },
-      });
+      conversationStore.mergeMessagesForConnection(connectionName, messages);
+      postToWebview({ type: "prependHistory", payload: { messages, hasMore } });
     },
     onAroundMessageLoaded: (payload) => {
       if (payload.messages.length > 0) {
-        conversationStore.mergeMessagesForConnection(connection.name, payload.messages);
+        conversationStore.mergeMessagesForConnection(connectionName, payload.messages);
       }
       postToWebview({ type: "aroundMessagesLoaded", payload });
     },
     onAroundArchivedMessageLoaded: (payload) => {
       if (payload.messages.length > 0) {
-        conversationStore.mergeMessagesForConnection(connection.name, payload.messages);
+        conversationStore.mergeMessagesForConnection(connectionName, payload.messages);
       }
       postToWebview({ type: "aroundArchivedMessagesLoaded", payload });
     },
@@ -145,16 +140,23 @@ function connectActiveSocket(): void {
     onReadReceipt: (payload) => {
       postToWebview({ type: "readReceipt", payload });
     },
-  });
+  };
+}
+
+function connectActiveSocket(): void {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const connection = getActiveConnection();
+  const forceWebsocket = config.get<boolean>("forceWebsocket") || false;
+
+  activateConversation(connection.name);
+  resetSocketState();
+
+  socketService.connectToServer(connection.serverUrl, connection.token, forceWebsocket, buildSocketCallbacks(connection.name));
 
   postWebviewRuntimeConfig();
 }
 
-function applyIncomingMessages(options: {
-  connectionName: string;
-  messages: any[];
-  fromBackgroundSync: boolean;
-}): void {
+function applyIncomingMessages(options: { connectionName: string; messages: ChatMessage[] }): void {
   const activeConnection = conversationStore.getActiveConversationName();
   const webview = getWebviewView();
 
@@ -193,7 +195,6 @@ function handleBackgroundUpdates(updates: SyncPullUpdate[]): void {
     applyIncomingMessages({
       connectionName,
       messages,
-      fromBackgroundSync: true,
     });
   }
 }
@@ -249,19 +250,15 @@ function handleConnectionChange(): void {
 function registerConfigWatcher(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (
-        e.affectsConfiguration("tsLint.activeConnection")
+      if (e.affectsConfiguration("tsLint.activeConnection")
         || e.affectsConfiguration("tsLint.connections")
         || e.affectsConfiguration("tsLint.serverUrl")
-        || e.affectsConfiguration("tsLint.secret")
-      ) {
+        || e.affectsConfiguration("tsLint.secret")) {
         handleConnectionChange();
         return;
       }
-      if (
-        e.affectsConfiguration("tsLint.backgroundSyncEnabled")
-        || e.affectsConfiguration("tsLint.backgroundSyncIntervalMs")
-      ) {
+      if (e.affectsConfiguration("tsLint.backgroundSyncEnabled")
+        || e.affectsConfiguration("tsLint.backgroundSyncIntervalMs")) {
         applyBackgroundSyncConfig();
         return;
       }
