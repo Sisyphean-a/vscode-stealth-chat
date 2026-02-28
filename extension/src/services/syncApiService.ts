@@ -66,6 +66,38 @@ type SyncApiErrorPayload = {
 };
 
 const REQUEST_TIMEOUT_MS = 10000;
+const MAX_RESPONSE_PREVIEW_LENGTH = 160;
+
+type SyncApiResponsePayload = SyncApiErrorPayload & {
+  ok?: boolean;
+};
+
+function buildResponsePreview(rawText: string): string {
+  const compact = rawText.replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return "<empty>";
+  }
+  if (compact.length <= MAX_RESPONSE_PREVIEW_LENGTH) {
+    return compact;
+  }
+  return `${compact.slice(0, MAX_RESPONSE_PREVIEW_LENGTH)}...`;
+}
+
+async function parseJsonPayload(response: Response, requestUrl: string): Promise<SyncApiResponsePayload> {
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawText) as SyncApiResponsePayload;
+  } catch {
+    const preview = buildResponsePreview(rawText);
+    throw new Error(
+      `SYNC_RESPONSE_INVALID_JSON: Expected JSON from ${requestUrl} (status ${response.status}), got: ${preview}`
+    );
+  }
+}
 
 async function postJson(url: string, body: unknown, authToken?: string): Promise<unknown> {
   const controller = new AbortController();
@@ -88,7 +120,7 @@ async function postJson(url: string, body: unknown, authToken?: string): Promise
       signal: controller.signal,
     });
 
-    const payload = await response.json() as SyncApiErrorPayload & { ok?: boolean };
+    const payload = await parseJsonPayload(response, url);
     if (!response.ok || payload?.ok === false) {
       const code = payload?.error?.code || "SYNC_REQUEST_FAILED";
       const message = payload?.error?.message || `Request failed with status ${response.status}`;

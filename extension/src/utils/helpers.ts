@@ -7,10 +7,21 @@ import { Connection } from "../types";
 export const DEFAULT_SERVER_URL = "http://localhost:3000";
 
 /**
- * 规范化服务端 URL（去掉首尾空白和尾部斜杠）
+ * 规范化服务端 URL（去掉首尾空白、查询参数、hash 和尾部斜杠）
  */
 export function normalizeServerUrl(serverUrl: string): string {
-  return serverUrl.trim().replace(/\/+$/, "");
+  const value = typeof serverUrl === "string" ? serverUrl.trim() : "";
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(value);
+    const pathname = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.origin}${pathname}`;
+  } catch {
+    return value.replace(/[?#].*$/, "").replace(/\/+$/, "");
+  }
 }
 
 /**

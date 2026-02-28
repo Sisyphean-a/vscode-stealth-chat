@@ -1,5 +1,16 @@
 export function normalizeServerUrl(value: string): string {
-  return value.trim().replace(/\/+$/, "");
+  const input = typeof value === "string" ? value.trim() : "";
+  if (!input) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(input);
+    const pathname = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.origin}${pathname}`;
+  } catch {
+    return input.replace(/[?#].*$/, "").replace(/\/+$/, "");
+  }
 }
 
 export function escapeHtml(text: string): string {
