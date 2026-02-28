@@ -259,7 +259,6 @@ export class BackgroundSyncService {
         continue;
       }
       conversationStore.assignAppId(update.connectionName, update.appId);
-      conversationStore.mergeMessagesForConnection(update.connectionName, update.messages);
       conversationStore.setCursor(update.connectionName, update.nextCursor);
       totalMessages += update.messages.length;
       effective.push(update);
