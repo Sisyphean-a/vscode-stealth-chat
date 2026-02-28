@@ -160,11 +160,11 @@ export function getConnectionByAppId(appId: string): string | null {
   return null;
 }
 
-export function getMessages(connectionName: string): ChatMessage[] {
-  return ensureConversation(connectionName).messages;
+export function getMessages(connectionName: string): readonly ChatMessage[] {
+  return [...ensureConversation(connectionName).messages];
 }
 
-export function getActiveMessages(): ChatMessage[] {
+export function getActiveMessages(): readonly ChatMessage[] {
   if (!activeConversationName) {
     return [];
   }

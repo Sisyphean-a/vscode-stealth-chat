@@ -2,6 +2,11 @@
   import { onMount, tick } from "svelte";
   import type { ChatMessage, Connection, GlobalSettings, MessageQuote } from "../types";
   import type { HostMessage } from "../webview-bridge/protocol";
+  import {
+    dispatchHostMessage,
+    formatReadText,
+    type HostMessageHandlers,
+  } from "./controllers/hostMessageDispatcher";
   import Composer from "./components/layout/Composer.svelte";
   import MessageList from "./components/layout/MessageList.svelte";
   import SearchPanel from "./components/features/SearchPanel.svelte";
@@ -9,6 +14,8 @@
   import StatusBar from "./components/layout/StatusBar.svelte";
   import { HISTORY_PAGE_SIZE } from "./lib/constants";
   import { normalizeServerUrl } from "./lib/format";
+  import { IncomingBatcher } from "./lib/incomingBatcher";
+  import { ReadStatusReporter } from "./lib/readStatusReporter";
   import { uploadAll, type PendingAttachment } from "./lib/attachments";
   import { buildClientMessageId } from "../../../packages/chat-core/index.js";
   import {
@@ -47,7 +54,6 @@
   let isLoadingMore = false;
   let oldestTimestamp: number | null = null;
   let isFirstLoad = true;
-  let lastReadTimestamp = 0;
 
   let autoScrollEnabled = true;
   let showScrollToBottom = false;
@@ -69,6 +75,12 @@
   let activeConnection = "";
   let testBadges: Record<string, { success: boolean; latency?: number }> = {};
   const badgeTimers = new Map<string, number>();
+  const readReporter = new ReadStatusReporter((payload) => {
+    postToHost({ type: "markRead", payload });
+  });
+  const incomingBatcher = new IncomingBatcher((batch) => {
+    void applyIncomingBatch(batch);
+  });
 
   $: document.body.dataset.displayMode = displayMode;
   $: oldestTimestamp = messages.length > 0 ? messages[0].timestamp : null;
@@ -79,6 +91,8 @@
     return () => {
       dispose();
       clearRuntimeTimers();
+      incomingBatcher.dispose();
+      readReporter.dispose();
     };
   });
 
@@ -102,97 +116,70 @@
     }, SEND_ERROR_TIMEOUT_MS);
   }
 
-  function handleHostMessage(message: HostMessage): void {
-    if (message.type === "addMessage") {
-      enqueueIncoming(message.payload);
-      return;
-    }
-    if (message.type === "loadHistory") {
-      void loadHistory(message.payload);
-      return;
-    }
-    if (message.type === "prependHistory") {
-      void prependHistory(message.payload.messages, message.payload.hasMore);
-      return;
-    }
-    if (message.type === "aroundMessagesLoaded") {
-      void applyAroundMessages(message.payload.messages, message.payload.targetMessageId, false, message.payload.error);
-      return;
-    }
-    if (message.type === "aroundArchivedMessagesLoaded") {
-      void applyAroundMessages(message.payload.messages, message.payload.targetArchiveId, true, message.payload.error);
-      return;
-    }
-    if (message.type === "updateStatus") {
-      connected = message.payload.connected;
+  const hostHandlers: HostMessageHandlers = {
+    onAddMessage: (message) => enqueueIncoming(message),
+    onLoadHistory: (payload) => {
+      void loadHistory(payload);
+    },
+    onPrependHistory: ({ messages: payload, hasMore }) => {
+      void prependHistory(payload, hasMore);
+    },
+    onAroundLoaded: (payload) => {
+      void applyAroundMessages(payload.messages, payload.targetMessageId, false, payload.error);
+    },
+    onAroundArchivedLoaded: (payload) => {
+      void applyAroundMessages(payload.messages, payload.targetArchiveId, true, payload.error);
+    },
+    onUpdateStatus: (nextConnected) => {
+      connected = nextConnected;
       if (!connected) {
         presenceText = "";
       }
-      return;
-    }
-    if (message.type === "presenceUpdate") {
-      presenceText = `在线 ${message.payload.total} (M:${message.payload.mobile})`;
-      return;
-    }
-    if (message.type === "readReceipt") {
-      if (message.payload.clientType === "mobile") {
-        const date = new Date(message.payload.lastReadTimestamp);
-        const hh = String(date.getHours()).padStart(2, "0");
-        const mm = String(date.getMinutes()).padStart(2, "0");
-        readText = `对端已读 ${hh}:${mm}`;
+    },
+    onPresenceUpdate: (payload) => {
+      presenceText = `在线 ${payload.total} (M:${payload.mobile})`;
+    },
+    onReadReceipt: (payload) => {
+      if (payload.clientType !== "mobile") {
+        return;
       }
-      return;
-    }
-    if (message.type === "sendFailed") {
-      setSendError(message.payload.error || "发送失败");
-      return;
-    }
-    if (message.type === "searchResults") {
-      searchError = message.payload.error || "";
-      searchResults = message.payload.results || [];
-      searchMeta = message.payload.keyword
-        ? `关键词 "${message.payload.keyword}"，共 ${searchResults.length} 条`
-        : "";
-      return;
-    }
-    if (message.type === "setDisplayMode") {
-      displayMode = message.payload.mode;
-      serverUrl = normalizeServerUrl(message.payload.serverUrl || DEFAULT_SETTINGS.serverUrl);
-      authToken = message.payload.token || "";
-      return;
-    }
-    if (message.type === "clearMessages") {
+      readText = formatReadText(payload.lastReadTimestamp);
+    },
+    onSendFailed: (error) => {
+      setSendError(error);
+    },
+    onSearchResults: (payload) => {
+      searchError = payload.error || "";
+      searchResults = payload.results || [];
+      searchMeta = payload.keyword ? `关键词 "${payload.keyword}"，共 ${searchResults.length} 条` : "";
+    },
+    onRuntimeConfig: (payload) => {
+      displayMode = payload.mode;
+      serverUrl = normalizeServerUrl(payload.serverUrl || DEFAULT_SETTINGS.serverUrl);
+      authToken = payload.token || "";
+    },
+    onClearMessages: () => {
       resetAllMessages();
-      return;
-    }
-    if (message.type === "configLoaded") {
-      globalSettings = message.payload.globalSettings || DEFAULT_SETTINGS;
-      connections = Array.isArray(message.payload.connections) ? message.payload.connections : [];
-      activeConnection = message.payload.activeConnection || "";
-      return;
-    }
-    if (message.type === "operationResult") {
-      if (message.payload.success) {
+    },
+    onConfigLoaded: (payload) => {
+      globalSettings = payload.globalSettings || DEFAULT_SETTINGS;
+      connections = Array.isArray(payload.connections) ? payload.connections : [];
+      activeConnection = payload.activeConnection || "";
+    },
+    onOperationResult: (payload) => {
+      if (payload.success) {
         postToHost({ type: "getConfig" });
-      } else {
-        setSendError(message.payload.message);
+        return;
       }
-      return;
-    }
-    if (message.type === "testResult") {
-      const { name, success, latency } = message.payload;
-      testBadges = { ...testBadges, [name]: { success, latency } };
-      const oldTimer = badgeTimers.get(name);
-      if (oldTimer) {
-        window.clearTimeout(oldTimer);
-      }
-      const timer = window.setTimeout(() => {
-        const next = { ...testBadges };
-        delete next[name];
-        testBadges = next;
-      }, TEST_BADGE_TIMEOUT_MS);
-      badgeTimers.set(name, timer);
-    }
+      setSendError(payload.message);
+    },
+    onTestResult: (payload) => {
+      setTestBadge(payload.name, payload.success, payload.latency);
+    },
+  };
+
+  function handleHostMessage(message: HostMessage): void {
+    dispatchHostMessage(message, hostHandlers);
   }
 
   function enqueueIncoming(message: ChatMessage): void {
@@ -200,7 +187,7 @@
       pendingIncoming = [...pendingIncoming, message];
       return;
     }
-    void appendMessage(message);
+    incomingBatcher.enqueue(message);
   }
 
   function scrollToBottomStable(): void {
@@ -210,13 +197,24 @@
     });
   }
 
-  async function appendMessage(message: ChatMessage): Promise<void> {
+  async function applyIncomingBatch(batch: ChatMessage[]): Promise<void> {
+    if (batch.length === 0) {
+      return;
+    }
     const oldLength = messages.length;
-    const merged = mergeMessageStore(messages, [message]);
+    const merged = mergeMessageStore(messages, batch);
     if (merged.length === oldLength) {
       return;
     }
-    const isLatest = compareMessages(message, merged[merged.length - 1]) >= 0;
+
+    let newestIncoming = batch[0];
+    for (const message of batch.slice(1)) {
+      if (compareMessages(message, newestIncoming) > 0) {
+        newestIncoming = message;
+      }
+    }
+
+    const isLatest = compareMessages(newestIncoming, merged[merged.length - 1]) >= 0;
     messages = merged;
     if (!isLatest) {
       return;
@@ -283,11 +281,12 @@
   function resetAllMessages(): void {
     messages = [];
     selectedQuote = null;
+    incomingBatcher.clear();
     pendingIncoming = [];
     hasMoreHistory = true;
     isLoadingMore = false;
     isFirstLoad = true;
-    lastReadTimestamp = 0;
+    readReporter.reset();
     readText = "";
     showScrollToBottom = false;
     searchResults = [];
@@ -300,34 +299,20 @@
       return;
     }
     const last = messages[messages.length - 1];
-    if (!Number.isFinite(last.timestamp) || last.timestamp <= lastReadTimestamp) {
+    if (!Number.isFinite(last.timestamp)) {
       return;
     }
-    lastReadTimestamp = last.timestamp;
-    postToHost({
-      type: "markRead",
-      payload: {
-        lastReadTimestamp: last.timestamp,
-        lastReadMessageId: parsePositiveInt(last.id) || undefined,
-      },
-    });
-  }
-
-  async function flushPendingIncoming(): Promise<void> {
-    if (pendingIncoming.length === 0) {
-      return;
-    }
-    const queue = [...pendingIncoming];
-    pendingIncoming = [];
-    for (const message of queue) {
-      await appendMessage(message);
-    }
+    readReporter.report(last.timestamp, last.id);
   }
 
   function onComposerComposition(active: boolean): void {
     isComposing = active;
     if (!active) {
-      void flushPendingIncoming();
+      const queue = [...pendingIncoming];
+      pendingIncoming = [];
+      for (const message of queue) {
+        incomingBatcher.enqueue(message);
+      }
     }
   }
 
@@ -380,6 +365,20 @@
     });
     selectedQuote = null;
     composerResetToken += 1;
+  }
+
+  function setTestBadge(name: string, success: boolean, latency?: number): void {
+    testBadges = { ...testBadges, [name]: { success, latency } };
+    const oldTimer = badgeTimers.get(name);
+    if (oldTimer) {
+      window.clearTimeout(oldTimer);
+    }
+    const timer = window.setTimeout(() => {
+      const next = { ...testBadges };
+      delete next[name];
+      testBadges = next;
+    }, TEST_BADGE_TIMEOUT_MS);
+    badgeTimers.set(name, timer);
   }
 
   function onLoadMoreHistory(): void {

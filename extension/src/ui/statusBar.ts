@@ -68,26 +68,10 @@ export function setTooltip(tooltip: string): void {
 }
 
 /**
- * 增加未读计数
- */
-export function incrementUnread(): void {
-  unreadCount++;
-  updateStatusBar();
-}
-
-/**
  * 设置未读计数
  */
 export function setUnreadCount(value: number): void {
   unreadCount = Math.max(0, Number.isFinite(value) ? Math.floor(value) : 0);
-  updateStatusBar();
-}
-
-/**
- * 清除未读状态
- */
-export function clearUnreadStatus(): void {
-  unreadCount = 0;
   updateStatusBar();
 }
 
