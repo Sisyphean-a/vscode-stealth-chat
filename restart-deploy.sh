@@ -115,6 +115,8 @@ start_or_restart() {
   log "开始重建并启动服务"
   compose up -d --build
   wait_for_service_start
+  log "等待服务初始化..."
+  sleep 2
 }
 
 health_check() {
