@@ -74,7 +74,7 @@ function applyBackgroundSyncConfig(): void {
   const syncConnections = getAllConnections()
     .filter((connection) => connection.backgroundSync !== false);
 
-  statusBar.setSyncIssue("");
+  statusBar.setSyncIssue(enabled ? "" : "sync-off");
 
   backgroundSync.configure({
     connections: syncConnections,

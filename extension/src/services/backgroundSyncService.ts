@@ -134,6 +134,7 @@ export class BackgroundSyncService {
     this.limitPerApp = Number.isFinite(options.limitPerApp)
       ? Math.max(1, Math.min(100, Number(options.limitPerApp)))
       : DEFAULT_LIMIT_PER_APP;
+    this.log(`configure: enabled=${this.enabled}, connections=${options.connections.length}, poll=${this.pollIntervalMs}ms`);
     if (!this.enabled) {
       this.stop();
       return;
@@ -184,6 +185,10 @@ export class BackgroundSyncService {
         this.schedulePool(pool, 100);
       }
     }
+    const poolSummary = Array.from(grouped.entries())
+      .map(([serverUrl, items]) => `${serverUrl}(${items.map((item) => item.name).join(",")})`)
+      .join("; ");
+    this.log(`active pools: ${poolSummary || "none"}`);
   }
 
   private stopPool(pool: PoolState): void {
@@ -234,6 +239,7 @@ export class BackgroundSyncService {
         conversationStore.setCursor(app.connectionName, app.initialCursor);
       }
     }
+    this.log(`session opened: ${pool.serverUrl}, apps=${session.apps.map((app) => `${app.connectionName}:${app.appId}`).join(",")}`);
   }
 
   private buildCursors(pool: PoolState): Record<string, { timestamp: number; id: number }> {
@@ -247,6 +253,7 @@ export class BackgroundSyncService {
 
   private applyUpdates(pool: PoolState, updates: SyncPullUpdate[]): void {
     const effective: SyncPullUpdate[] = [];
+    let totalMessages = 0;
     for (const update of updates) {
       if (!update.connectionName || !Array.isArray(update.messages)) {
         continue;
@@ -254,12 +261,16 @@ export class BackgroundSyncService {
       conversationStore.assignAppId(update.connectionName, update.appId);
       conversationStore.mergeMessagesForConnection(update.connectionName, update.messages);
       conversationStore.setCursor(update.connectionName, update.nextCursor);
+      totalMessages += update.messages.length;
       effective.push(update);
     }
 
     if (effective.length > 0) {
       this.onUpdates(effective);
       this.persistCursorsSoon();
+      if (totalMessages > 0) {
+        this.log(`pull updates: ${pool.serverUrl}, conversations=${effective.length}, messages=${totalMessages}`);
+      }
     }
 
     if (pool.unhealthy) {
