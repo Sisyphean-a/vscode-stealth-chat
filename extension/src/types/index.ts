@@ -25,8 +25,8 @@ export interface ChatMessage {
   text: string;
   source: "mobile" | "vscode";
   timestamp: number;
-  attachments?: Attachment[];
-  quote?: MessageQuote;
+  attachments?: Attachment[] | null;
+  quote?: MessageQuote | null;
 }
 
 export interface MessageQuote {
