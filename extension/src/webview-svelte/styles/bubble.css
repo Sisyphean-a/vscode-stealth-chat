@@ -86,7 +86,9 @@ body[data-display-mode="bubble"] .quote-action-btn.bubble {
   color: var(--vscode-descriptionForeground);
   background: color-mix(in srgb, var(--vscode-editorWidget-background) 82%, transparent);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 body[data-display-mode="bubble"] .message-wrapper.own .quote-action-btn.bubble {
@@ -97,6 +99,8 @@ body[data-display-mode="bubble"] .message-wrapper.own .quote-action-btn.bubble {
 body[data-display-mode="bubble"] .message-wrapper:hover .quote-action-btn.bubble,
 body[data-display-mode="bubble"] .message-wrapper:focus-within .quote-action-btn.bubble {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 body[data-display-mode="bubble"] .message-image {

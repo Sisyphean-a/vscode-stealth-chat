@@ -62,6 +62,7 @@
 
   let selectedQuote: MessageQuote | null = null;
   let composerResetToken = 0;
+  let composerRef: Composer | undefined;
   let messageListRef: MessageList | undefined;
 
   let searchVisible = false;
@@ -323,6 +324,7 @@
       return;
     }
     selectedQuote = makeQuoteFromMessage(target);
+    composerRef?.focusInput();
   }
 
   function jumpToMessage(messageId: number): void {
@@ -461,6 +463,7 @@
 {/if}
 
 <Composer
+  bind:this={composerRef}
   {selectedQuote}
   resetToken={composerResetToken}
   disabled={connected === false}

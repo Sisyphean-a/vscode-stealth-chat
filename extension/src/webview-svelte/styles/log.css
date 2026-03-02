@@ -42,6 +42,7 @@ body[data-display-mode="log"] .log-entry {
   align-items: flex-start;
   gap: 8px;
   width: 100%;
+  position: relative;
 }
 
 body[data-display-mode="log"] .log-timestamp {
@@ -117,14 +118,20 @@ body[data-display-mode="log"] .quote-action-btn.log {
   padding: 1px 7px;
   font-size: 10px;
   line-height: 1.5;
+  position: absolute;
+  top: 0;
+  right: 0;
   opacity: 0;
-  transition: opacity 0.15s ease;
-  align-self: flex-start;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 body[data-display-mode="log"] .message-wrapper:hover .quote-action-btn.log,
 body[data-display-mode="log"] .message-wrapper:focus-within .quote-action-btn.log {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 body[data-display-mode="log"] .img-tag {

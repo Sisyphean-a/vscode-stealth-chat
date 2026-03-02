@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onMount, tick } from "svelte";
   import { DEFAULT_EMOJI_SET } from "../../../../../packages/chat-core/index.js";
   import type { MessageQuote } from "../../../types";
   import { MAX_IMAGE_SIZE } from "../../lib/constants";
@@ -16,6 +16,7 @@
   }>();
 
   const emojiOptions = DEFAULT_EMOJI_SET;
+  const INPUT_MIN_HEIGHT_PX = 34;
 
   let inputValue = "";
   let inputEl: HTMLTextAreaElement | null = null;
@@ -40,12 +41,22 @@
     };
   });
 
+  export function focusInput(cursor?: number): void {
+    if (!inputEl || disabled) {
+      return;
+    }
+    const nextCursor = typeof cursor === "number" ? cursor : inputValue.length;
+    inputEl.focus();
+    inputEl.setSelectionRange(nextCursor, nextCursor);
+  }
+
   function autoGrow(): void {
     if (!inputEl) {
       return;
     }
     inputEl.style.height = "auto";
-    inputEl.style.height = `${inputEl.scrollHeight}px`;
+    const nextHeight = Math.max(inputEl.scrollHeight, INPUT_MIN_HEIGHT_PX);
+    inputEl.style.height = `${nextHeight}px`;
   }
 
   function onDocumentMousedown(event: MouseEvent): void {
@@ -63,7 +74,7 @@
       return;
     }
     emojiPickerOpen = false;
-    inputEl?.focus();
+    focusInput();
   }
 
   async function handleImageFile(file: File): Promise<void> {
@@ -104,7 +115,7 @@
 
   function toggleEmojiPicker(): void {
     emojiPickerOpen = !emojiPickerOpen;
-    inputEl?.focus();
+    focusInput();
   }
 
   function insertEmoji(emoji: string): void {
@@ -122,8 +133,7 @@
       if (!inputEl) {
         return;
       }
-      inputEl.focus();
-      inputEl.setSelectionRange(cursor, cursor);
+      focusInput(cursor);
       autoGrow();
     });
   }
@@ -136,7 +146,10 @@
     inputValue = "";
     pendingAttachments = [];
     emojiPickerOpen = false;
-    autoGrow();
+    void tick().then(() => {
+      autoGrow();
+      focusInput();
+    });
   }
 
   function triggerSend(): void {
