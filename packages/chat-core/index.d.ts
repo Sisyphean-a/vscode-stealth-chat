@@ -11,6 +11,7 @@ export const DEFAULT_EMOJI_SET: readonly string[];
 
 export type MessageLike = {
   id?: unknown;
+  clientMessageId?: unknown;
   source?: unknown;
   text?: unknown;
   timestamp?: unknown;

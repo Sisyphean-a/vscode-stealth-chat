@@ -121,6 +121,41 @@ body[data-display-mode="bubble"] .message-image-btn {
   cursor: pointer;
 }
 
+body[data-display-mode="bubble"] .delivery-state-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+body[data-display-mode="bubble"] .delivery-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 16px;
+  min-width: 16px;
+}
+
+body[data-display-mode="bubble"] .delivery-indicator.sending {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in srgb, var(--vscode-button-foreground) 72%, transparent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: delivery-spin 0.8s linear infinite;
+  opacity: 0.92;
+}
+
+body[data-display-mode="bubble"] .delivery-indicator.failed {
+  border: 1px solid color-mix(in srgb, var(--vscode-inputValidation-errorBorder) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground) 55%, transparent);
+  color: var(--vscode-errorForeground);
+  padding: 0 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
 body[data-display-mode="bubble"] .time-divider {
   text-align: center;
   margin: 16px 0;
@@ -151,5 +186,11 @@ body[data-display-mode="bubble"] .time-divider span {
   }
   100% {
     box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@keyframes delivery-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

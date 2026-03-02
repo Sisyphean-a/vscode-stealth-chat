@@ -63,6 +63,12 @@ function buildMessageKey(message) {
   if (messageId) {
     return `id:${messageId}`;
   }
+  const clientMessageId = typeof message?.clientMessageId === "string"
+    ? message.clientMessageId.trim()
+    : "";
+  if (clientMessageId) {
+    return `cid:${clientMessageId}`;
+  }
 
   const source = typeof message?.source === "string" ? message.source : "unknown";
   const text = typeof message?.text === "string" ? message.text : "";

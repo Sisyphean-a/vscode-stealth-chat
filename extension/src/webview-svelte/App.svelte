@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import type { ChatMessage, Connection, GlobalSettings, MessageQuote } from "../types";
+  import type { Attachment, ChatMessage, Connection, GlobalSettings, MessageQuote } from "../types";
   import type { HostMessage } from "../webview-bridge/protocol";
   import {
     dispatchHostMessage,
@@ -23,7 +23,10 @@
     makeQuoteFromMessage,
     mergeMessageStore,
     normalizeIncomingMessages,
+    normalizeClientMessageId,
     parsePositiveInt,
+    reconcileIncomingMessages,
+    type DeliveryStateMap,
     type DisplayMode,
     type SearchResult,
   } from "./lib/messageStore";
@@ -59,6 +62,7 @@
   let showScrollToBottom = false;
   let isComposing = false;
   let pendingIncoming: ChatMessage[] = [];
+  let deliveryStateMap: DeliveryStateMap = {};
 
   let selectedQuote: MessageQuote | null = null;
   let composerResetToken = 0;
@@ -117,6 +121,76 @@
     }, SEND_ERROR_TIMEOUT_MS);
   }
 
+  function updateDeliveryState(clientMessageId: string | null | undefined, state: "sending" | "failed"): void {
+    const safeId = normalizeClientMessageId(clientMessageId);
+    if (!safeId) {
+      return;
+    }
+    deliveryStateMap = { ...deliveryStateMap, [safeId]: state };
+  }
+
+  function toLocalAttachments(pendingAttachments: PendingAttachment[]): Attachment[] {
+    return pendingAttachments.map((attachment) => ({
+      type: "image",
+      data: attachment.data,
+      filename: attachment.filename,
+      size: attachment.size,
+    }));
+  }
+
+  function buildOptimisticMessage(options: {
+    text: string;
+    attachments: Attachment[];
+    quote?: MessageQuote;
+    clientMessageId: string;
+  }): ChatMessage {
+    return {
+      text: options.text,
+      source: "vscode",
+      timestamp: Date.now(),
+      serverMessageId: null,
+      cursor: null,
+      clientMessageId: options.clientMessageId,
+      attachments: options.attachments.length > 0 ? options.attachments : undefined,
+      quote: options.quote,
+    };
+  }
+
+  async function appendLocalMessage(message: ChatMessage): Promise<void> {
+    const merged = mergeMessageStore(messages, [message]);
+    if (merged.length === messages.length) {
+      return;
+    }
+    messages = merged;
+    if (!autoScrollEnabled) {
+      showScrollToBottom = true;
+      return;
+    }
+    await tick();
+    scrollToBottomStable();
+    reportReadStatus();
+  }
+
+  async function resolveOutgoingAttachments(
+    pendingAttachments: PendingAttachment[],
+    fallback: Attachment[]
+  ): Promise<Attachment[] | undefined> {
+    if (pendingAttachments.length === 0) {
+      return undefined;
+    }
+    if (!serverUrl) {
+      throw new Error("Image upload failed: missing server URL");
+    }
+    if (!authToken) {
+      throw new Error("Image upload failed: missing auth token");
+    }
+    const uploaded = await uploadAll(serverUrl, authToken, pendingAttachments);
+    if (uploaded.length > 0) {
+      return uploaded;
+    }
+    return fallback.length > 0 ? fallback : undefined;
+  }
+
   const hostHandlers: HostMessageHandlers = {
     onAddMessage: (message) => enqueueIncoming(message),
     onLoadHistory: (payload) => {
@@ -146,8 +220,9 @@
       }
       readText = formatReadText(payload.lastReadTimestamp);
     },
-    onSendFailed: (error) => {
-      setSendError(error);
+    onSendFailed: (payload) => {
+      updateDeliveryState(payload.clientMessageId, "failed");
+      setSendError(payload.error);
     },
     onSearchResults: (payload) => {
       searchError = payload.error || "";
@@ -203,10 +278,14 @@
       return;
     }
     const oldLength = messages.length;
-    const merged = mergeMessageStore(messages, batch);
-    if (merged.length === oldLength) {
+    const oldStateMap = deliveryStateMap;
+    const reconciled = reconcileIncomingMessages(messages, batch, oldStateMap);
+    const merged = reconciled.messages;
+    const stateChanged = reconciled.deliveryStateMap !== oldStateMap;
+    if (merged.length === oldLength && !stateChanged) {
       return;
     }
+    deliveryStateMap = reconciled.deliveryStateMap;
 
     let newestIncoming = batch[0];
     for (const message of batch.slice(1)) {
@@ -232,6 +311,7 @@
   async function loadHistory(raw: unknown): Promise<void> {
     const normalized = normalizeIncomingMessages(raw);
     messages = normalized;
+    deliveryStateMap = {};
     hasMoreHistory = normalized.length >= HISTORY_PAGE_SIZE;
     isLoadingMore = false;
     if (isFirstLoad) {
@@ -281,6 +361,7 @@
 
   function resetAllMessages(): void {
     messages = [];
+    deliveryStateMap = {};
     selectedQuote = null;
     incomingBatcher.clear();
     pendingIncoming = [];
@@ -342,31 +423,68 @@
   }
 
   async function sendMessage(text: string, pendingAttachments: PendingAttachment[]): Promise<void> {
-    if (!text.trim() && pendingAttachments.length === 0) {
+    const safeText = text.trim();
+    if (!safeText && pendingAttachments.length === 0) {
       return;
     }
-    let attachments: Awaited<ReturnType<typeof uploadAll>> = [];
-    if (pendingAttachments.length > 0) {
-      if (!serverUrl) {
-        throw new Error("Image upload failed: missing server URL");
-      }
-      if (!authToken) {
-        throw new Error("Image upload failed: missing auth token");
-      }
-      attachments = await uploadAll(serverUrl, authToken, pendingAttachments);
-    }
+    const quote = selectedQuote || undefined;
     const clientMessageId = buildClientMessageId("vscode");
+    const localAttachments = toLocalAttachments(pendingAttachments);
+
+    await appendLocalMessage(buildOptimisticMessage({
+      text: safeText,
+      attachments: localAttachments,
+      quote,
+      clientMessageId,
+    }));
+    updateDeliveryState(clientMessageId, "sending");
+
+    selectedQuote = null;
+    composerResetToken += 1;
+
+    try {
+      const attachments = await resolveOutgoingAttachments(pendingAttachments, localAttachments);
+      postToHost({
+        type: "sendMessage",
+        payload: {
+          text: safeText,
+          attachments,
+          quote,
+          clientMessageId,
+        },
+      });
+    } catch (error) {
+      updateDeliveryState(clientMessageId, "failed");
+      throw error;
+    }
+  }
+
+  function retryMessage(clientMessageId: string): void {
+    const safeClientMessageId = normalizeClientMessageId(clientMessageId);
+    if (!safeClientMessageId) {
+      return;
+    }
+    const target = messages.find((message) => {
+      return normalizeClientMessageId(message.clientMessageId) === safeClientMessageId;
+    });
+    if (!target || target.source !== "vscode") {
+      setSendError("未找到可重发的消息");
+      return;
+    }
+    if (!target.text.trim() && (!target.attachments || target.attachments.length === 0)) {
+      setSendError("消息内容为空，无法重发");
+      return;
+    }
+    updateDeliveryState(safeClientMessageId, "sending");
     postToHost({
       type: "sendMessage",
       payload: {
-        text: text.trim(),
-        attachments: attachments?.length ? attachments : undefined,
-        quote: selectedQuote || undefined,
-        clientMessageId,
+        text: target.text.trim(),
+        attachments: target.attachments?.length ? target.attachments : undefined,
+        quote: target.quote || undefined,
+        clientMessageId: safeClientMessageId,
       },
     });
-    selectedQuote = null;
-    composerResetToken += 1;
   }
 
   function setTestBadge(name: string, success: boolean, latency?: number): void {
@@ -440,10 +558,12 @@
   {serverUrl}
   {hasMoreHistory}
   {isLoadingMore}
+  {deliveryStateMap}
   on:loadMore={onLoadMoreHistory}
   on:quote={(event) => onMessageQuote(event.detail.messageId)}
   on:jumpQuote={(event) => jumpToMessage(event.detail.messageId)}
   on:openImage={(event) => postToHost({ type: "openImage", payload: { url: event.detail.url } })}
+  on:retry={(event) => retryMessage(event.detail.clientMessageId)}
   on:atBottomChange={(event) => onAtBottomChange(event.detail.atBottom)}
 />
 

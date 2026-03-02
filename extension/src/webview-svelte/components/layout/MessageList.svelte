@@ -3,7 +3,9 @@
   import type { ChatMessage } from "../../../types";
   import {
     buildRenderItems,
+    normalizeClientMessageId,
     parsePositiveInt,
+    type DeliveryStateMap,
     type DisplayMode,
     type RenderItem,
   } from "../../lib/messageStore";
@@ -14,12 +16,14 @@
   export let serverUrl = "";
   export let hasMoreHistory = true;
   export let isLoadingMore = false;
+  export let deliveryStateMap: DeliveryStateMap = {};
 
   const dispatch = createEventDispatcher<{
     loadMore: void;
     quote: { messageId: number };
     jumpQuote: { messageId: number };
     openImage: { url: string };
+    retry: { clientMessageId: string };
     atBottomChange: { atBottom: boolean };
   }>();
 
@@ -102,6 +106,14 @@
       containerEl.scrollTop = containerEl.scrollHeight;
     }
   }
+
+  function readDeliveryState(clientMessageId: unknown): "sending" | "failed" | null {
+    const safeId = normalizeClientMessageId(clientMessageId);
+    if (!safeId) {
+      return null;
+    }
+    return deliveryStateMap[safeId] || null;
+  }
 </script>
 
 <div id="messages-container" bind:this={containerEl} on:scroll={onScroll}>
@@ -130,9 +142,11 @@
           message={item.message}
           {displayMode}
           {serverUrl}
+          deliveryState={readDeliveryState(item.message.clientMessageId)}
           on:quote={(event) => dispatch("quote", event.detail)}
           on:jumpQuote={(event) => dispatch("jumpQuote", event.detail)}
           on:openImage={(event) => dispatch("openImage", event.detail)}
+          on:retry={(event) => dispatch("retry", event.detail)}
         />
       {/if}
     {/each}

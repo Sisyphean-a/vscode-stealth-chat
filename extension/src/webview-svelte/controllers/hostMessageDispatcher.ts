@@ -12,7 +12,7 @@ export type HostMessageHandlers = {
   onUpdateStatus: (connected: boolean) => void;
   onPresenceUpdate: (payload: { total: number; mobile: number }) => void;
   onReadReceipt: (payload: { clientType: "mobile" | "vscode" | "unknown"; lastReadTimestamp: number }) => void;
-  onSendFailed: (error: string) => void;
+  onSendFailed: (payload: { clientMessageId: string | null; error: string }) => void;
   onSearchResults: (payload: { keyword: string; results: SearchResult[]; error: string | null }) => void;
   onRuntimeConfig: (payload: { mode: DisplayMode; serverUrl: string; token: string }) => void;
   onClearMessages: () => void;
@@ -69,7 +69,10 @@ export function dispatchHostMessage(message: HostMessage, handlers: HostMessageH
     return;
   }
   if (message.type === "sendFailed") {
-    handlers.onSendFailed(message.payload.error || "发送失败");
+    handlers.onSendFailed({
+      clientMessageId: message.payload.clientMessageId || null,
+      error: message.payload.error || "发送失败",
+    });
     return;
   }
   if (message.type === "searchResults") {

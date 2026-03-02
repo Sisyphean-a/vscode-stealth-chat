@@ -2,16 +2,23 @@
   import { createEventDispatcher } from "svelte";
   import type { ChatMessage } from "../../../types";
   import { escapeHtml, formatLogTime, formatShortTime, linkifyImages } from "../../lib/format";
-  import { parsePositiveInt, resolveAttachmentUrl } from "../../lib/messageStore";
+  import {
+    normalizeClientMessageId,
+    parsePositiveInt,
+    resolveAttachmentUrl,
+    type DeliveryState,
+  } from "../../lib/messageStore";
 
   export let message: ChatMessage;
   export let displayMode: "bubble" | "log";
   export let serverUrl: string;
+  export let deliveryState: DeliveryState | null = null;
 
   const dispatch = createEventDispatcher<{
     quote: { messageId: number };
     jumpQuote: { messageId: number };
     openImage: { url: string };
+    retry: { clientMessageId: string };
   }>();
 
   $: textHtml = linkifyImages(escapeHtml(message.text || ""));
@@ -19,6 +26,8 @@
   $: messageId = parsePositiveInt(message.id);
   $: archiveId = parsePositiveInt(message.archiveId ?? null);
   $: isOwn = message.source === "vscode";
+  $: clientMessageId = normalizeClientMessageId(message.clientMessageId);
+  $: canRetry = isOwn && deliveryState === "failed" && !!clientMessageId;
 
   function onQuoteActionClick(): void {
     if (!messageId) {
@@ -52,6 +61,10 @@
 
   function onImageClick(url: string): void {
     dispatch("openImage", { url });
+  }
+
+  function onRetryClick(clientMessageId: string): void {
+    dispatch("retry", { clientMessageId });
   }
 
   function useContentClick(node: HTMLElement): { destroy: () => void } {
@@ -109,6 +122,23 @@
           {@html textHtml}
         </div>
       {/if}
+
+      {#if isOwn && deliveryState}
+        <div class="delivery-state-row">
+          {#if deliveryState === "sending"}
+            <span class="delivery-indicator sending" title="发送中" aria-label="发送中"></span>
+          {:else if canRetry && clientMessageId}
+            <button
+              type="button"
+              class="delivery-indicator failed"
+              title="发送失败，点击重发"
+              on:click={() => onRetryClick(clientMessageId)}
+            >
+              重发
+            </button>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     {#if messageId}
@@ -157,6 +187,22 @@
               <span class="log-text">{@html textHtml}</span>
             {/if}
           </div>
+          {#if isOwn && deliveryState}
+            <div class="delivery-state-row log">
+              {#if deliveryState === "sending"}
+                <span class="delivery-indicator sending" title="发送中" aria-label="发送中"></span>
+              {:else if canRetry && clientMessageId}
+                <button
+                  type="button"
+                  class="delivery-indicator failed"
+                  title="发送失败，点击重发"
+                  on:click={() => onRetryClick(clientMessageId)}
+                >
+                  重发
+                </button>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         {#if messageId}
