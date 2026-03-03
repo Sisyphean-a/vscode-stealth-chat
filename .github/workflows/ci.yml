@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            extension/package-lock.json
+            server/package-lock.json
+
+      - name: Install Root Dependencies
+        run: npm install
+
+      - name: Install Workspace Dependencies
+        run: |
+          npm install -w extension
+          npm install -w server
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format Check
+        run: npm run format:check
+
+      - name: Extension Type Check + Protocol Boundary
+        run: npm run typecheck
+
+      - name: Server Tests
+        run: npm run test

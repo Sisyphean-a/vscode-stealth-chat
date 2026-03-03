@@ -1,0 +1,42 @@
+{
+  "name": "vscode-stealth-chat-monorepo",
+  "private": true,
+  "workspaces": [
+    "extension",
+    "server"
+  ],
+  "scripts": {
+    "lint": "eslint \"server/src/**/*.js\" \"server/scripts/**/*.js\" \"packages/**/*.js\" \"extension/src/**/*.ts\"",
+    "format:check": "prettier --check \"package.json\" \"eslint.config.js\" \"README.md\" \"docs/**/*.md\" \".github/workflows/**/*.yml\" \"server/src/socket.js\" \"server/src/db.js\" \"server/src/archiveDb.js\" \"server/src/application/services/**/*.js\" \"server/src/interfaces/socket/**/*.js\" \"server/src/infrastructure/**/*.js\"",
+    "typecheck": "npm run -w extension check-types",
+    "test": "npm run -w server test",
+    "ci:check": "npm run lint && npm run format:check && npm run typecheck && npm run test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,cjs,mjs,ts,svelte,json,md,yml,yaml}": [
+      "prettier --check"
+    ],
+    "server/src/**/*.js": [
+      "eslint"
+    ],
+    "server/scripts/**/*.js": [
+      "eslint"
+    ],
+    "packages/**/*.js": [
+      "eslint"
+    ],
+    "extension/src/**/*.ts": [
+      "eslint"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@typescript-eslint/parser": "^8.26.1",
+    "eslint": "^9.22.0",
+    "globals": "^15.15.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.0",
+    "prettier": "^3.5.3"
+  }
+}

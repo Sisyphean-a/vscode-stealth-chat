@@ -146,6 +146,29 @@ HEALTH_URL=http://127.0.0.1:3000/health bash restart-deploy.sh
 
 ## 本地开发
 
+## 工程规范与质量门禁
+
+仓库根目录新增统一工程脚本：
+
+```bash
+npm run lint
+npm run format:check
+npm run typecheck
+npm run test
+npm run ci:check
+```
+
+说明：
+
+- `lint`：静态检查（server / packages / extension ts）
+- `format:check`：Prettier 格式一致性检查
+- `typecheck`：扩展端类型检查 + 协议边界 smoke tests
+- `test`：后端数据库测试
+- `ci:check`：本地一次性跑完整门禁，CI 同步执行
+
+提交前默认会触发 `husky + lint-staged` 进行增量检查。
+详细规范见：`docs/development-standards.md`。
+
 ### Server
 
 ```bash

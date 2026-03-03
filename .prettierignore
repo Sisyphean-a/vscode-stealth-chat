@@ -1,0 +1,10 @@
+node_modules
+extension/node_modules
+server/node_modules
+extension/dist
+extension/out
+server/data
+gotify_data
+backup
+*.db
+*.vsix

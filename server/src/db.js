@@ -1,7 +1,33 @@
 const initSqlJs = require("sql.js");
-const path = require("path");
 const fs = require("fs");
+const path = require("path");
 const archiveDb = require("./archiveDb");
+const { createMessageSearchService } = require("./application/services/messageSearchService");
+const { createArchiveCleanupService } = require("./application/services/archiveCleanupService");
+const { createSchema } = require("./infrastructure/persistence/messageSchema");
+const {
+  parsePositiveMessageId,
+  normalizeCursor,
+  mapMessageRow,
+  mapArchivedRow,
+  mapArchivedRowToChatMessage,
+} = require("./infrastructure/persistence/messageMapper");
+const { createMessageRepository } = require("./infrastructure/persistence/messageRepository");
+const {
+  createMessageRestoreService,
+} = require("./infrastructure/persistence/messageRestoreService");
+const { createArchiveViewService } = require("./infrastructure/persistence/archiveViewService");
+const {
+  parsePositiveInt,
+  resolveDbConfig,
+  ensureDataDir,
+  loadDatabaseBuffer,
+  buildPlaceholders,
+  clearTimers,
+  resetDbState,
+  startCleanupTask,
+  startSaveTask,
+} = require("./infrastructure/persistence/dbRuntime");
 
 const DEFAULT_DB_PATH = path.join(__dirname, "../data/messages.db");
 const DEFAULT_RETENTION_DAYS = 30;
@@ -17,325 +43,121 @@ const state = {
   saveTimer: null,
   isSaving: false,
   pendingSave: false,
+  repository: null,
+  messageSearchService: null,
+  archiveCleanupService: null,
+  messageRestoreService: null,
+  archiveViewService: null,
 };
 
-function parsePositiveInt(input, fallback) {
-  const parsed = Number.parseInt(String(input ?? ""), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+function getDatabase() {
+  return state.db;
 }
 
-function resolveConfig(options = {}) {
-  return {
-    dbPath: options.dbPath || process.env.DB_PATH || DEFAULT_DB_PATH,
-    retentionDays: parsePositiveInt(
-      options.retentionDays ?? process.env.MESSAGE_RETENTION_DAYS,
-      DEFAULT_RETENTION_DAYS,
-    ),
-    maxCount: parsePositiveInt(
-      options.maxCount ?? process.env.MESSAGE_MAX_COUNT,
-      DEFAULT_MAX_COUNT,
-    ),
-    archiveDbPath: options.archiveDbPath || process.env.ARCHIVE_DB_PATH || undefined,
-  };
-}
-
-async function ensureDataDir(dbPath) {
-  const dbDir = path.dirname(dbPath);
-  await fs.promises.mkdir(dbDir, { recursive: true });
-}
-
-async function loadDatabaseBuffer(dbPath) {
-  if (!fs.existsSync(dbPath)) {
-    return null;
-  }
-  return fs.promises.readFile(dbPath);
-}
-
-function createSchema(database) {
-  database.run(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      app_id TEXT DEFAULT 'default',
-      text TEXT NOT NULL,
-      source TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      quote_message_id INTEGER,
-      client_message_id TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  try {
-    database.run("SELECT app_id FROM messages LIMIT 1");
-  } catch (error) {
-    console.log("[DB] Migrating schema: adding app_id column...");
-    database.run("ALTER TABLE messages ADD COLUMN app_id TEXT DEFAULT 'default'");
-    database.run("UPDATE messages SET app_id = 'default' WHERE app_id IS NULL");
-    console.log("[DB] Migration completed.");
-  }
-
-  try {
-    database.run("SELECT quote_message_id FROM messages LIMIT 1");
-  } catch (error) {
-    console.log("[DB] Migrating schema: adding quote_message_id column...");
-    database.run("ALTER TABLE messages ADD COLUMN quote_message_id INTEGER");
-    console.log("[DB] Migration completed.");
-  }
-
-  try {
-    database.run("SELECT client_message_id FROM messages LIMIT 1");
-  } catch (error) {
-    console.log("[DB] Migrating schema: adding client_message_id column...");
-    database.run("ALTER TABLE messages ADD COLUMN client_message_id TEXT");
-    console.log("[DB] Migration completed.");
-  }
-
-  database.run("CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp DESC);");
-  database.run("CREATE INDEX IF NOT EXISTS idx_app_id ON messages(app_id);");
-  database.run("CREATE INDEX IF NOT EXISTS idx_app_timestamp ON messages(app_id, timestamp DESC);");
-  database.run("CREATE INDEX IF NOT EXISTS idx_app_timestamp_id ON messages(app_id, timestamp ASC, id ASC);");
-  database.run("CREATE INDEX IF NOT EXISTS idx_quote_message_id ON messages(quote_message_id);");
-  database.run("CREATE INDEX IF NOT EXISTS idx_client_message_id ON messages(app_id, source, client_message_id);");
-}
-
-function clearTimers() {
-  if (state.cleanupTimer) {
-    clearInterval(state.cleanupTimer);
-    state.cleanupTimer = null;
-  }
-  if (state.saveTimer) {
-    clearInterval(state.saveTimer);
-    state.saveTimer = null;
-  }
-}
-
-function resetState() {
-  state.db = null;
-  state.isInitialized = false;
-  state.config = null;
-  state.pendingSave = false;
-  state.isSaving = false;
-}
-
-function startCleanupTask() {
-  state.cleanupTimer = setInterval(() => {
-    void cleanupOldMessages();
-  }, CLEANUP_INTERVAL_MS);
-  console.log("[DB] Cleanup task started (runs every hour)");
-}
-
-function startSaveTask() {
-  state.saveTimer = setInterval(() => {
-    void saveToFile();
-  }, SAVE_INTERVAL_MS);
-  console.log("[DB] Auto-save task started (runs every 5 minutes)");
+function getRuntimeConfig() {
+  return state.config;
 }
 
 function ensureInitialized() {
-  return state.isInitialized && state.db && state.config;
+  return Boolean(state.isInitialized && state.db && state.config && state.repository);
 }
 
-function buildPlaceholders(count) {
-  return new Array(count).fill("?").join(", ");
-}
-
-function parsePositiveMessageId(value) {
-  const parsed = Number.parseInt(String(value ?? ""), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-const VALID_QUOTE_SOURCES = new Set(["mobile", "vscode"]);
-
-function normalizeAttachment(rawAttachment, rowLabel, index) {
-  if (!rawAttachment || typeof rawAttachment !== "object" || Array.isArray(rawAttachment)) {
-    throw new Error(`[DB] Invalid attachment at ${rowLabel}.attachments[${index}]`);
-  }
-
-  const type = typeof rawAttachment.type === "string" ? rawAttachment.type.trim() : "";
-  if (!type) {
-    throw new Error(`[DB] Invalid attachment type at ${rowLabel}.attachments[${index}]`);
-  }
-
-  const attachment = { type };
-  for (const key of ["data", "url", "filename", "mimeType"]) {
-    if (rawAttachment[key] === undefined) {
-      continue;
-    }
-    if (typeof rawAttachment[key] !== "string") {
-      throw new Error(`[DB] Invalid attachment field ${key} at ${rowLabel}.attachments[${index}]`);
-    }
-    attachment[key] = rawAttachment[key];
-  }
-  if (rawAttachment.size !== undefined) {
-    if (typeof rawAttachment.size !== "number" || !Number.isFinite(rawAttachment.size)) {
-      throw new Error(`[DB] Invalid attachment size at ${rowLabel}.attachments[${index}]`);
-    }
-    attachment.size = rawAttachment.size;
-  }
-  return attachment;
-}
-
-function normalizeAttachments(rawAttachments, rowLabel) {
-  if (rawAttachments === undefined) {
-    return undefined;
-  }
-  if (!Array.isArray(rawAttachments)) {
-    throw new Error(`[DB] Invalid attachments at ${rowLabel}.attachments`);
-  }
-  const normalized = [];
-  for (let index = 0; index < rawAttachments.length; index += 1) {
-    normalized.push(normalizeAttachment(rawAttachments[index], rowLabel, index));
-  }
-  return normalized.length > 0 ? normalized : undefined;
-}
-
-function normalizeQuote(quote, rowLabel) {
-  if (quote === undefined) {
-    return undefined;
-  }
-  if (!quote || typeof quote !== "object" || Array.isArray(quote)) {
-    throw new Error(`[DB] Invalid quote payload at ${rowLabel}.quote`);
-  }
-
-  const messageId = parsePositiveMessageId(quote.messageId);
-  const source = typeof quote.source === "string" ? quote.source : "";
-  const timestamp = Number.parseInt(String(quote.timestamp ?? ""), 10);
-  if (!messageId || !VALID_QUOTE_SOURCES.has(source) || !Number.isFinite(timestamp) || timestamp <= 0) {
-    throw new Error(`[DB] Invalid quote payload at ${rowLabel}.quote`);
-  }
-
-  if (typeof quote.textSnippet !== "string") {
-    throw new Error(`[DB] Invalid quote textSnippet at ${rowLabel}.quote.textSnippet`);
-  }
-
-  return { messageId, source, timestamp, textSnippet: quote.textSnippet };
-}
-
-function parseMessageText(rowText, rowId) {
-  const rowLabel = `message#${parsePositiveMessageId(rowId) || "unknown"}`;
-  if (typeof rowText !== "string") {
-    throw new Error(`[DB] Invalid message text type at ${rowLabel}`);
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(rowText);
-  } catch (error) {
-    throw new Error(`[DB] Invalid message payload JSON at ${rowLabel}`);
-  }
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`[DB] Invalid message payload object at ${rowLabel}`);
-  }
-
-  if (typeof parsed.text !== "string") {
-    throw new Error(`[DB] Invalid message text field at ${rowLabel}.text`);
-  }
-
-  const attachments = normalizeAttachments(parsed.attachments, rowLabel);
-  const quote = normalizeQuote(parsed.quote, rowLabel);
-  return { text: parsed.text, attachments, quote };
-}
-
-function mapMessageRow(row) {
-  const parsed = parseMessageText(row.text, row.id);
-  const messageId = parsePositiveMessageId(row.id);
-  const timestamp = Number.parseInt(String(row.timestamp ?? ""), 10);
-  const safeTimestamp = Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
-  const cursor = messageId && safeTimestamp > 0
-    ? { timestamp: safeTimestamp, id: messageId }
-    : null;
-
-  const mapped = {
-    text: parsed.text,
-    source: row.source,
-    timestamp: safeTimestamp,
-    attachments: parsed.attachments,
-    quote: parsed.quote,
-    serverMessageId: messageId,
-    cursor,
-    clientMessageId: typeof row.client_message_id === "string" ? row.client_message_id : null,
-  };
-
-  if (messageId) {
-    mapped.id = messageId;
-  }
-
-  return mapped;
-}
-
-function mapArchivedRow(row) {
-  const message = mapMessageRow(row);
-  const archiveId = parsePositiveMessageId(row.archive_id);
-  const originalMessageId = parsePositiveMessageId(row.original_message_id);
-  return {
-    ...message,
-    appId: row.app_id,
-    archived: true,
-    archiveId,
-    originalMessageId,
-    serverMessageId: null,
-    cursor: null,
-    archivedAt: row.archived_at,
-    archiveReason: row.archive_reason,
-    restoredAt: row.restored_at,
-  };
+function buildServices() {
+  state.repository = createMessageRepository({
+    ensureInitialized,
+    getDatabase,
+    parsePositiveInt,
+    parsePositiveMessageId,
+    normalizeCursor,
+    mapMessageRow,
+  });
+  state.messageRestoreService = createMessageRestoreService({
+    ensureInitialized,
+    getDatabase,
+    saveToFile,
+    archiveDb,
+  });
+  state.messageSearchService = createMessageSearchService({
+    ensureInitialized,
+    getDatabase,
+    parsePositiveInt,
+    mapMessageRow,
+    mapArchivedRow,
+    archiveDb,
+  });
+  state.archiveCleanupService = createArchiveCleanupService({
+    ensureInitialized,
+    getDatabase,
+    getConfig: getRuntimeConfig,
+    getMessageCount: (appId) => state.repository.getMessageCount(appId),
+    buildPlaceholders,
+    archiveDb,
+    saveToFile,
+  });
+  state.archiveViewService = createArchiveViewService({
+    ensureInitialized,
+    archiveDb,
+    mapArchivedRow,
+    mapArchivedRowToChatMessage,
+  });
 }
 
 async function init(options = {}) {
   if (state.isInitialized) {
     await close();
   }
-
   try {
-    state.config = resolveConfig(options);
+    state.config = resolveDbConfig(options, {
+      defaultDbPath: DEFAULT_DB_PATH,
+      defaultRetentionDays: DEFAULT_RETENTION_DAYS,
+      defaultMaxCount: DEFAULT_MAX_COUNT,
+    });
     await ensureDataDir(state.config.dbPath);
-
     const SQL = await initSqlJs();
     const buffer = await loadDatabaseBuffer(state.config.dbPath);
     state.db = buffer ? new SQL.Database(buffer) : new SQL.Database();
-
     createSchema(state.db);
     await archiveDb.init(SQL, { archiveDbPath: state.config.archiveDbPath });
     state.isInitialized = true;
-
+    buildServices();
     const saved = await saveToFile();
     if (!saved) {
       throw new Error(`Unable to persist database snapshot at ${state.config.dbPath}`);
     }
-
-    clearTimers();
-    startCleanupTask();
-    startSaveTask();
-
+    clearTimers(state);
+    startCleanupTask(state, CLEANUP_INTERVAL_MS, cleanupOldMessages);
+    startSaveTask(state, SAVE_INTERVAL_MS, saveToFile);
+    console.log("[DB] Cleanup task started (runs every hour)");
+    console.log("[DB] Auto-save task started (runs every 5 minutes)");
     console.log(`[DB] Initialized at ${state.config.dbPath}`);
   } catch (error) {
-    clearTimers();
-    if (state.db) {
-      state.db.close();
-    }
-    resetState();
-    await archiveDb.close();
-    throw new Error(`[DB] Initialization failed: ${error.message}`);
+    await handleInitFailure(error);
   }
+}
+
+async function handleInitFailure(error) {
+  clearTimers(state);
+  if (state.db) {
+    state.db.close();
+  }
+  resetDbState(state);
+  await archiveDb.close();
+  throw new Error(`[DB] Initialization failed: ${error.message}`);
 }
 
 async function writeSnapshot() {
   const data = state.db.export();
-  const buffer = Buffer.from(data);
-  await fs.promises.writeFile(state.config.dbPath, buffer);
+  await fs.promises.writeFile(state.config.dbPath, Buffer.from(data));
 }
 
 async function saveToFile() {
   if (!ensureInitialized()) {
     return false;
   }
-
   if (state.isSaving) {
     state.pendingSave = true;
     return true;
   }
-
   state.isSaving = true;
   try {
     do {
@@ -355,607 +177,98 @@ async function saveToFile() {
   }
 }
 
-function getLastInsertedId() {
-  const stmt = state.db.prepare("SELECT last_insert_rowid() AS id");
-  stmt.step();
-  const row = stmt.getAsObject();
-  stmt.free();
-  return parsePositiveMessageId(row.id);
-}
-
-function insertMessage(options) {
-  if (!ensureInitialized()) {
-    return null;
-  }
-
-  const {
-    text,
-    source,
-    timestamp,
-    appId = "default",
-    quoteMessageId = null,
-    clientMessageId = null,
-  } = options;
-  const safeQuoteMessageId = parsePositiveMessageId(quoteMessageId);
-  const safeClientMessageId = typeof clientMessageId === "string" && clientMessageId.trim().length > 0
-    ? clientMessageId.trim()
-    : null;
-
-  if (safeClientMessageId) {
-    const existing = getMessageByClientMessageId(safeClientMessageId, source, appId);
-    if (existing && existing.id) {
-      return existing.id;
-    }
-  }
-
-  try {
-    state.db.run(
-      "INSERT INTO messages (text, source, timestamp, app_id, quote_message_id, client_message_id) VALUES (?, ?, ?, ?, ?, ?)",
-      [text, source, timestamp, appId, safeQuoteMessageId, safeClientMessageId],
-    );
-    return getLastInsertedId();
-  } catch (error) {
-    console.error(`[DB] Failed to save message: ${error.message}`);
-    return null;
-  }
-}
-
 function saveMessage(text, source, timestamp, appId = "default") {
-  const payload = JSON.stringify({ text: typeof text === "string" ? text : "" });
-  return insertMessage({ text: payload, source, timestamp, appId }) !== null;
-}
-
-function getRawMessageById(messageId, appId = "default") {
-  if (!ensureInitialized()) {
-    return null;
-  }
-  const safeMessageId = parsePositiveMessageId(messageId);
-  if (!safeMessageId) {
-    return null;
-  }
-  try {
-    const stmt = state.db.prepare(`
-      SELECT id, text, source, timestamp, client_message_id
-      FROM messages
-      WHERE id = ? AND app_id = ?
-      LIMIT 1
-    `);
-    stmt.bind([safeMessageId, appId]);
-    if (!stmt.step()) {
-      stmt.free();
-      return null;
-    }
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  } catch (error) {
-    console.error(`[DB] Failed to get message by id: ${error.message}`);
-    return null;
-  }
-}
-
-function getRawMessageByClientMessageId(clientMessageId, source, appId = "default") {
-  if (!ensureInitialized()) {
-    return null;
-  }
-  const safeClientMessageId = typeof clientMessageId === "string" ? clientMessageId.trim() : "";
-  if (!safeClientMessageId) {
-    return null;
-  }
-  try {
-    const stmt = state.db.prepare(`
-      SELECT id, text, source, timestamp, client_message_id
-      FROM messages
-      WHERE app_id = ? AND source = ? AND client_message_id = ?
-      ORDER BY id DESC
-      LIMIT 1
-    `);
-    stmt.bind([appId, source, safeClientMessageId]);
-    if (!stmt.step()) {
-      stmt.free();
-      return null;
-    }
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  } catch (error) {
-    console.error(`[DB] Failed to get message by client_message_id: ${error.message}`);
-    return null;
-  }
-}
-
-function getMessageByClientMessageId(clientMessageId, source, appId = "default") {
-  const row = getRawMessageByClientMessageId(clientMessageId, source, appId);
-  return row ? mapMessageRow(row) : null;
-}
-
-function getMessageById(messageId, appId = "default") {
-  const row = getRawMessageById(messageId, appId);
-  return row ? mapMessageRow(row) : null;
+  return state.repository.saveMessage(text, source, timestamp, appId);
 }
 
 function saveMessageRecord(options) {
-  const insertedId = insertMessage(options);
-  if (!insertedId) {
-    return null;
-  }
-  return getMessageById(insertedId, options.appId);
+  return state.repository.saveMessageRecord(options);
 }
 
 function getRecentMessages(limit = 50, appId = "default", beforeTimestamp = null) {
-  if (!ensureInitialized()) {
-    return [];
-  }
-
-  const withPagination = beforeTimestamp !== null && beforeTimestamp !== undefined;
-  const sql = withPagination
-    ? `
-      SELECT id, text, source, timestamp
-      , client_message_id
-      FROM messages
-      WHERE app_id = ? AND timestamp < ?
-      ORDER BY timestamp DESC, id DESC
-      LIMIT ?
-    `
-    : `
-      SELECT id, text, source, timestamp
-      , client_message_id
-      FROM messages
-      WHERE app_id = ?
-      ORDER BY timestamp DESC, id DESC
-      LIMIT ?
-    `;
-  const params = withPagination ? [appId, beforeTimestamp, limit] : [appId, limit];
-
-  try {
-    const stmt = state.db.prepare(sql);
-    stmt.bind(params);
-    const messages = [];
-    while (stmt.step()) {
-      messages.push(mapMessageRow(stmt.getAsObject()));
-    }
-    stmt.free();
-    return messages.reverse();
-  } catch (error) {
-    console.error(`[DB] Failed to get messages: ${error.message}`);
-    return [];
-  }
-}
-
-function normalizeCursor(cursor = {}) {
-  const timestamp = Number.parseInt(String(cursor.timestamp ?? cursor.ts ?? ""), 10);
-  const id = parsePositiveMessageId(cursor.id);
-  if (!Number.isFinite(timestamp) || timestamp <= 0 || !id) {
-    return { timestamp: 0, id: 0 };
-  }
-  return { timestamp, id };
+  return state.repository.getRecentMessages(limit, appId, beforeTimestamp);
 }
 
 function getMessagesAfterCursor(appId = "default", cursor = {}, limit = 50) {
-  if (!ensureInitialized()) {
-    return [];
-  }
-
-  const safeLimit = parsePositiveInt(limit, 50);
-  const { timestamp, id } = normalizeCursor(cursor);
-  try {
-    const stmt = state.db.prepare(`
-      SELECT id, text, source, timestamp
-      , client_message_id
-      FROM messages
-      WHERE app_id = ?
-        AND (timestamp > ? OR (timestamp = ? AND id > ?))
-      ORDER BY timestamp ASC, id ASC
-      LIMIT ?
-    `);
-    stmt.bind([appId, timestamp, timestamp, id, safeLimit]);
-    const messages = [];
-    while (stmt.step()) {
-      messages.push(mapMessageRow(stmt.getAsObject()));
-    }
-    stmt.free();
-    return messages;
-  } catch (error) {
-    console.error(`[DB] Failed to get messages after cursor: ${error.message}`);
-    return [];
-  }
+  return state.repository.getMessagesAfterCursor(appId, cursor, limit);
 }
 
-function getMessagesAroundMessage(targetMessageId, appId = "default", beforeLimit = 25, afterLimit = 25) {
-  if (!ensureInitialized()) {
-    return [];
-  }
-
-  const target = getRawMessageById(targetMessageId, appId);
-  if (!target) {
-    return [];
-  }
-
-  const safeBeforeLimit = parsePositiveInt(beforeLimit, 25);
-  const safeAfterLimit = parsePositiveInt(afterLimit, 25);
-  const targetTimestamp = Number.parseInt(String(target.timestamp), 10);
-  const targetId = parsePositiveMessageId(target.id);
-  if (!Number.isFinite(targetTimestamp) || !targetId) {
-    return [];
-  }
-
-  try {
-    const olderStmt = state.db.prepare(`
-      SELECT id, text, source, timestamp
-      , client_message_id
-      FROM messages
-      WHERE app_id = ?
-        AND (timestamp < ? OR (timestamp = ? AND id <= ?))
-      ORDER BY timestamp DESC, id DESC
-      LIMIT ?
-    `);
-    olderStmt.bind([appId, targetTimestamp, targetTimestamp, targetId, safeBeforeLimit + 1]);
-    const olderRows = [];
-    while (olderStmt.step()) {
-      olderRows.push(olderStmt.getAsObject());
-    }
-    olderStmt.free();
-
-    const newerStmt = state.db.prepare(`
-      SELECT id, text, source, timestamp
-      , client_message_id
-      FROM messages
-      WHERE app_id = ?
-        AND (timestamp > ? OR (timestamp = ? AND id > ?))
-      ORDER BY timestamp ASC, id ASC
-      LIMIT ?
-    `);
-    newerStmt.bind([appId, targetTimestamp, targetTimestamp, targetId, safeAfterLimit]);
-    const newerRows = [];
-    while (newerStmt.step()) {
-      newerRows.push(newerStmt.getAsObject());
-    }
-    newerStmt.free();
-
-    const combinedRows = [...olderRows.reverse(), ...newerRows];
-    return combinedRows.map(mapMessageRow);
-  } catch (error) {
-    console.error(`[DB] Failed to get messages around target: ${error.message}`);
-    return [];
-  }
+function getMessageById(messageId, appId = "default") {
+  return state.repository.getMessageById(messageId, appId);
 }
 
-function buildSearchSnippet(message, keyword, maxLength = 120) {
-  const lowerKeyword = keyword.toLowerCase();
-  const text = typeof message.text === "string" ? message.text : "";
-  const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
-  const previewRaw = hasAttachments ? `[图片] ${text}`.trim() : text.trim();
-  const preview = previewRaw || "(空消息)";
-  const lowerPreview = preview.toLowerCase();
-  const hitIndex = lowerPreview.indexOf(lowerKeyword);
-  if (hitIndex < 0 || preview.length <= maxLength) {
-    return preview.length <= maxLength
-      ? preview
-      : `${preview.slice(0, maxLength - 3)}...`;
-  }
-
-  const half = Math.floor(maxLength / 2);
-  const start = Math.max(0, hitIndex - half);
-  const end = Math.min(preview.length, start + maxLength);
-  const clipped = preview.slice(start, end);
-  const prefix = start > 0 ? "..." : "";
-  const suffix = end < preview.length ? "..." : "";
-  return `${prefix}${clipped}${suffix}`;
+function getMessageByClientMessageId(clientMessageId, source, appId = "default") {
+  return state.repository.getMessageByClientMessageId(clientMessageId, source, appId);
 }
 
-function getHotSearchRows(appId, keyword, limit) {
-  const pattern = `%${keyword}%`;
-  const stmt = state.db.prepare(`
-    SELECT id, text, source, timestamp, client_message_id
-    FROM messages
-    WHERE app_id = ? AND text LIKE ?
-    ORDER BY timestamp DESC, id DESC
-    LIMIT ?
-  `);
-  stmt.bind([appId, pattern, limit]);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
+function getMessagesAroundMessage(
+  targetMessageId,
+  appId = "default",
+  beforeLimit = 25,
+  afterLimit = 25,
+) {
+  return state.repository.getMessagesAroundMessage(targetMessageId, appId, beforeLimit, afterLimit);
 }
 
 function searchMessages(options = {}) {
-  if (!ensureInitialized()) {
-    return [];
-  }
-
-  const appId = typeof options.appId === "string" && options.appId.trim().length > 0
-    ? options.appId.trim()
-    : null;
-  const keyword = typeof options.keyword === "string" ? options.keyword.trim() : "";
-  const limit = parsePositiveInt(options.limit, 50);
-  if (!appId || keyword.length === 0) {
-    return [];
-  }
-
-  const lowerKeyword = keyword.toLowerCase();
-  const hotRows = getHotSearchRows(appId, keyword, limit);
-  const hotResults = hotRows
-    .map((row) => mapMessageRow(row))
-    .filter((message) => {
-      const text = `${message.text || ""} ${JSON.stringify(message.attachments || [])}`.toLowerCase();
-      return text.includes(lowerKeyword);
-    })
-    .map((message) => ({
-      targetType: "hot",
-      messageId: message.id,
-      archiveId: null,
-      source: message.source,
-      timestamp: message.timestamp,
-      preview: buildSearchSnippet(message, keyword),
-      restored: false,
-    }));
-
-  const archiveRows = archiveDb.searchArchivedMessages({ appId, keyword, limit });
-  const archiveResults = archiveRows.map((row) => {
-    const message = mapArchivedRow(row);
-    return {
-      targetType: "archive",
-      messageId: null,
-      archiveId: Number.parseInt(String(message.archiveId), 10),
-      source: message.source,
-      timestamp: message.timestamp,
-      preview: buildSearchSnippet(message, keyword),
-      restored: false,
-    };
-  });
-
-  return [...hotResults, ...archiveResults]
-    .sort((a, b) => {
-      if (a.timestamp === b.timestamp) {
-        const aId = a.messageId || a.archiveId || 0;
-        const bId = b.messageId || b.archiveId || 0;
-        return bId - aId;
-      }
-      return b.timestamp - a.timestamp;
-    })
-    .slice(0, limit);
+  return state.messageSearchService.searchMessages(options);
 }
 
 function getMessageCount(appId) {
-  if (!ensureInitialized()) {
-    return 0;
-  }
-
-  try {
-    const hasAppFilter = !!appId;
-    const sql = hasAppFilter
-      ? "SELECT COUNT(*) as count FROM messages WHERE app_id = ?"
-      : "SELECT COUNT(*) as count FROM messages";
-    const stmt = state.db.prepare(sql);
-    if (hasAppFilter) {
-      stmt.bind([appId]);
-    }
-    stmt.step();
-    const result = stmt.getAsObject();
-    stmt.free();
-    return result.count;
-  } catch (error) {
-    console.error(`[DB] Failed to get message count: ${error.message}`);
-    return 0;
-  }
-}
-
-function getDistinctAppIds() {
-  const stmt = state.db.prepare("SELECT DISTINCT app_id FROM messages");
-  const appIds = [];
-  while (stmt.step()) {
-    appIds.push(stmt.getAsObject().app_id);
-  }
-  stmt.free();
-  return appIds;
-}
-
-function getRowsToArchiveByRetention(retentionTimestamp) {
-  const stmt = state.db.prepare(`
-    SELECT id, app_id, text, source, timestamp
-    FROM messages
-    WHERE timestamp < ?
-    ORDER BY timestamp ASC
-  `);
-  stmt.bind([retentionTimestamp]);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
-}
-
-function getRowsToArchiveByMaxCount(maxCount) {
-  const rows = [];
-  const appIds = getDistinctAppIds();
-  for (const appId of appIds) {
-    const count = getMessageCount(appId);
-    if (count <= maxCount) {
-      continue;
-    }
-    const excess = count - maxCount;
-    const stmt = state.db.prepare(`
-      SELECT id, app_id, text, source, timestamp
-      FROM messages
-      WHERE app_id = ?
-      ORDER BY timestamp ASC
-      LIMIT ?
-    `);
-    stmt.bind([appId, excess]);
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject());
-    }
-    stmt.free();
-  }
-  return rows;
-}
-
-function deleteMessagesByIds(messageIds) {
-  if (!Array.isArray(messageIds) || messageIds.length === 0) {
-    return 0;
-  }
-  const placeholders = buildPlaceholders(messageIds.length);
-  state.db.run(`DELETE FROM messages WHERE id IN (${placeholders})`, messageIds);
-  return state.db.getRowsModified();
-}
-
-function archiveAndRemoveRows(rows, reason) {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return 0;
-  }
-  const archivedCount = archiveDb.archiveMessages(rows, reason);
-  if (archivedCount !== rows.length) {
-    throw new Error(`[DB] Archive count mismatch: expected ${rows.length}, got ${archivedCount}`);
-  }
-
-  const messageIds = rows.map((row) => row.id);
-  const deletedCount = deleteMessagesByIds(messageIds);
-  if (deletedCount !== rows.length) {
-    throw new Error(`[DB] Delete count mismatch: expected ${rows.length}, got ${deletedCount}`);
-  }
-  return archivedCount;
+  return state.repository.getMessageCount(appId);
 }
 
 async function cleanupOldMessages() {
-  if (!ensureInitialized()) {
-    return;
-  }
-
-  try {
-    const retentionTimestamp = Date.now() - state.config.retentionDays * 24 * 60 * 60 * 1000;
-    const retentionRows = getRowsToArchiveByRetention(retentionTimestamp);
-    const archivedByRetention = archiveAndRemoveRows(retentionRows, archiveDb.ARCHIVE_REASON_RETENTION);
-
-    const maxCountRows = getRowsToArchiveByMaxCount(state.config.maxCount);
-    const archivedByCount = archiveAndRemoveRows(maxCountRows, archiveDb.ARCHIVE_REASON_MAX_COUNT);
-
-    const totalArchived = archivedByRetention + archivedByCount;
-    if (totalArchived > 0) {
-      console.log(`[DB] Archived ${totalArchived} messages in cleanup task`);
-    }
-    await saveToFile();
-  } catch (error) {
-    console.error(`[DB] Cleanup failed: ${error.message}`);
-  }
+  await state.archiveCleanupService.cleanupOldMessages();
 }
 
-function getArchivedMessages(limit = 50, appId = null, beforeTimestamp = null, includeRestored = false) {
-  if (!ensureInitialized()) {
-    return [];
-  }
-  const rows = archiveDb.getArchivedMessages({ limit, appId, beforeTimestamp, includeRestored });
-  return rows.map(mapArchivedRow);
+function getArchivedMessages(
+  limit = 50,
+  appId = null,
+  beforeTimestamp = null,
+  includeRestored = false,
+) {
+  return state.archiveViewService.getArchivedMessages(
+    limit,
+    appId,
+    beforeTimestamp,
+    includeRestored,
+  );
 }
 
-function mapArchivedRowToChatMessage(row) {
-  const message = mapArchivedRow(row);
-  return {
-    id: null,
-    text: message.text,
-    source: message.source,
-    timestamp: message.timestamp,
-    attachments: message.attachments,
-    quote: message.quote,
-    archiveId: message.archiveId,
-    archived: true,
-    originalMessageId: message.originalMessageId,
-  };
-}
-
-function getArchivedMessagesAround(archiveId, appId = "default", beforeLimit = 25, afterLimit = 25) {
-  if (!ensureInitialized()) {
-    return [];
-  }
-  const rows = archiveDb.getMessagesAroundArchiveId(archiveId, appId, beforeLimit, afterLimit);
-  return rows.map(mapArchivedRowToChatMessage);
+function getArchivedMessagesAround(
+  archiveId,
+  appId = "default",
+  beforeLimit = 25,
+  afterLimit = 25,
+) {
+  return state.archiveViewService.getArchivedMessagesAround(
+    archiveId,
+    appId,
+    beforeLimit,
+    afterLimit,
+  );
 }
 
 function getArchiveMessageCount(appId, includeRestored = false) {
-  if (!ensureInitialized()) {
-    return 0;
-  }
-  return archiveDb.getArchiveMessageCount(appId, includeRestored);
-}
-
-function normalizeArchiveIds(archiveIds) {
-  if (!Array.isArray(archiveIds)) {
-    return [];
-  }
-  const normalized = [];
-  for (const id of archiveIds) {
-    const parsed = Number.parseInt(String(id), 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      normalized.push(parsed);
-    }
-  }
-  return Array.from(new Set(normalized));
-}
-
-function restoreRowsToHotStorage(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return 0;
-  }
-  state.db.run("BEGIN TRANSACTION");
-  try {
-    for (const row of rows) {
-      state.db.run(
-        "INSERT INTO messages (text, source, timestamp, app_id, quote_message_id) VALUES (?, ?, ?, ?, NULL)",
-        [row.text, row.source, row.timestamp, row.app_id],
-      );
-    }
-    state.db.run("COMMIT");
-    return rows.length;
-  } catch (error) {
-    state.db.run("ROLLBACK");
-    throw new Error(`[DB] Restore failed while writing hot messages: ${error.message}`);
-  }
+  return state.archiveViewService.getArchiveMessageCount(appId, includeRestored);
 }
 
 async function restoreArchivedMessages(archiveIds) {
-  if (!ensureInitialized()) {
-    return { requested: 0, restored: 0 };
-  }
-
-  const normalizedIds = normalizeArchiveIds(archiveIds);
-  if (normalizedIds.length === 0) {
-    throw new Error("[DB] archiveIds must contain positive integers");
-  }
-
-  const rows = archiveDb.getArchivedRowsByIds(normalizedIds, false);
-  if (rows.length === 0) {
-    return { requested: normalizedIds.length, restored: 0 };
-  }
-
-  const restored = restoreRowsToHotStorage(rows);
-  const marked = archiveDb.markRestored(rows.map((row) => row.archive_id));
-  if (marked !== restored) {
-    throw new Error(`[DB] Restore mark mismatch: expected ${restored}, got ${marked}`);
-  }
-
-  const saved = await saveToFile();
-  if (!saved) {
-    throw new Error("[DB] Restore succeeded in memory but failed to persist");
-  }
-
-  return { requested: normalizedIds.length, restored };
+  return state.messageRestoreService.restoreArchivedMessages(archiveIds);
 }
 
 async function close() {
-  clearTimers();
+  clearTimers(state);
   if (!state.db) {
-    resetState();
+    resetDbState(state);
     await archiveDb.close();
     return;
   }
-
   await saveToFile();
   state.db.close();
   console.log("[DB] Connection closed");
-  resetState();
+  resetDbState(state);
   await archiveDb.close();
 }
 
