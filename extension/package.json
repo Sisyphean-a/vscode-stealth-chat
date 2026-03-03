@@ -145,6 +145,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
+    "vsix:package": "vsce package --no-dependencies",
+    "vsix:list": "vsce ls --tree --no-dependencies",
     "protocol:generate": "node ../packages/protocol/scripts/generate-protocol.js",
     "protocol:test": "node ../packages/protocol/scripts/protocol-boundary-smoke.js",
     "compile": "npm run check-types && node esbuild.js",

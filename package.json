@@ -10,8 +10,9 @@
     "format:check": "prettier --check \"package.json\" \"eslint.config.js\" \"README.md\" \"docs/**/*.md\" \".github/workflows/**/*.yml\" \"server/src/socket.js\" \"server/src/db.js\" \"server/src/archiveDb.js\" \"server/src/application/services/**/*.js\" \"server/src/interfaces/socket/**/*.js\" \"server/src/infrastructure/**/*.js\"",
     "typecheck": "npm run -w extension check-types",
     "test": "npm run -w server test",
-    "ci:check": "npm run lint && npm run format:check && npm run typecheck && npm run test",
-    "prepare": "husky"
+    "vsix:package": "npm run -w extension vsix:package",
+    "vsix:list": "npm run -w extension vsix:list",
+    "ci:check": "npm run lint && npm run format:check && npm run typecheck && npm run test"
   },
   "lint-staged": {
     "*.{js,cjs,mjs,ts,svelte,json,md,yml,yaml}": [

@@ -47,8 +47,8 @@ body[data-display-mode="log"] {
 #status-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
   background: linear-gradient(
     115deg,
     color-mix(in srgb, var(--vscode-statusBar-background) 90%, transparent) 0%,
@@ -57,6 +57,22 @@ body[data-display-mode="log"] {
   border-bottom: 1px solid var(--chat-border-soft);
   backdrop-filter: blur(6px);
   flex-shrink: 0;
+}
+
+.status-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 body[data-display-mode="log"] #status-bar {
@@ -95,38 +111,87 @@ body[data-display-mode="log"] #status-bar {
 }
 
 .status-meta {
-  font-size: 11px;
+  font-size: 10.5px;
+  line-height: 1.2;
   color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, var(--vscode-editor-background) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chat-border-soft) 82%, transparent);
+  border-radius: 999px;
+  padding: 2px 7px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
+  max-width: 128px;
 }
 
-#search-btn,
-#settings-btn {
-  margin-left: auto;
+#presence-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#read-text {
+  flex-shrink: 0;
+}
+
+.status-meta-read {
+  color: color-mix(in srgb, var(--vscode-testing-iconPassed) 75%, var(--vscode-foreground));
+  border-color: color-mix(in srgb, var(--vscode-testing-iconPassed) 35%, var(--chat-border-soft));
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.status-icon-btn {
   background: color-mix(in srgb, var(--vscode-button-secondaryBackground) 74%, transparent);
   color: var(--vscode-button-secondaryForeground);
   border: 1px solid var(--chat-border-soft);
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   cursor: pointer;
-  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
 }
 
-#settings-btn {
-  margin-left: 0;
+.status-icon-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
-#search-btn:hover,
-#settings-btn:hover {
+.status-icon-btn:hover {
   opacity: 0.96;
   transform: translateY(-1px);
   background: color-mix(in srgb, var(--vscode-button-background) 34%, transparent);
+}
+
+.status-icon-btn:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 85%, transparent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 460px) {
+  #presence-text {
+    display: none;
+  }
+}
+
+@media (max-width: 400px) {
+  #presence-text {
+    max-width: 88px;
+  }
 }
 
 #messages-container {
