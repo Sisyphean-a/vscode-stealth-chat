@@ -9,12 +9,19 @@ readonly CHAT_PORT="3000"
 readonly DEFAULT_HEALTH_URL="http://127.0.0.1:${CHAT_PORT}/health"
 readonly STOP_WAIT_SECONDS=30
 readonly START_WAIT_SECONDS=30
+readonly TOTAL_STEPS=6
 readonly SKIP_BACKUP="${SKIP_BACKUP:-0}"
 readonly SKIP_HEALTHCHECK="${SKIP_HEALTHCHECK:-0}"
 readonly HEALTH_URL="${HEALTH_URL:-${DEFAULT_HEALTH_URL}}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%F %T')" "$*"
+}
+
+log_step() {
+  local step="$1"
+  local title="$2"
+  log "[${step}/${TOTAL_STEPS}] ${title}"
 }
 
 fail() {
@@ -108,7 +115,7 @@ graceful_stop_if_running() {
     wait_for_service_stop
     return 0
   fi
-  log "${CHAT_SERVICE} 当前未运行，进入启动流程"
+  log "${CHAT_SERVICE} 当前未运行，跳过停机"
 }
 
 start_or_restart() {
@@ -148,15 +155,26 @@ show_status() {
 }
 
 main() {
+  log_step 1 "检查运行环境"
   require_command docker
   assert_project_root
   ensure_data_dirs
 
   log "发布脚本开始执行，目录: ${SCRIPT_DIR}"
+
+  log_step 2 "安全停机"
   graceful_stop_if_running
+
+  log_step 3 "备份当前数据"
   backup_data
+
+  log_step 4 "重建并启动容器"
   start_or_restart
+
+  log_step 5 "执行健康检查"
   health_check
+
+  log_step 6 "输出容器状态"
   show_status
   log "发布脚本执行完成"
 }
