@@ -58,8 +58,24 @@ function restoreRowsToHotStorage(database, rows) {
   try {
     for (const row of rows) {
       database.run(
-        "INSERT INTO messages (text, source, timestamp, app_id, quote_message_id) VALUES (?, ?, ?, ?, NULL)",
-        [row.text, row.source, row.timestamp, row.app_id],
+        `
+          INSERT INTO messages (
+            text,
+            source,
+            timestamp,
+            app_id,
+            quote_message_id,
+            client_message_id
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [
+          row.text,
+          row.source,
+          row.timestamp,
+          row.app_id,
+          row.quote_message_id ?? null,
+          row.client_message_id ?? null,
+        ],
       );
     }
     database.run("COMMIT");

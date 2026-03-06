@@ -42,8 +42,7 @@ function resolveConfig(options = {}) {
 }
 
 async function ensureDataDir(dbPath) {
-  const dbDir = path.dirname(dbPath);
-  await fs.promises.mkdir(dbDir, { recursive: true });
+  await fs.promises.mkdir(path.dirname(dbPath), { recursive: true });
 }
 
 async function loadDatabaseBuffer(dbPath) {
@@ -54,7 +53,7 @@ async function loadDatabaseBuffer(dbPath) {
 }
 
 function ensureInitialized() {
-  return state.isInitialized && state.db && state.config && state.repository;
+  return Boolean(state.isInitialized && state.db && state.config && state.repository);
 }
 
 function assertInitialized() {
@@ -96,16 +95,13 @@ async function init(SQL, options = {}) {
   if (state.isInitialized) {
     await close();
   }
-
   state.config = resolveConfig(options);
   await ensureDataDir(state.config.dbPath);
-
   const buffer = await loadDatabaseBuffer(state.config.dbPath);
   state.db = buffer ? new SQL.Database(buffer) : new SQL.Database();
   createArchiveSchema(state.db);
   state.repository = buildRepository();
   state.isInitialized = true;
-
   const saved = await saveToFile();
   if (!saved) {
     throw new Error(`[ArchiveDB] Unable to persist snapshot at ${state.config.dbPath}`);
@@ -113,9 +109,12 @@ async function init(SQL, options = {}) {
   console.log(`[ArchiveDB] Initialized at ${state.config.dbPath}`);
 }
 
-async function writeSnapshot() {
-  const data = state.db.export();
-  const buffer = Buffer.from(data);
+function exportToBuffer() {
+  assertInitialized();
+  return Buffer.from(state.db.export());
+}
+
+async function writeSnapshot(buffer = exportToBuffer()) {
   await fs.promises.writeFile(state.config.dbPath, buffer);
 }
 
@@ -127,7 +126,6 @@ async function saveToFile() {
     state.pendingSave = true;
     return true;
   }
-
   state.isSaving = true;
   try {
     do {
@@ -193,7 +191,6 @@ async function close() {
     resetState();
     return;
   }
-
   await saveToFile();
   state.db.close();
   console.log("[ArchiveDB] Connection closed");
@@ -203,6 +200,7 @@ async function close() {
 module.exports = {
   init,
   saveToFile,
+  exportToBuffer,
   archiveMessages,
   getArchivedMessages,
   getArchivedRowsByIds,

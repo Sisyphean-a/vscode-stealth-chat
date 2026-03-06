@@ -1,4 +1,5 @@
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const MESSAGE_COLUMNS = "id, app_id, text, source, timestamp, quote_message_id, client_message_id";
 
 function getDistinctAppIds(database) {
   const stmt = database.prepare("SELECT DISTINCT app_id FROM messages");
@@ -12,13 +13,12 @@ function getDistinctAppIds(database) {
 
 function getRowsToArchiveByRetention(database, retentionTimestamp) {
   const stmt = database.prepare(`
-    SELECT id, app_id, text, source, timestamp
+    SELECT ${MESSAGE_COLUMNS}
     FROM messages
     WHERE timestamp < ?
     ORDER BY timestamp ASC
   `);
   stmt.bind([retentionTimestamp]);
-
   const rows = [];
   while (stmt.step()) {
     rows.push(stmt.getAsObject());
@@ -30,14 +30,13 @@ function getRowsToArchiveByRetention(database, retentionTimestamp) {
 function getRowsToArchiveByMaxCount(options) {
   const { database, maxCount, getMessageCount } = options;
   const rows = [];
-  const appIds = getDistinctAppIds(database);
-  for (const appId of appIds) {
+  for (const appId of getDistinctAppIds(database)) {
     const count = getMessageCount(appId);
     if (count <= maxCount) {
       continue;
     }
     const stmt = database.prepare(`
-      SELECT id, app_id, text, source, timestamp
+      SELECT ${MESSAGE_COLUMNS}
       FROM messages
       WHERE app_id = ?
       ORDER BY timestamp ASC
@@ -66,14 +65,15 @@ function archiveAndRemoveRows(options) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return 0;
   }
-
   const archivedCount = archiveDb.archiveMessages(rows, reason);
   if (archivedCount !== rows.length) {
     throw new Error(`[DB] Archive count mismatch: expected ${rows.length}, got ${archivedCount}`);
   }
-
-  const messageIds = rows.map((row) => row.id);
-  const deletedCount = deleteMessagesByIds(database, buildPlaceholders, messageIds);
+  const deletedCount = deleteMessagesByIds(
+    database,
+    buildPlaceholders,
+    rows.map((row) => row.id),
+  );
   if (deletedCount !== rows.length) {
     throw new Error(`[DB] Delete count mismatch: expected ${rows.length}, got ${deletedCount}`);
   }
@@ -95,33 +95,24 @@ function createArchiveCleanupService(options) {
     if (!ensureInitialized()) {
       return;
     }
-
     try {
       const database = getDatabase();
       const config = getConfig();
       const retentionTimestamp = Date.now() - config.retentionDays * DAY_IN_MS;
-      const retentionRows = getRowsToArchiveByRetention(database, retentionTimestamp);
       const archivedByRetention = archiveAndRemoveRows({
         database,
-        rows: retentionRows,
+        rows: getRowsToArchiveByRetention(database, retentionTimestamp),
         reason: archiveDb.ARCHIVE_REASON_RETENTION,
         archiveDb,
         buildPlaceholders,
       });
-
-      const maxCountRows = getRowsToArchiveByMaxCount({
-        database,
-        maxCount: config.maxCount,
-        getMessageCount,
-      });
       const archivedByCount = archiveAndRemoveRows({
         database,
-        rows: maxCountRows,
+        rows: getRowsToArchiveByMaxCount({ database, maxCount: config.maxCount, getMessageCount }),
         reason: archiveDb.ARCHIVE_REASON_MAX_COUNT,
         archiveDb,
         buildPlaceholders,
       });
-
       const totalArchived = archivedByRetention + archivedByCount;
       if (totalArchived > 0) {
         console.log(`[DB] Archived ${totalArchived} messages in cleanup task`);

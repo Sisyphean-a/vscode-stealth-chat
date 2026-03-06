@@ -8,6 +8,9 @@ const adminRoutes = require("./routes/admin");
 const uploadRoutes = require("./routes/upload");
 const syncRoutes = require("./routes/sync");
 
+const IMAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DB_PATH = path.join(__dirname, "../data/messages.db");
+const DEFAULT_ARCHIVE_DB_PATH = path.join(__dirname, "../data/messages.archive.db");
 const app = express();
 const server = http.createServer(app);
 const UPLOAD_CORS_METHODS = "POST,OPTIONS";
@@ -32,6 +35,21 @@ function applyUploadCors(req, res, next) {
   next();
 }
 
+function buildImageCleanupOptions() {
+  return {
+    hotDbPath: process.env.DB_PATH || DEFAULT_DB_PATH,
+    archiveDbPath: process.env.ARCHIVE_DB_PATH || DEFAULT_ARCHIVE_DB_PATH,
+  };
+}
+
+async function runImageCleanup() {
+  const saved = await db.saveToFile();
+  if (!saved) {
+    throw new Error("Failed to flush databases before image cleanup");
+  }
+  return cleanupOldImages(buildImageCleanupOptions());
+}
+
 app.use("/api/upload", applyUploadCors);
 app.use("/api/upload", express.json({ limit: "10mb" }));
 app.use(express.json());
@@ -51,7 +69,11 @@ async function startServer() {
   app.use("/uploads", express.static(IMAGES_DIR));
   console.log(`[Server] Serving uploaded images from ${IMAGES_DIR}`);
 
-  setInterval(cleanupOldImages, 24 * 60 * 60 * 1000);
+  setInterval(() => {
+    void runImageCleanup().catch((error) => {
+      console.error("[Server] Image cleanup failed:", error.message || error);
+    });
+  }, IMAGE_CLEANUP_INTERVAL_MS);
   console.log("[Server] Image cleanup scheduled (daily)");
 
   const PORT = process.env.PORT || 3000;

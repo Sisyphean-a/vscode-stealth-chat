@@ -153,8 +153,8 @@ main() {
   ensure_data_dirs
 
   log "发布脚本开始执行，目录: ${SCRIPT_DIR}"
-  backup_data
   graceful_stop_if_running
+  backup_data
   start_or_restart
   health_check
   show_status

@@ -1,3 +1,13 @@
+const {
+  ARCHIVE_COLUMNS,
+  buildArchiveListSql,
+  buildArchiveByIdFilters,
+  queryRows,
+  querySingleRow,
+  queryOlderAroundArchiveRows,
+  queryNewerAroundArchiveRows,
+} = require("./sql");
+
 function createArchiveRepository(options) {
   const deps = { ...options };
   return {
@@ -21,18 +31,20 @@ function archiveMessages(deps, messages, reason) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return 0;
   }
-  const archiveReason = deps.normalizeArchiveReason(reason, deps.validArchiveReasons);
-  return runArchiveTransaction(deps, messages, archiveReason);
+  return runArchiveTransaction(
+    deps.getDatabase(),
+    messages,
+    deps.normalizeArchiveReason(reason, deps.validArchiveReasons),
+    (row) => deps.validateMessageRow(row, deps.normalizeAppId, deps.normalizeTimestamp),
+  );
 }
 
-function runArchiveTransaction(deps, messages, archiveReason) {
-  const database = deps.getDatabase();
+function runArchiveTransaction(database, messages, archiveReason, validateRow) {
   const archivedAt = Date.now();
   database.run("BEGIN TRANSACTION");
   try {
     for (const row of messages) {
-      const message = deps.validateMessageRow(row, deps.normalizeAppId, deps.normalizeTimestamp);
-      insertArchiveRow(database, message, archivedAt, archiveReason);
+      insertArchiveRow(database, validateRow(row), archivedAt, archiveReason);
     }
     database.run("COMMIT");
     return messages.length;
@@ -46,8 +58,16 @@ function insertArchiveRow(database, message, archivedAt, archiveReason) {
   database.run(
     `
       INSERT INTO archived_messages (
-        app_id, text, source, timestamp, original_message_id, archived_at, archive_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        app_id,
+        text,
+        source,
+        timestamp,
+        original_message_id,
+        archived_at,
+        archive_reason,
+        quote_message_id,
+        client_message_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       message.appId,
@@ -57,6 +77,8 @@ function insertArchiveRow(database, message, archivedAt, archiveReason) {
       message.messageId,
       archivedAt,
       archiveReason,
+      message.quoteMessageId,
+      message.clientMessageId,
     ],
   );
 }
@@ -67,7 +89,6 @@ function getArchivedMessages(deps, options = {}) {
   const beforeTimestamp = deps.normalizeTimestamp(options.beforeTimestamp);
   const includeRestored = options.includeRestored === true;
   const limit = deps.parsePositiveInt(options.limit, deps.defaultListLimit);
-  const sql = buildArchiveListSql(Boolean(appId), beforeTimestamp !== null, includeRestored);
   const params = [];
   if (appId) {
     params.push(appId);
@@ -76,28 +97,11 @@ function getArchivedMessages(deps, options = {}) {
     params.push(beforeTimestamp);
   }
   params.push(limit);
-  return queryRows(deps, sql, params).reverse();
-}
-
-function buildArchiveListSql(hasAppFilter, hasBeforeFilter, includeRestored) {
-  const conditions = [];
-  if (hasAppFilter) {
-    conditions.push("app_id = ?");
-  }
-  if (hasBeforeFilter) {
-    conditions.push("timestamp < ?");
-  }
-  if (!includeRestored) {
-    conditions.push("restored_at IS NULL");
-  }
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  return `
-    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
-    FROM archived_messages
-    ${whereClause}
-    ORDER BY timestamp DESC
-    LIMIT ?
-  `;
+  return queryRows(
+    deps.getDatabase(),
+    buildArchiveListSql(Boolean(appId), beforeTimestamp !== null, includeRestored),
+    params,
+  ).reverse();
 }
 
 function getArchivedRowsByIds(deps, archiveIds, includeRestored = false) {
@@ -109,12 +113,12 @@ function getArchivedRowsByIds(deps, archiveIds, includeRestored = false) {
   const placeholders = deps.buildPlaceholders(ids.length);
   const restoredClause = includeRestored ? "" : " AND restored_at IS NULL";
   const sql = `
-    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
+    SELECT ${ARCHIVE_COLUMNS}
     FROM archived_messages
     WHERE archive_id IN (${placeholders})${restoredClause}
     ORDER BY archive_id ASC
   `;
-  return queryRows(deps, sql, ids);
+  return queryRows(deps.getDatabase(), sql, ids);
 }
 
 function markRestored(deps, archiveIds) {
@@ -124,12 +128,14 @@ function markRestored(deps, archiveIds) {
     return 0;
   }
   const placeholders = deps.buildPlaceholders(ids.length);
-  const sql = `
-    UPDATE archived_messages
-    SET restored_at = ?
-    WHERE archive_id IN (${placeholders}) AND restored_at IS NULL
-  `;
-  deps.getDatabase().run(sql, [Date.now(), ...ids]);
+  deps.getDatabase().run(
+    `
+      UPDATE archived_messages
+      SET restored_at = ?
+      WHERE archive_id IN (${placeholders}) AND restored_at IS NULL
+    `,
+    [Date.now(), ...ids],
+  );
   return deps.getDatabase().getRowsModified();
 }
 
@@ -146,8 +152,11 @@ function getArchiveMessageCount(deps, appId, includeRestored = false) {
     conditions.push("restored_at IS NULL");
   }
   const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
-  const sql = `SELECT COUNT(*) as count FROM archived_messages${whereClause}`;
-  const row = querySingleRow(deps, sql, params);
+  const row = querySingleRow(
+    deps.getDatabase(),
+    `SELECT COUNT(*) as count FROM archived_messages${whereClause}`,
+    params,
+  );
   return row?.count || 0;
 }
 
@@ -157,32 +166,16 @@ function getArchiveMessageById(deps, archiveId, appId, includeRestored = false) 
   if (!Number.isFinite(parsedArchiveId) || parsedArchiveId <= 0) {
     return null;
   }
-  const normalizedAppId = deps.normalizeAppId(appId);
-  const { whereClause, params } = buildArchiveByIdFilters(
+  const filters = buildArchiveByIdFilters(
     parsedArchiveId,
-    normalizedAppId,
+    deps.normalizeAppId(appId),
     includeRestored,
   );
-  const sql = `
-    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
-    FROM archived_messages
-    WHERE ${whereClause}
-    LIMIT 1
-  `;
-  return querySingleRow(deps, sql, params);
-}
-
-function buildArchiveByIdFilters(parsedArchiveId, normalizedAppId, includeRestored) {
-  const conditions = ["archive_id = ?"];
-  const params = [parsedArchiveId];
-  if (normalizedAppId) {
-    conditions.push("app_id = ?");
-    params.push(normalizedAppId);
-  }
-  if (!includeRestored) {
-    conditions.push("restored_at IS NULL");
-  }
-  return { whereClause: conditions.join(" AND "), params };
+  return querySingleRow(
+    deps.getDatabase(),
+    `SELECT ${ARCHIVE_COLUMNS} FROM archived_messages WHERE ${filters.whereClause} LIMIT 1`,
+    filters.params,
+  );
 }
 
 function getMessagesAroundArchiveId(
@@ -210,59 +203,24 @@ function queryAroundArchiveRows(deps, target, beforeLimit, afterLimit) {
   ) {
     return [];
   }
-  const safeBeforeLimit = deps.parsePositiveInt(beforeLimit, deps.defaultAroundLimit);
-  const safeAfterLimit = deps.parsePositiveInt(afterLimit, deps.defaultAroundLimit);
+  const safeBefore = deps.parsePositiveInt(beforeLimit, deps.defaultAroundLimit) + 1;
+  const safeAfter = deps.parsePositiveInt(afterLimit, deps.defaultAroundLimit);
+  const database = deps.getDatabase();
   const olderRows = queryOlderAroundArchiveRows(
-    deps,
+    database,
     target,
     targetTimestamp,
     targetArchiveId,
-    safeBeforeLimit + 1,
+    safeBefore,
   );
   const newerRows = queryNewerAroundArchiveRows(
-    deps,
+    database,
     target,
     targetTimestamp,
     targetArchiveId,
-    safeAfterLimit,
+    safeAfter,
   );
   return [...olderRows.reverse(), ...newerRows];
-}
-
-function queryOlderAroundArchiveRows(deps, target, targetTimestamp, targetArchiveId, limit) {
-  const sql = `
-    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
-    FROM archived_messages
-    WHERE app_id = ? AND restored_at IS NULL
-      AND (timestamp < ? OR (timestamp = ? AND archive_id <= ?))
-    ORDER BY timestamp DESC, archive_id DESC
-    LIMIT ?
-  `;
-  return queryRows(deps, sql, [
-    target.app_id,
-    targetTimestamp,
-    targetTimestamp,
-    targetArchiveId,
-    limit,
-  ]);
-}
-
-function queryNewerAroundArchiveRows(deps, target, targetTimestamp, targetArchiveId, limit) {
-  const sql = `
-    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
-    FROM archived_messages
-    WHERE app_id = ? AND restored_at IS NULL
-      AND (timestamp > ? OR (timestamp = ? AND archive_id > ?))
-    ORDER BY timestamp ASC, archive_id ASC
-    LIMIT ?
-  `;
-  return queryRows(deps, sql, [
-    target.app_id,
-    targetTimestamp,
-    targetTimestamp,
-    targetArchiveId,
-    limit,
-  ]);
 }
 
 function searchArchivedMessages(deps, options = {}) {
@@ -273,45 +231,23 @@ function searchArchivedMessages(deps, options = {}) {
     return [];
   }
   const limit = deps.parsePositiveInt(options.limit, deps.defaultListLimit);
-  const sql = `
-    SELECT archive_id, app_id, text, source, timestamp, original_message_id, archived_at, archive_reason, restored_at
-    FROM archived_messages
-    WHERE app_id = ? AND restored_at IS NULL AND text LIKE ?
-    ORDER BY timestamp DESC, archive_id DESC
-    LIMIT ?
-  `;
-  const rows = queryRows(deps, sql, [appId, `%${keyword}%`, limit]);
+  const rows = queryRows(
+    deps.getDatabase(),
+    `
+      SELECT ${ARCHIVE_COLUMNS}
+      FROM archived_messages
+      WHERE app_id = ? AND restored_at IS NULL AND text LIKE ?
+      ORDER BY timestamp DESC, archive_id DESC
+      LIMIT ?
+    `,
+    [appId, `%${keyword}%`, limit],
+  );
   const lowerKeyword = keyword.toLowerCase();
   return rows.filter((row) =>
     String(row.text || "")
       .toLowerCase()
       .includes(lowerKeyword),
   );
-}
-
-function queryRows(deps, sql, params) {
-  const stmt = deps.getDatabase().prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
-}
-
-function querySingleRow(deps, sql, params) {
-  const stmt = deps.getDatabase().prepare(sql);
-  if (params.length > 0) {
-    stmt.bind(params);
-  }
-  if (!stmt.step()) {
-    stmt.free();
-    return null;
-  }
-  const row = stmt.getAsObject();
-  stmt.free();
-  return row;
 }
 
 module.exports = { createArchiveRepository };

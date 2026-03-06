@@ -1,168 +1,184 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { scanReferencedImageFiles } = require("../application/services/imageReferenceScanner");
 
-// Configuration
-const IMAGE_SIZE_THRESHOLD = 100 * 1024; // 100KB
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-const IMAGES_DIR = path.join(__dirname, '../../data/images');
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const IMAGE_SIZE_THRESHOLD = 100 * 1024;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 const IMAGE_RETENTION_DAYS = 30;
+const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const IMAGES_DIR = path.join(__dirname, "../../data/images");
+const DEFAULT_DB_PATH = path.join(__dirname, "../../data/messages.db");
+const DEFAULT_ARCHIVE_DB_PATH = path.join(__dirname, "../../data/messages.archive.db");
 
-// Ensure images directory exists
-if (!fs.existsSync(IMAGES_DIR)) {
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  console.log('[ImageStorage] Created images directory:', IMAGES_DIR);
+ensureImagesDir(IMAGES_DIR);
+
+async function processImage(base64Data, mimeType, originalFilename) {
+  if (!ALLOWED_TYPES.includes(mimeType)) {
+    throw new Error(`Unsupported image type: ${mimeType}. Allowed: ${ALLOWED_TYPES.join(", ")}`);
+  }
+  const buffer = Buffer.from(base64Data, "base64");
+  if (buffer.length > MAX_IMAGE_SIZE) {
+    throw new Error(
+      `Image too large: ${(buffer.length / 1024 / 1024).toFixed(2)}MB (max ${MAX_IMAGE_SIZE / 1024 / 1024}MB)`,
+    );
+  }
+  if (buffer.length < IMAGE_SIZE_THRESHOLD) {
+    return buildInlineImageResult(buffer.length, mimeType, base64Data, originalFilename);
+  }
+  return saveImageToDisk(buffer, mimeType, originalFilename);
 }
 
-/**
- * Process uploaded image - small images become Base64, large images are saved to disk
- * @param {string} base64Data - Base64 encoded image data (without data URL prefix)
- * @param {string} mimeType - MIME type (e.g., 'image/png')
- * @param {string} originalFilename - Original filename from client
- * @returns {Object} - { type: 'inline'|'file', data?: string, url?: string, size: number, filename: string }
- * @throws {Error} - If validation fails
- */
-async function processImage(base64Data, mimeType, originalFilename) {
-  // Validate MIME type
-  if (!ALLOWED_TYPES.includes(mimeType)) {
-    throw new Error(`Unsupported image type: ${mimeType}. Allowed: ${ALLOWED_TYPES.join(', ')}`);
+function ensureImagesDir(imagesDir) {
+  if (fs.existsSync(imagesDir)) {
+    return;
   }
+  fs.mkdirSync(imagesDir, { recursive: true });
+  console.log("[ImageStorage] Created images directory:", imagesDir);
+}
 
-  // Decode and validate size
-  const buffer = Buffer.from(base64Data, 'base64');
-  if (buffer.length > MAX_IMAGE_SIZE) {
-    throw new Error(`Image too large: ${(buffer.length / 1024 / 1024).toFixed(2)}MB (max ${MAX_IMAGE_SIZE / 1024 / 1024}MB)`);
-  }
-
-  // Determine file extension
-  const extMap = {
-    'image/png': 'png',
-    'image/jpeg': 'jpg',
-    'image/gif': 'gif',
-    'image/webp': 'webp'
+function buildInlineImageResult(size, mimeType, base64Data, originalFilename) {
+  return {
+    type: "inline",
+    data: `data:${mimeType};base64,${base64Data}`,
+    size,
+    filename: originalFilename,
   };
-  const ext = extMap[mimeType] || 'png';
+}
 
-  // Small image: return data URL
-  if (buffer.length < IMAGE_SIZE_THRESHOLD) {
-    return {
-      type: 'inline',
-      data: `data:${mimeType};base64,${base64Data}`,
-      size: buffer.length,
-      filename: originalFilename
-    };
-  }
-
-  // Large image: save to disk
-  // Generate secure filename: timestamp-hash.ext
-  const timestamp = Date.now();
-  const hash = crypto.randomBytes(8).toString('hex');
-  const filename = `${timestamp}-${hash}.${ext}`;
+async function saveImageToDisk(buffer, mimeType, originalFilename) {
+  const filename = buildStoredFilename(mimeType);
   const filepath = path.join(IMAGES_DIR, filename);
-
   try {
     await fs.promises.writeFile(filepath, buffer);
-    console.log(`[ImageStorage] Saved large image: ${filename} (${(buffer.length / 1024).toFixed(2)}KB)`);
-
+    console.log(
+      `[ImageStorage] Saved large image: ${filename} (${(buffer.length / 1024).toFixed(2)}KB)`,
+    );
     return {
-      type: 'file',
+      type: "file",
       url: `/uploads/${filename}`,
       size: buffer.length,
-      filename: originalFilename
+      filename: originalFilename,
     };
   } catch (error) {
-    console.error('[ImageStorage] Failed to save image:', error);
-    throw new Error('Failed to save image to disk');
+    console.error("[ImageStorage] Failed to save image:", error);
+    throw new Error("Failed to save image to disk");
   }
 }
 
-/**
- * Clean up images older than retention period
- * @returns {Object} - { deleted: number, errors: number }
- */
-function cleanupOldImages() {
-  if (!fs.existsSync(IMAGES_DIR)) {
-    console.log('[ImageStorage] Images directory does not exist, skipping cleanup');
-    return { deleted: 0, errors: 0 };
+function buildStoredFilename(mimeType) {
+  const extMap = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+  };
+  return `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${extMap[mimeType] || "png"}`;
+}
+
+async function cleanupOldImages(options = {}) {
+  const settings = resolveCleanupOptions(options);
+  if (!fs.existsSync(settings.imagesDir)) {
+    console.log("[ImageStorage] Images directory does not exist, skipping cleanup");
+    return { deleted: 0, errors: 0, skippedReferenced: 0 };
   }
+  const referencedFiles = await scanReferencedImageFiles({
+    hotDbPath: settings.hotDbPath,
+    archiveDbPath: settings.archiveDbPath,
+  });
+  return deleteExpiredImages(settings, referencedFiles);
+}
 
-  const now = Date.now();
-  const maxAge = IMAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  let deleted = 0;
-  let errors = 0;
+function resolveCleanupOptions(options) {
+  return {
+    imagesDir: options.imagesDir || IMAGES_DIR,
+    hotDbPath: options.hotDbPath || process.env.DB_PATH || DEFAULT_DB_PATH,
+    archiveDbPath: options.archiveDbPath || process.env.ARCHIVE_DB_PATH || DEFAULT_ARCHIVE_DB_PATH,
+    retentionDays: normalizeRetentionDays(options.retentionDays),
+    now: typeof options.now === "number" && Number.isFinite(options.now) ? options.now : Date.now(),
+  };
+}
 
+function normalizeRetentionDays(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : IMAGE_RETENTION_DAYS;
+}
+
+function deleteExpiredImages(settings, referencedFiles) {
+  const result = { deleted: 0, errors: 0, skippedReferenced: 0 };
+  const maxAge = settings.retentionDays * DAY_IN_MS;
+  const files = fs.readdirSync(settings.imagesDir);
+  for (const file of files) {
+    const age = settings.now - readTimestampFromFilename(file);
+    if (!Number.isFinite(age) || age <= maxAge) {
+      continue;
+    }
+    if (referencedFiles.has(file)) {
+      result.skippedReferenced += 1;
+      continue;
+    }
+    deleteImageFile(path.join(settings.imagesDir, file), file, age, result);
+  }
+  logCleanupSummary(result);
+  return result;
+}
+
+function readTimestampFromFilename(filename) {
+  const match = filename.match(/^(\d+)-[a-f0-9]+\.\w+$/);
+  if (!match) {
+    console.warn(`[ImageStorage] Skipping non-standard filename: ${filename}`);
+    return Number.NaN;
+  }
+  return Number.parseInt(match[1], 10);
+}
+
+function deleteImageFile(filepath, filename, age, result) {
   try {
-    const files = fs.readdirSync(IMAGES_DIR);
-
-    for (const file of files) {
-      // Extract timestamp from filename (format: timestamp-hash.ext)
-      const match = file.match(/^(\d+)-[a-f0-9]+\.\w+$/);
-      if (!match) {
-        console.warn(`[ImageStorage] Skipping non-standard filename: ${file}`);
-        continue;
-      }
-
-      const fileTimestamp = parseInt(match[1], 10);
-      const age = now - fileTimestamp;
-
-      if (age > maxAge) {
-        try {
-          const filepath = path.join(IMAGES_DIR, file);
-          fs.unlinkSync(filepath);
-          deleted++;
-          console.log(`[ImageStorage] Deleted old image: ${file} (age: ${Math.floor(age / 86400000)} days)`);
-        } catch (err) {
-          console.error(`[ImageStorage] Failed to delete ${file}:`, err);
-          errors++;
-        }
-      }
-    }
-
-    if (deleted > 0 || errors > 0) {
-      console.log(`[ImageStorage] Cleanup complete: deleted ${deleted}, errors ${errors}`);
-    }
+    fs.unlinkSync(filepath);
+    result.deleted += 1;
+    console.log(
+      `[ImageStorage] Deleted old image: ${filename} (age: ${Math.floor(age / DAY_IN_MS)} days)`,
+    );
   } catch (error) {
-    console.error('[ImageStorage] Cleanup failed:', error);
-    errors++;
+    result.errors += 1;
+    console.error(`[ImageStorage] Failed to delete ${filename}:`, error);
   }
-
-  return { deleted, errors };
 }
 
-/**
- * Get storage statistics
- * @returns {Object} - { totalFiles: number, totalSize: number, oldestFile: number }
- */
+function logCleanupSummary(result) {
+  if (result.deleted === 0 && result.errors === 0 && result.skippedReferenced === 0) {
+    return;
+  }
+  console.log(
+    `[ImageStorage] Cleanup complete: deleted ${result.deleted}, errors ${result.errors}, skippedReferenced ${result.skippedReferenced}`,
+  );
+}
+
 function getStorageStats() {
   if (!fs.existsSync(IMAGES_DIR)) {
     return { totalFiles: 0, totalSize: 0, oldestFile: null };
   }
-
   const files = fs.readdirSync(IMAGES_DIR);
   let totalSize = 0;
   let oldestTimestamp = Date.now();
-
   for (const file of files) {
-    const filepath = path.join(IMAGES_DIR, file);
-    const stats = fs.statSync(filepath);
-    totalSize += stats.size;
-
-    // Extract timestamp from filename
-    const match = file.match(/^(\d+)-/);
-    if (match) {
-      const fileTimestamp = parseInt(match[1], 10);
-      if (fileTimestamp < oldestTimestamp) {
-        oldestTimestamp = fileTimestamp;
-      }
+    totalSize += fs.statSync(path.join(IMAGES_DIR, file)).size;
+    const timestamp = readStatsTimestamp(file);
+    if (timestamp < oldestTimestamp) {
+      oldestTimestamp = timestamp;
     }
   }
-
   return {
     totalFiles: files.length,
     totalSize,
-    oldestFile: files.length > 0 ? oldestTimestamp : null
+    oldestFile: files.length > 0 ? oldestTimestamp : null,
   };
+}
+
+function readStatsTimestamp(filename) {
+  const match = filename.match(/^(\d+)-/);
+  return match ? Number.parseInt(match[1], 10) : Date.now();
 }
 
 module.exports = {
@@ -171,5 +187,5 @@ module.exports = {
   getStorageStats,
   IMAGES_DIR,
   IMAGE_SIZE_THRESHOLD,
-  MAX_IMAGE_SIZE
+  MAX_IMAGE_SIZE,
 };

@@ -3,6 +3,16 @@ function parsePositiveInt(input, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parsePositiveMessageId(input) {
+  const parsed = Number.parseInt(String(input ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeClientMessageId(input) {
+  const normalized = typeof input === "string" ? input.trim() : "";
+  return normalized || null;
+}
+
 function normalizeArchiveReason(reason, validReasons) {
   if (!validReasons.has(reason)) {
     throw new Error(`[ArchiveDB] Unsupported archive reason: ${reason}`);
@@ -48,12 +58,12 @@ function buildPlaceholders(count) {
 }
 
 function validateMessageRow(row, normalizeAppIdFn, normalizeTimestampFn) {
-  const messageId = Number.parseInt(String(row?.id), 10);
+  const messageId = parsePositiveMessageId(row?.id);
   const appId = normalizeAppIdFn(row?.app_id);
   const text = row?.text;
   const source = row?.source;
   const timestamp = normalizeTimestampFn(row?.timestamp);
-  if (!Number.isFinite(messageId) || messageId <= 0) {
+  if (!messageId) {
     throw new Error(`[ArchiveDB] Invalid source message id: ${row?.id}`);
   }
   if (!appId) {
@@ -65,7 +75,15 @@ function validateMessageRow(row, normalizeAppIdFn, normalizeTimestampFn) {
   if (typeof source !== "string" || source.length === 0) {
     throw new Error("[ArchiveDB] Invalid source field in archived message");
   }
-  return { messageId, appId, text, source, timestamp };
+  return {
+    messageId,
+    appId,
+    text,
+    source,
+    timestamp,
+    quoteMessageId: parsePositiveMessageId(row?.quote_message_id),
+    clientMessageId: normalizeClientMessageId(row?.client_message_id),
+  };
 }
 
 module.exports = {

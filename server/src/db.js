@@ -1,9 +1,6 @@
 const initSqlJs = require("sql.js");
-const fs = require("fs");
 const path = require("path");
 const archiveDb = require("./archiveDb");
-const { createMessageSearchService } = require("./application/services/messageSearchService");
-const { createArchiveCleanupService } = require("./application/services/archiveCleanupService");
 const { createSchema } = require("./infrastructure/persistence/messageSchema");
 const {
   parsePositiveMessageId,
@@ -12,11 +9,10 @@ const {
   mapArchivedRow,
   mapArchivedRowToChatMessage,
 } = require("./infrastructure/persistence/messageMapper");
-const { createMessageRepository } = require("./infrastructure/persistence/messageRepository");
+const { buildDbServices } = require("./infrastructure/persistence/dbServices");
 const {
-  createMessageRestoreService,
-} = require("./infrastructure/persistence/messageRestoreService");
-const { createArchiveViewService } = require("./infrastructure/persistence/archiveViewService");
+  createStoragePairPersistence,
+} = require("./infrastructure/persistence/storagePairPersistence");
 const {
   parsePositiveInt,
   resolveDbConfig,
@@ -62,43 +58,18 @@ function ensureInitialized() {
   return Boolean(state.isInitialized && state.db && state.config && state.repository);
 }
 
-function buildServices() {
-  state.repository = createMessageRepository({
-    ensureInitialized,
-    getDatabase,
-    parsePositiveInt,
-    parsePositiveMessageId,
-    normalizeCursor,
-    mapMessageRow,
-  });
-  state.messageRestoreService = createMessageRestoreService({
-    ensureInitialized,
-    getDatabase,
-    saveToFile,
-    archiveDb,
-  });
-  state.messageSearchService = createMessageSearchService({
-    ensureInitialized,
-    getDatabase,
-    parsePositiveInt,
-    mapMessageRow,
-    mapArchivedRow,
-    archiveDb,
-  });
-  state.archiveCleanupService = createArchiveCleanupService({
-    ensureInitialized,
-    getDatabase,
-    getConfig: getRuntimeConfig,
-    getMessageCount: (appId) => state.repository.getMessageCount(appId),
-    buildPlaceholders,
-    archiveDb,
-    saveToFile,
-  });
-  state.archiveViewService = createArchiveViewService({
-    ensureInitialized,
-    archiveDb,
-    mapArchivedRow,
-    mapArchivedRowToChatMessage,
+function assignServices(services) {
+  state.repository = services.repository;
+  state.messageRestoreService = services.messageRestoreService;
+  state.messageSearchService = services.messageSearchService;
+  state.archiveCleanupService = services.archiveCleanupService;
+  state.archiveViewService = services.archiveViewService;
+}
+
+function getPairPersistence() {
+  return createStoragePairPersistence({
+    dbPath: state.config.dbPath,
+    archiveDbPath: state.config.archiveDbPath,
   });
 }
 
@@ -113,13 +84,29 @@ async function init(options = {}) {
       defaultMaxCount: DEFAULT_MAX_COUNT,
     });
     await ensureDataDir(state.config.dbPath);
+    await getPairPersistence().recoverPendingCommit();
     const SQL = await initSqlJs();
     const buffer = await loadDatabaseBuffer(state.config.dbPath);
     state.db = buffer ? new SQL.Database(buffer) : new SQL.Database();
     createSchema(state.db);
     await archiveDb.init(SQL, { archiveDbPath: state.config.archiveDbPath });
     state.isInitialized = true;
-    buildServices();
+    assignServices(
+      buildDbServices({
+        ensureInitialized,
+        getDatabase,
+        parsePositiveInt,
+        parsePositiveMessageId,
+        normalizeCursor,
+        mapMessageRow,
+        mapArchivedRow,
+        mapArchivedRowToChatMessage,
+        getRuntimeConfig,
+        buildPlaceholders,
+        archiveDb,
+        saveToFile,
+      }),
+    );
     const saved = await saveToFile();
     if (!saved) {
       throw new Error(`Unable to persist database snapshot at ${state.config.dbPath}`);
@@ -145,9 +132,8 @@ async function handleInitFailure(error) {
   throw new Error(`[DB] Initialization failed: ${error.message}`);
 }
 
-async function writeSnapshot() {
-  const data = state.db.export();
-  await fs.promises.writeFile(state.config.dbPath, Buffer.from(data));
+async function persistSnapshotPair() {
+  await getPairPersistence().savePair(Buffer.from(state.db.export()), archiveDb.exportToBuffer());
 }
 
 async function saveToFile() {
@@ -162,11 +148,7 @@ async function saveToFile() {
   try {
     do {
       state.pendingSave = false;
-      await writeSnapshot();
-      const archiveSaved = await archiveDb.saveToFile();
-      if (!archiveSaved) {
-        throw new Error("Unable to save archive database");
-      }
+      await persistSnapshotPair();
     } while (state.pendingSave);
     return true;
   } catch (error) {
