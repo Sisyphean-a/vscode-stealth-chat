@@ -7,6 +7,16 @@ export const SEARCH_RESULT_LIMIT = 50;
 export const DEFAULT_AROUND_WINDOW_SIZE = 25;
 export const MAX_AROUND_WINDOW_SIZE = 100;
 export const QUOTE_SNIPPET_MAX_LENGTH = 120;
+export const IMAGE_UPLOAD_COMPRESSION_SIZE_THRESHOLD = 1024 * 1024;
+export const IMAGE_UPLOAD_TARGET_MAX_DIMENSION = 1920;
+export const IMAGE_UPLOAD_TARGET_QUALITY = 0.82;
+export const IMAGE_UPLOAD_OUTPUT_SIZE_LIMIT = 900 * 1024;
+export const IMAGE_UPLOAD_SERVER_SUPPORTED_TYPES = Object.freeze([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
 
 export const DEFAULT_EMOJI_SET = Object.freeze([
   "🙂",
@@ -134,4 +144,31 @@ export function shouldIncrementUnreadCount(options) {
 
 export function shouldApplyReadReceiptToUnread(options) {
   return options?.clientType === "vscode";
+}
+
+export function shouldCompressBeforeUpload(image) {
+  const mimeType = typeof image?.mimeType === "string" ? image.mimeType.toLowerCase() : "";
+  const size = Number.isFinite(image?.size) ? Number(image.size) : 0;
+  if (!mimeType.startsWith("image/")) {
+    return false;
+  }
+  if (!IMAGE_UPLOAD_SERVER_SUPPORTED_TYPES.includes(mimeType)) {
+    return true;
+  }
+  if (mimeType === "image/png") {
+    return false;
+  }
+  return size >= IMAGE_UPLOAD_COMPRESSION_SIZE_THRESHOLD;
+}
+
+export function buildImageUploadPlan(image) {
+  const mimeType = typeof image?.mimeType === "string" ? image.mimeType.toLowerCase() : "image/jpeg";
+  const shouldCompress = shouldCompressBeforeUpload(image);
+  return {
+    shouldCompress,
+    outputMimeType: shouldCompress ? "image/jpeg" : mimeType,
+    targetMaxDimension: IMAGE_UPLOAD_TARGET_MAX_DIMENSION,
+    targetQuality: IMAGE_UPLOAD_TARGET_QUALITY,
+    outputSizeLimit: IMAGE_UPLOAD_OUTPUT_SIZE_LIMIT,
+  };
 }

@@ -141,9 +141,11 @@ export default {
                 <div v-if="pendingImages.length > 0" class="pending-images">
                     <div v-for="(img, idx) in pendingImages" :key="idx" class="pending-item">
                         <img :src="img.data" alt="待发送图片">
-                        <button class="remove-pending" @click="removePendingImage(idx)">×</button>
+                        <span v-if="img.wasCompressed" class="pending-badge">已压缩</span>
+                        <button class="remove-pending" :disabled="isSending" @click="removePendingImage(idx)">×</button>
                     </div>
                 </div>
+                <div v-if="sendProgressText" class="send-progress">{{ sendProgressText }}</div>
                 <div v-if="quotedMessage" class="quote-draft">
                     <span class="quote-draft-text">{{ quoteDraftLabel }}</span>
                     <button class="quote-draft-clear" type="button" @click="clearQuote">×</button>
@@ -180,7 +182,9 @@ export default {
                         @input="autoResize"
                         @keydown.enter.exact.prevent="sendMessage"
                     ></textarea>
-                    <button type="submit" class="send-btn" :disabled="!inputText.trim() && pendingImages.length === 0"></button>
+                    <button type="submit" class="send-btn" :class="{ busy: isSending }" :disabled="sendButtonDisabled">
+                        <span>{{ sendButtonLabel }}</span>
+                    </button>
                 </form>
             </footer>
         </div>
@@ -226,6 +230,8 @@ export default {
         const cameraInput = ref(null)
         const quotedMessage = ref(null)
         const isSending = ref(false)
+        const sendPhase = ref('idle')
+        const sendProgressText = ref('')
         let readTimer = null
         const searchKeyword = ref('')
         const searchResults = ref([])
@@ -305,6 +311,23 @@ export default {
             const sender = getSourceLabel(quotedMessage.value.source)
             const snippet = quotedMessage.value.textSnippet || '(空消息)'
             return `${sender}: ${snippet}`
+        })
+
+        const sendButtonDisabled = computed(() => {
+            if (isSending.value) {
+                return true
+            }
+            return !inputText.value.trim() && pendingImages.length === 0
+        })
+
+        const sendButtonLabel = computed(() => {
+            if (sendPhase.value === 'uploading') {
+                return '上传中'
+            }
+            if (sendPhase.value === 'sending') {
+                return '发送中'
+            }
+            return '↑'
         })
 
         const clearQuote = () => {
@@ -469,19 +492,29 @@ export default {
             if ((!inputText.value.trim() && pendingImages.length === 0) || !chat.socketConnected.value || isSending.value) return
 
             isSending.value = true
+            sendPhase.value = pendingImages.length > 0 ? 'uploading' : 'sending'
+            sendProgressText.value = pendingImages.length > 0 ? `准备上传 ${pendingImages.length} 张图片...` : '正在发送消息...'
             try {
                 let attachments
 
                 if (pendingImages.length > 0) {
                     try {
-                        attachments = await imageHandler.uploadAllImages(chat.authToken.value)
+                        attachments = await imageHandler.uploadAllImages(chat.authToken.value, undefined, ({ current, total, image }) => {
+                            const filename = image?.filename || `图片 ${current}`
+                            sendProgressText.value = `上传图片 ${current}/${total}: ${filename}`
+                        })
                     } catch (err) {
                         console.error('[Chat] Image upload failed:', err)
                         chat.errorMsg.value = '图片上传失败: ' + err.message
+                        sendPhase.value = 'idle'
+                        sendProgressText.value = ''
                         isSending.value = false
                         return
                     }
                 }
+
+                sendPhase.value = 'sending'
+                sendProgressText.value = '图片上传完成，正在发送消息...'
 
                 await chat.sendChatMessage({
                     text: inputText.value,
@@ -504,6 +537,8 @@ export default {
                 chat.errorMsg.value = err.message || '发送失败'
             } finally {
                 isSending.value = false
+                sendPhase.value = 'idle'
+                sendProgressText.value = ''
             }
         }
 

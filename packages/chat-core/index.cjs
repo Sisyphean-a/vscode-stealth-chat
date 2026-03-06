@@ -7,6 +7,16 @@ const SEARCH_RESULT_LIMIT = 50;
 const DEFAULT_AROUND_WINDOW_SIZE = 25;
 const MAX_AROUND_WINDOW_SIZE = 100;
 const QUOTE_SNIPPET_MAX_LENGTH = 120;
+const IMAGE_UPLOAD_COMPRESSION_SIZE_THRESHOLD = 1024 * 1024;
+const IMAGE_UPLOAD_TARGET_MAX_DIMENSION = 1920;
+const IMAGE_UPLOAD_TARGET_QUALITY = 0.82;
+const IMAGE_UPLOAD_OUTPUT_SIZE_LIMIT = 900 * 1024;
+const IMAGE_UPLOAD_SERVER_SUPPORTED_TYPES = Object.freeze([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
 const DEFAULT_EMOJI_SET = Object.freeze([
   "🙂",
   "😀",
@@ -135,6 +145,33 @@ function shouldApplyReadReceiptToUnread(options) {
   return options?.clientType === "vscode";
 }
 
+function shouldCompressBeforeUpload(image) {
+  const mimeType = typeof image?.mimeType === 'string' ? image.mimeType.toLowerCase() : '';
+  const size = Number.isFinite(image?.size) ? Number(image.size) : 0;
+  if (!mimeType.startsWith('image/')) {
+    return false;
+  }
+  if (!IMAGE_UPLOAD_SERVER_SUPPORTED_TYPES.includes(mimeType)) {
+    return true;
+  }
+  if (mimeType === 'image/png') {
+    return false;
+  }
+  return size >= IMAGE_UPLOAD_COMPRESSION_SIZE_THRESHOLD;
+}
+
+function buildImageUploadPlan(image) {
+  const mimeType = typeof image?.mimeType === 'string' ? image.mimeType.toLowerCase() : 'image/jpeg';
+  const shouldCompress = shouldCompressBeforeUpload(image);
+  return {
+    shouldCompress,
+    outputMimeType: shouldCompress ? 'image/jpeg' : mimeType,
+    targetMaxDimension: IMAGE_UPLOAD_TARGET_MAX_DIMENSION,
+    targetQuality: IMAGE_UPLOAD_TARGET_QUALITY,
+    outputSizeLimit: IMAGE_UPLOAD_OUTPUT_SIZE_LIMIT,
+  };
+}
+
 module.exports = {
   ACK_TIMEOUT_MS,
   MAX_SEND_RETRIES,
@@ -144,6 +181,10 @@ module.exports = {
   DEFAULT_AROUND_WINDOW_SIZE,
   MAX_AROUND_WINDOW_SIZE,
   QUOTE_SNIPPET_MAX_LENGTH,
+  IMAGE_UPLOAD_COMPRESSION_SIZE_THRESHOLD,
+  IMAGE_UPLOAD_TARGET_MAX_DIMENSION,
+  IMAGE_UPLOAD_TARGET_QUALITY,
+  IMAGE_UPLOAD_OUTPUT_SIZE_LIMIT,
   DEFAULT_EMOJI_SET,
   parsePositiveInt,
   buildClientMessageId,
@@ -154,4 +195,6 @@ module.exports = {
   buildQuoteSnippet,
   shouldIncrementUnreadCount,
   shouldApplyReadReceiptToUnread,
+  shouldCompressBeforeUpload,
+  buildImageUploadPlan,
 };
