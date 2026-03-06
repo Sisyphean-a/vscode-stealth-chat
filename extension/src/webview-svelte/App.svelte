@@ -4,12 +4,12 @@
   import type { HostMessage } from "../webview-bridge/protocol";
   import {
     dispatchHostMessage,
-    formatReadText,
     type HostMessageHandlers,
   } from "./controllers/hostMessageDispatcher";
   import Composer from "./components/layout/Composer.svelte";
   import MessageList from "./components/layout/MessageList.svelte";
   import SearchPanel from "./components/features/SearchPanel.svelte";
+  import HoverImagePreview from "./components/features/HoverImagePreview.svelte";
   import SettingsPanel from "./components/features/SettingsPanel.svelte";
   import StatusBar from "./components/layout/StatusBar.svelte";
   import { HISTORY_PAGE_SIZE } from "./lib/constants";
@@ -18,6 +18,7 @@
   import { ReadStatusReporter } from "./lib/readStatusReporter";
   import { uploadAll, type PendingAttachment } from "./lib/attachments";
   import { buildClientMessageId } from "../../../packages/chat-core/index.js";
+  import { derivePeerReadMeta, type PeerReadReceipt } from "./lib/peerRead";
   import {
     compareMessages,
     makeQuoteFromMessage,
@@ -34,6 +35,17 @@
 
   const TEST_BADGE_TIMEOUT_MS = 5000;
   const SEND_ERROR_TIMEOUT_MS = 3000;
+  const HOVER_PREVIEW_WIDTH_PX = 260;
+  const HOVER_PREVIEW_HEIGHT_PX = 180;
+  const HOVER_PREVIEW_OFFSET_PX = 18;
+  const HOVER_PREVIEW_GAP_PX = 12;
+  const HOVER_PREVIEW_CLOSE_DELAY_MS = 90;
+
+  type HoverPreviewState = {
+    url: string;
+    left: number;
+    top: number;
+  };
 
   const DEFAULT_SETTINGS: GlobalSettings = {
     serverUrl: "http://localhost:3000",
@@ -45,8 +57,13 @@
   let connected: boolean | null = null;
   let presenceText = "";
   let readText = "";
+  let readAnchorMessageId: number | null = null;
+  let peerReadReceipt: PeerReadReceipt | null = null;
   let sendError = "";
   let sendErrorTimer: number | undefined;
+  let hoverPreview: HoverPreviewState | null = null;
+  let hoverPreviewTimer: number | undefined;
+  let peerReadMeta = { anchorMessageId: null as number | null, summaryText: "" };
 
   let displayMode: DisplayMode = "bubble";
   let serverUrl = normalizeServerUrl(DEFAULT_SETTINGS.serverUrl);
@@ -89,6 +106,14 @@
 
   $: document.body.dataset.displayMode = displayMode;
   $: oldestTimestamp = messages.length > 0 ? messages[0].timestamp : null;
+  $: peerReadMeta = derivePeerReadMeta({
+    messages,
+    ownSource: "vscode",
+    readerLabel: "对方",
+    receipt: peerReadReceipt,
+  });
+  $: readText = peerReadMeta.summaryText;
+  $: readAnchorMessageId = peerReadMeta.anchorMessageId;
 
   onMount(() => {
     const dispose = listenHostMessages(handleHostMessage);
@@ -104,6 +129,9 @@
   function clearRuntimeTimers(): void {
     if (sendErrorTimer) {
       window.clearTimeout(sendErrorTimer);
+    }
+    if (hoverPreviewTimer) {
+      window.clearTimeout(hoverPreviewTimer);
     }
     for (const timer of badgeTimers.values()) {
       window.clearTimeout(timer);
@@ -218,7 +246,7 @@
       if (payload.clientType !== "mobile") {
         return;
       }
-      readText = formatReadText(payload.lastReadTimestamp);
+      peerReadReceipt = payload;
     },
     onSendFailed: (payload) => {
       updateDeliveryState(payload.clientMessageId, "failed");
@@ -370,6 +398,9 @@
     isFirstLoad = true;
     readReporter.reset();
     readText = "";
+    readAnchorMessageId = null;
+    peerReadReceipt = null;
+    hoverPreview = null;
     showScrollToBottom = false;
     searchResults = [];
     searchMeta = "";
@@ -501,6 +532,51 @@
     badgeTimers.set(name, timer);
   }
 
+  function clearHoverPreviewTimer(): void {
+    if (!hoverPreviewTimer) {
+      return;
+    }
+    window.clearTimeout(hoverPreviewTimer);
+    hoverPreviewTimer = undefined;
+  }
+
+  function clampPreviewPosition(value: number, max: number): number {
+    return Math.min(Math.max(value, HOVER_PREVIEW_GAP_PX), max);
+  }
+
+  function resolveHoverPreviewPosition(clientX: number, clientY: number): { left: number; top: number } {
+    const maxLeft = Math.max(HOVER_PREVIEW_GAP_PX, window.innerWidth - HOVER_PREVIEW_WIDTH_PX - HOVER_PREVIEW_GAP_PX);
+    const maxTop = Math.max(HOVER_PREVIEW_GAP_PX, window.innerHeight - HOVER_PREVIEW_HEIGHT_PX - HOVER_PREVIEW_GAP_PX);
+    const nextLeft = clientX + HOVER_PREVIEW_OFFSET_PX + HOVER_PREVIEW_WIDTH_PX > window.innerWidth - HOVER_PREVIEW_GAP_PX
+      ? clientX - HOVER_PREVIEW_WIDTH_PX - HOVER_PREVIEW_OFFSET_PX
+      : clientX + HOVER_PREVIEW_OFFSET_PX;
+    const nextTop = clientY + HOVER_PREVIEW_OFFSET_PX + HOVER_PREVIEW_HEIGHT_PX > window.innerHeight - HOVER_PREVIEW_GAP_PX
+      ? clientY - HOVER_PREVIEW_HEIGHT_PX - HOVER_PREVIEW_OFFSET_PX
+      : clientY + HOVER_PREVIEW_OFFSET_PX;
+    return {
+      left: clampPreviewPosition(nextLeft, maxLeft),
+      top: clampPreviewPosition(nextTop, maxTop),
+    };
+  }
+
+  function showHoverPreview(detail: { url: string; clientX: number; clientY: number }): void {
+    clearHoverPreviewTimer();
+    const position = resolveHoverPreviewPosition(detail.clientX, detail.clientY);
+    hoverPreview = {
+      url: detail.url,
+      left: position.left,
+      top: position.top,
+    };
+  }
+
+  function scheduleHideHoverPreview(): void {
+    clearHoverPreviewTimer();
+    hoverPreviewTimer = window.setTimeout(() => {
+      hoverPreview = null;
+      hoverPreviewTimer = undefined;
+    }, HOVER_PREVIEW_CLOSE_DELAY_MS);
+  }
+
   function onLoadMoreHistory(): void {
     if (isLoadingMore || !hasMoreHistory || !oldestTimestamp) {
       return;
@@ -559,12 +635,22 @@
   {hasMoreHistory}
   {isLoadingMore}
   {deliveryStateMap}
+  {readAnchorMessageId}
   on:loadMore={onLoadMoreHistory}
   on:quote={(event) => onMessageQuote(event.detail.messageId)}
   on:jumpQuote={(event) => jumpToMessage(event.detail.messageId)}
   on:openImage={(event) => postToHost({ type: "openImage", payload: { url: event.detail.url } })}
   on:retry={(event) => retryMessage(event.detail.clientMessageId)}
   on:atBottomChange={(event) => onAtBottomChange(event.detail.atBottom)}
+  on:previewHoverStart={(event) => showHoverPreview(event.detail)}
+  on:previewHoverMove={(event) => showHoverPreview(event.detail)}
+  on:previewHoverEnd={scheduleHideHoverPreview}
+/>
+
+<HoverImagePreview
+  url={hoverPreview?.url || ""}
+  left={hoverPreview?.left || 0}
+  top={hoverPreview?.top || 0}
 />
 
 {#if showScrollToBottom}

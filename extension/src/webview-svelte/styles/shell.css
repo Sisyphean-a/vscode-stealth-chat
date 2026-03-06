@@ -131,6 +131,7 @@ body[data-display-mode="log"] #status-bar {
 
 #read-text {
   flex-shrink: 0;
+  max-width: 192px;
 }
 
 .status-meta-read {
@@ -244,6 +245,27 @@ body[data-display-mode="log"] #status-bar {
 
 .image-link:hover {
   color: var(--vscode-textLink-activeForeground);
+}
+
+.hover-image-preview {
+  position: fixed;
+  z-index: 1600;
+  pointer-events: none;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border) 42%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent);
+  box-shadow: var(--chat-shadow-card);
+}
+
+.hover-image-preview img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
 @keyframes pulse {

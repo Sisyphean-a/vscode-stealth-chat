@@ -137,6 +137,78 @@ export function buildQuoteSnippet(message, maxLength = QUOTE_SNIPPET_MAX_LENGTH)
   return `${raw.slice(0, maxLength - 3)}...`;
 }
 
+const READ_SUMMARY_KIND_NONE = "none";
+const READ_SUMMARY_KIND_SUMMARY_ONLY = "summaryOnly";
+const READ_SUMMARY_KIND_EARLIER = "earlier";
+const READ_SUMMARY_KIND_LATEST = "latest";
+
+function isOwnSourceMessage(message, ownSource) {
+  return typeof message?.source === "string" && message.source === ownSource;
+}
+
+function resolveReadAnchorMessageId(options) {
+  const { messages, lastReadMessageId, ownSource } = options || {};
+  const safeLastReadMessageId = parsePositiveInt(lastReadMessageId);
+  if (!safeLastReadMessageId || !Array.isArray(messages)) {
+    return null;
+  }
+  let anchorMessageId = null;
+  for (const message of messages) {
+    if (!isOwnSourceMessage(message, ownSource)) {
+      continue;
+    }
+    const messageId = parsePositiveInt(message?.id);
+    if (messageId && messageId <= safeLastReadMessageId) {
+      anchorMessageId = messageId;
+    }
+  }
+  return anchorMessageId;
+}
+
+function hasOwnMessageAfterAnchor(options) {
+  const { messages, anchorMessageId, ownSource } = options || {};
+  if (!anchorMessageId || !Array.isArray(messages)) {
+    return false;
+  }
+  let seenAnchor = false;
+  for (const message of messages) {
+    if (!isOwnSourceMessage(message, ownSource)) {
+      continue;
+    }
+    const messageId = parsePositiveInt(message?.id);
+    if (!seenAnchor) {
+      seenAnchor = messageId === anchorMessageId;
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+export function derivePeerReadState(options) {
+  const { messages, ownSource = "vscode", receipt } = options || {};
+  const timestamp = Number.isFinite(receipt?.lastReadTimestamp) && receipt.lastReadTimestamp > 0
+    ? Number(receipt.lastReadTimestamp)
+    : null;
+  if (!timestamp) {
+    return { summaryKind: READ_SUMMARY_KIND_NONE, anchorMessageId: null, timestamp: null };
+  }
+  const anchorMessageId = resolveReadAnchorMessageId({
+    messages,
+    ownSource,
+    lastReadMessageId: receipt?.lastReadMessageId,
+  });
+  if (!anchorMessageId) {
+    return { summaryKind: READ_SUMMARY_KIND_SUMMARY_ONLY, anchorMessageId: null, timestamp };
+  }
+  return {
+    summaryKind: hasOwnMessageAfterAnchor({ messages, anchorMessageId, ownSource })
+      ? READ_SUMMARY_KIND_EARLIER
+      : READ_SUMMARY_KIND_LATEST,
+    anchorMessageId,
+    timestamp,
+  };
+}
 export function shouldIncrementUnreadCount(options) {
   const { messageSource, isActiveConversation, isViewVisible } = options || {};
   return messageSource === "mobile" && (!isActiveConversation || !isViewVisible);

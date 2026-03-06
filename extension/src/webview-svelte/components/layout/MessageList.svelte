@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import type { ChatMessage } from "../../../types";
+  import { createEventDispatcher } from 'svelte';
+  import type { ChatMessage } from '../../../types';
   import {
     buildRenderItems,
     normalizeClientMessageId,
@@ -8,15 +8,22 @@
     type DeliveryStateMap,
     type DisplayMode,
     type RenderItem,
-  } from "../../lib/messageStore";
-  import MessageItem from "../features/MessageItem.svelte";
+  } from '../../lib/messageStore';
+  import MessageItem from '../features/MessageItem.svelte';
+
+  type HoverPreviewDetail = {
+    url: string;
+    clientX: number;
+    clientY: number;
+  };
 
   export let messages: ChatMessage[] = [];
-  export let displayMode: DisplayMode = "bubble";
-  export let serverUrl = "";
+  export let displayMode: DisplayMode = 'bubble';
+  export let serverUrl = '';
   export let hasMoreHistory = true;
   export let isLoadingMore = false;
   export let deliveryStateMap: DeliveryStateMap = {};
+  export let readAnchorMessageId: number | null = null;
 
   const dispatch = createEventDispatcher<{
     loadMore: void;
@@ -25,6 +32,9 @@
     openImage: { url: string };
     retry: { clientMessageId: string };
     atBottomChange: { atBottom: boolean };
+    previewHoverStart: HoverPreviewDetail;
+    previewHoverMove: HoverPreviewDetail;
+    previewHoverEnd: void;
   }>();
 
   let containerEl: HTMLElement | null = null;
@@ -37,15 +47,15 @@
       return;
     }
     const gap = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
-    dispatch("atBottomChange", { atBottom: gap < 50 });
+    dispatch('atBottomChange', { atBottom: gap < 50 });
   }
 
   function highlight(el: HTMLElement): void {
-    el.classList.remove("message-highlight");
+    el.classList.remove('message-highlight');
     void el.offsetWidth;
-    el.classList.add("message-highlight");
+    el.classList.add('message-highlight');
     window.setTimeout(() => {
-      el.classList.remove("message-highlight");
+      el.classList.remove('message-highlight');
     }, 1200);
   }
 
@@ -58,7 +68,7 @@
     if (!target) {
       return false;
     }
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     highlight(target);
     return true;
   }
@@ -68,7 +78,7 @@
     if (!safeId) {
       return false;
     }
-    return focusByAttribute("message-id", safeId);
+    return focusByAttribute('message-id', safeId);
   }
 
   export function focusArchivedMessage(archiveId: number): boolean {
@@ -76,7 +86,7 @@
     if (!safeId) {
       return false;
     }
-    return focusByAttribute("archive-id", safeId);
+    return focusByAttribute('archive-id', safeId);
   }
 
   export function getScrollTop(): number {
@@ -107,12 +117,17 @@
     }
   }
 
-  function readDeliveryState(clientMessageId: unknown): "sending" | "failed" | null {
+  function readDeliveryState(clientMessageId: unknown): 'sending' | 'failed' | null {
     const safeId = normalizeClientMessageId(clientMessageId);
     if (!safeId) {
       return null;
     }
     return deliveryStateMap[safeId] || null;
+  }
+
+  function isAnchorMessage(message: ChatMessage): boolean {
+    const safeId = parsePositiveInt(message.id);
+    return !!safeId && safeId === readAnchorMessageId;
   }
 </script>
 
@@ -123,9 +138,9 @@
       id="load-more-btn"
       class="load-more-btn {isLoadingMore ? 'loading' : ''}"
       disabled={isLoadingMore}
-      on:click={() => dispatch("loadMore")}
+      on:click={() => dispatch('loadMore')}
     >
-      {isLoadingMore ? "加载中..." : "加载更多历史"}
+      {isLoadingMore ? '加载中...' : '加载更多历史'}
     </button>
   {/if}
 
@@ -133,7 +148,7 @@
     <div id="empty-state">暂无消息</div>
   {:else}
     {#each renderItems as item (item.key)}
-      {#if item.kind === "divider"}
+      {#if item.kind === 'divider'}
         <div class="time-divider {item.gap ? 'time-gap' : ''}">
           <span>{item.label}</span>
         </div>
@@ -143,10 +158,14 @@
           {displayMode}
           {serverUrl}
           deliveryState={readDeliveryState(item.message.clientMessageId)}
-          on:quote={(event) => dispatch("quote", event.detail)}
-          on:jumpQuote={(event) => dispatch("jumpQuote", event.detail)}
-          on:openImage={(event) => dispatch("openImage", event.detail)}
-          on:retry={(event) => dispatch("retry", event.detail)}
+          isReadAnchor={isAnchorMessage(item.message)}
+          on:quote={(event) => dispatch('quote', event.detail)}
+          on:jumpQuote={(event) => dispatch('jumpQuote', event.detail)}
+          on:openImage={(event) => dispatch('openImage', event.detail)}
+          on:retry={(event) => dispatch('retry', event.detail)}
+          on:previewHoverStart={(event) => dispatch('previewHoverStart', event.detail)}
+          on:previewHoverMove={(event) => dispatch('previewHoverMove', event.detail)}
+          on:previewHoverEnd={() => dispatch('previewHoverEnd')}
         />
       {/if}
     {/each}

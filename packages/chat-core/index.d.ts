@@ -29,6 +29,18 @@ export function compareMessages<T extends MessageLike>(a: T, b: T): number;
 export function normalizeIncomingMessages<T extends MessageLike = MessageLike>(messages: unknown): T[];
 export function mergeMessages<T extends MessageLike>(existing: readonly T[], incoming: readonly T[]): T[];
 export function buildQuoteSnippet(message: MessageLike, maxLength?: number): string;
+export function derivePeerReadState(options: {
+  messages?: readonly MessageLike[];
+  ownSource?: unknown;
+  receipt?: {
+    lastReadTimestamp?: unknown;
+    lastReadMessageId?: unknown;
+  } | null;
+}): {
+  summaryKind: "none" | "summaryOnly" | "earlier" | "latest";
+  anchorMessageId: number | null;
+  timestamp: number | null;
+};
 export function shouldIncrementUnreadCount(options: {
   messageSource?: unknown;
   isActiveConversation?: boolean;

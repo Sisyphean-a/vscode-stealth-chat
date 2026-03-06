@@ -1,46 +1,56 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import type { ChatMessage } from "../../../types";
-  import { escapeHtml, formatLogTime, formatShortTime, linkifyImages } from "../../lib/format";
+  import { createEventDispatcher } from 'svelte';
+  import type { ChatMessage } from '../../../types';
+  import { escapeHtml, formatLogTime, formatShortTime, linkifyImages } from '../../lib/format';
   import {
     normalizeClientMessageId,
     parsePositiveInt,
     resolveAttachmentUrl,
     type DeliveryState,
-  } from "../../lib/messageStore";
+  } from '../../lib/messageStore';
+
+  type HoverPreviewDetail = {
+    url: string;
+    clientX: number;
+    clientY: number;
+  };
 
   export let message: ChatMessage;
-  export let displayMode: "bubble" | "log";
+  export let displayMode: 'bubble' | 'log';
   export let serverUrl: string;
   export let deliveryState: DeliveryState | null = null;
+  export let isReadAnchor = false;
 
   const dispatch = createEventDispatcher<{
     quote: { messageId: number };
     jumpQuote: { messageId: number };
     openImage: { url: string };
     retry: { clientMessageId: string };
+    previewHoverStart: HoverPreviewDetail;
+    previewHoverMove: HoverPreviewDetail;
+    previewHoverEnd: void;
   }>();
 
-  $: textHtml = linkifyImages(escapeHtml(message.text || ""));
+  $: textHtml = linkifyImages(escapeHtml(message.text || ''));
   $: quoteMessageId = parsePositiveInt(message.quote?.messageId);
   $: messageId = parsePositiveInt(message.id);
   $: archiveId = parsePositiveInt(message.archiveId ?? null);
-  $: isOwn = message.source === "vscode";
+  $: isOwn = message.source === 'vscode';
   $: clientMessageId = normalizeClientMessageId(message.clientMessageId);
-  $: canRetry = isOwn && deliveryState === "failed" && !!clientMessageId;
+  $: canRetry = isOwn && deliveryState === 'failed' && !!clientMessageId;
 
   function onQuoteActionClick(): void {
     if (!messageId) {
       return;
     }
-    dispatch("quote", { messageId });
+    dispatch('quote', { messageId });
   }
 
   function onQuotePreviewClick(): void {
     if (!quoteMessageId) {
       return;
     }
-    dispatch("jumpQuote", { messageId: quoteMessageId });
+    dispatch('jumpQuote', { messageId: quoteMessageId });
   }
 
   function onContentClick(event: MouseEvent): void {
@@ -48,33 +58,45 @@
     if (!target) {
       return;
     }
-    const link = target.closest(".image-link[data-image-url]") as HTMLElement | null;
+    const link = target.closest('.image-link[data-image-url]') as HTMLElement | null;
     if (!link) {
       return;
     }
     event.preventDefault();
     const url = link.dataset.imageUrl;
     if (url) {
-      dispatch("openImage", { url });
+      dispatch('openImage', { url });
     }
   }
 
   function onImageClick(url: string): void {
-    dispatch("openImage", { url });
+    dispatch('openImage', { url });
   }
 
-  function onRetryClick(clientMessageId: string): void {
-    dispatch("retry", { clientMessageId });
+  function onRetryClick(nextClientMessageId: string): void {
+    dispatch('retry', { clientMessageId: nextClientMessageId });
+  }
+
+  function dispatchPreview(type: 'previewHoverStart' | 'previewHoverMove', event: MouseEvent, url: string): void {
+    dispatch(type, {
+      url,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+  }
+
+  function onPreviewEnd(): void {
+    dispatch('previewHoverEnd');
   }
 
   function useContentClick(node: HTMLElement): { destroy: () => void } {
     const handleClick = (event: MouseEvent): void => {
       onContentClick(event);
     };
-    node.addEventListener("click", handleClick);
+    node.addEventListener('click', handleClick);
     return {
       destroy(): void {
-        node.removeEventListener("click", handleClick);
+        node.removeEventListener('click', handleClick);
       },
     };
   }
@@ -85,7 +107,7 @@
   data-message-id={messageId ? String(messageId) : undefined}
   data-archive-id={archiveId ? String(archiveId) : undefined}
 >
-  {#if displayMode === "bubble"}
+  {#if displayMode === 'bubble'}
     <div class="message-time">{formatShortTime(message.timestamp || Date.now())}</div>
     <div class="message-bubble {isOwn ? 'own' : 'remote'}">
       {#if quoteMessageId}
@@ -95,13 +117,13 @@
           data-quote-message-id={quoteMessageId}
           on:click={onQuotePreviewClick}
         >
-          <span class="quote-text">{message.quote?.textSnippet || "(空消息)"}</span>
+          <span class="quote-text">{message.quote?.textSnippet || '(空消息)'}</span>
         </button>
       {/if}
 
       {#if message.attachments && message.attachments.length > 0}
         {#each message.attachments as attachment}
-          {#if attachment.type === "image"}
+          {#if attachment.type === 'image'}
             <button
               type="button"
               class="message-image-btn"
@@ -110,7 +132,7 @@
               <img
                 src={resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
                 class="message-image"
-                alt={attachment.filename || "image"}
+                alt={attachment.filename || 'image'}
               />
             </button>
           {/if}
@@ -125,7 +147,7 @@
 
       {#if isOwn && deliveryState}
         <div class="delivery-state-row">
-          {#if deliveryState === "sending"}
+          {#if deliveryState === 'sending'}
             <span class="delivery-indicator sending" title="发送中" aria-label="发送中"></span>
           {:else if canRetry && clientMessageId}
             <button
@@ -155,7 +177,7 @@
     <div class="message-bubble {isOwn ? 'own' : 'remote'}">
       <div class="log-entry">
         <span class="log-timestamp">[{formatLogTime(message.timestamp || Date.now())}]</span>
-        <span class="log-source {isOwn ? 'out' : 'info'}">{isOwn ? "OUT" : "INFO"}</span>
+        <span class="log-source {isOwn ? 'out' : 'info'}">{isOwn ? 'OUT' : 'INFO'}</span>
         <div class="log-content" use:useContentClick>
           {#if quoteMessageId}
             <button
@@ -164,20 +186,24 @@
               data-quote-message-id={quoteMessageId}
               on:click|stopPropagation={onQuotePreviewClick}
             >
-              <span class="quote-text">{message.quote?.textSnippet || "(空消息)"}</span>
+              <span class="quote-text">{message.quote?.textSnippet || '(空消息)'}</span>
             </button>
           {/if}
 
           <div class="log-body">
             {#if message.attachments && message.attachments.length > 0}
               {#each message.attachments as attachment}
-                {#if attachment.type === "image"}
+                {#if attachment.type === 'image'}
                   {@const resolved = resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
-                  <button type="button" class="img-tag" on:click={() => onImageClick(resolved)}>
-                    [IMG:{attachment.filename || "image.png"}]
-                    <span class="img-preview-tooltip">
-                      <img src={resolved} alt="Preview" />
-                    </span>
+                  <button
+                    type="button"
+                    class="img-tag"
+                    on:click={() => onImageClick(resolved)}
+                    on:mouseenter={(event) => dispatchPreview('previewHoverStart', event, resolved)}
+                    on:mousemove={(event) => dispatchPreview('previewHoverMove', event, resolved)}
+                    on:mouseleave={onPreviewEnd}
+                  >
+                    [IMG:{attachment.filename || 'image.png'}]
                   </button>
                 {/if}
               {/each}
@@ -186,10 +212,15 @@
             {#if message.text}
               <span class="log-text">{@html textHtml}</span>
             {/if}
+
+            {#if isOwn && isReadAnchor}
+              <span class="log-read-marker">Read</span>
+            {/if}
           </div>
+
           {#if isOwn && deliveryState}
             <div class="delivery-state-row log">
-              {#if deliveryState === "sending"}
+              {#if deliveryState === 'sending'}
                 <span class="delivery-indicator sending" title="发送中" aria-label="发送中"></span>
               {:else if canRetry && clientMessageId}
                 <button

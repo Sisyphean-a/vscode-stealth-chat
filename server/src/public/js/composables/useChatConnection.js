@@ -31,7 +31,7 @@ export function useChatConnection() {
     const newConnectionName = ref('')
     const newConnectionToken = ref('')
     const presence = ref({ total: 0, mobile: 0, vscode: 0 })
-    const peerReadText = ref('')
+    const peerReadReceipt = ref(null)
 
     const connect = () => {
         if (!authToken.value) {
@@ -64,10 +64,7 @@ export function useChatConnection() {
                 if (payload.clientType !== 'vscode') {
                     return
                 }
-                const date = new Date(payload.lastReadTimestamp)
-                const hh = String(date.getHours()).padStart(2, '0')
-                const mm = String(date.getMinutes()).padStart(2, '0')
-                peerReadText.value = `VSCode 已读 ${hh}:${mm}`
+                peerReadReceipt.value = payload
             }
         })
     }
@@ -76,7 +73,7 @@ export function useChatConnection() {
         socketManager.disconnect()
         clearMessages()
         presence.value = { total: 0, mobile: 0, vscode: 0 }
-        peerReadText.value = ''
+        peerReadReceipt.value = null
     }
 
     const switchConnection = (connId) => {
@@ -195,7 +192,7 @@ export function useChatConnection() {
         connections, activeConnectionId,
         showConnectionMenu, showConnectionManager, showConnectionEditor,
         editingConnection, newConnectionName, newConnectionToken,
-        presence, peerReadText,
+        presence, peerReadReceipt,
 
         // 方法
         connect, disconnect, switchConnection, connectWithNewToken,

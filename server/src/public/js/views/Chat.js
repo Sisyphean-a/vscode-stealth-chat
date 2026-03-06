@@ -4,7 +4,7 @@ import { useChatConnection } from '../composables/useChatConnection.js'
 import { useImageHandler } from '../composables/useImageHandler.js'
 import { useImagePreview } from '../composables/useImagePreview.js'
 import { formatTime, formatDividerDate, showTimeDivider, parseMarkdown, getImageSrc } from '../utils/formatters.js'
-import { buildClientMessageId, buildQuoteSnippet, DEFAULT_EMOJI_SET } from '/packages/chat-core/index.js'
+import { buildClientMessageId, buildQuoteSnippet, DEFAULT_EMOJI_SET, derivePeerReadState } from '/packages/chat-core/index.js'
 
 import AuthScreen from '../components/AuthScreen.js'
 import ConnectionManager from '../components/ConnectionManager.js'
@@ -18,6 +18,24 @@ function parsePositiveId(value) {
 
 function getSourceLabel(source) {
     return source === 'mobile' ? '我' : 'VSCode'
+}
+
+function formatPeerReadText(state, readerLabel) {
+    const timestamp = Number.isFinite(state?.timestamp) ? Number(state.timestamp) : 0
+    if (!timestamp || state?.summaryKind === 'none') {
+        return ''
+    }
+    const date = new Date(timestamp)
+    const hh = String(date.getHours()).padStart(2, '0')
+    const mm = String(date.getMinutes()).padStart(2, '0')
+    const timeText = `${hh}:${mm}`
+    if (state.summaryKind === 'summaryOnly') {
+        return `${readerLabel}读到 ${timeText}`
+    }
+    if (state.summaryKind === 'earlier') {
+        return `${readerLabel}读到较早消息 ${timeText}`
+    }
+    return `${readerLabel}最新已读 ${timeText}`
 }
 
 export default {
@@ -143,6 +161,12 @@ export default {
                         <img :src="img.data" alt="待发送图片">
                         <span v-if="img.wasCompressed" class="pending-badge">已压缩</span>
                         <button class="remove-pending" :disabled="isSending" @click="removePendingImage(idx)">×</button>
+                    <span
+                        v-if="msg.type === 'own' && msg.id && msg.id === readAnchorMessageId"
+                        class="bubble-read-marker"
+                    >
+                        Read
+                    </span>
                     </div>
                 </div>
                 <div v-if="sendProgressText" class="send-progress">{{ sendProgressText }}</div>
@@ -241,6 +265,13 @@ export default {
         const emojiList = DEFAULT_EMOJI_SET
         const emojiPickerVisible = ref(false)
         const emojiPickerWrap = ref(null)
+        const peerReadState = computed(() => derivePeerReadState({
+            messages: chat.messages,
+            ownSource: 'mobile',
+            receipt: chat.peerReadReceipt.value,
+        }))
+        const peerReadText = computed(() => formatPeerReadText(peerReadState.value, 'VSCode'))
+        const readAnchorMessageId = computed(() => peerReadState.value.anchorMessageId)
 
         const adjustInputHeight = () => {
             if (!inputArea.value) {
@@ -599,6 +630,7 @@ export default {
             selectQuote, clearQuote, jumpToQuotedMessage, jumpToSearchResult, runSearch, toggleSearchPanel, getSourceLabel,
             parseMarkdown, formatTime, showTimeDivider, formatDividerDate, getImageSrc,
             searchKeyword, searchResults, searchError, showSearchPanel,
+            peerReadText, readAnchorMessageId,
             reportRead,
         }
     }
