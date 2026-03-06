@@ -126,6 +126,15 @@ function buildQuoteSnippet(message, maxLength = QUOTE_SNIPPET_MAX_LENGTH) {
   return `${raw.slice(0, maxLength - 3)}...`;
 }
 
+function shouldIncrementUnreadCount(options) {
+  const { messageSource, isActiveConversation, isViewVisible } = options || {};
+  return messageSource === "mobile" && (!isActiveConversation || !isViewVisible);
+}
+
+function shouldApplyReadReceiptToUnread(options) {
+  return options?.clientType === "vscode";
+}
+
 module.exports = {
   ACK_TIMEOUT_MS,
   MAX_SEND_RETRIES,
@@ -143,4 +152,6 @@ module.exports = {
   normalizeIncomingMessages,
   mergeMessages,
   buildQuoteSnippet,
+  shouldIncrementUnreadCount,
+  shouldApplyReadReceiptToUnread,
 };

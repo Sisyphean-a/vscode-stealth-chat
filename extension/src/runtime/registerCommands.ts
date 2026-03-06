@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { Connection } from "../types";
-import * as conversationStore from "../services/conversationStore";
 import * as socketService from "../services/socketService";
+import * as unreadStateService from "../services/unreadStateService";
 import { getActiveConnection } from "../utils/helpers";
 
 type RegisterCommandOptions = {
@@ -55,10 +55,7 @@ export function registerRuntimeCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand("tsLintService.focus", () => {
       void vscode.commands.executeCommand("tsLintChat.chatView.focus");
-      const active = conversationStore.getActiveConversationName();
-      if (active) {
-        conversationStore.clearUnread(active);
-      }
+      unreadStateService.clearUnreadForActiveConversation();
       options.refreshUnreadStatus();
     }),
   );

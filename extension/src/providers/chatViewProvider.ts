@@ -4,6 +4,7 @@ import { getNonce, getActiveConnection } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as conversationStore from "../services/conversationStore";
 import * as configService from "../services/configService";
+import * as unreadStateService from "../services/unreadStateService";
 import * as statusBar from "../ui/statusBar";
 import { openImagePreview } from "../ui/imagePreview";
 import {
@@ -59,11 +60,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     view.onDidChangeVisibility(() => {
       if (view.visible) {
-        const active = conversationStore.getActiveConversationName();
-        if (active) {
-          conversationStore.clearUnread(active);
-        }
-        statusBar.setUnreadCount(conversationStore.getTotalUnread());
+        unreadStateService.clearUnreadForActiveConversation();
         statusBar.updateStatusBar();
       }
     });
@@ -236,10 +233,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private handleMarkRead(payload: { lastReadTimestamp: number; lastReadMessageId?: number }): void {
-    if (!socketService.isConnected()) {
+    if (!Number.isFinite(payload?.lastReadTimestamp) || payload.lastReadTimestamp <= 0) {
       return;
     }
-    if (!Number.isFinite(payload?.lastReadTimestamp) || payload.lastReadTimestamp <= 0) {
+    unreadStateService.clearUnreadForActiveConversation();
+    if (!socketService.isConnected()) {
       return;
     }
     socketService.markRead(payload.lastReadTimestamp, payload.lastReadMessageId);

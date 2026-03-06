@@ -126,3 +126,12 @@ export function buildQuoteSnippet(message, maxLength = QUOTE_SNIPPET_MAX_LENGTH)
   }
   return `${raw.slice(0, maxLength - 3)}...`;
 }
+
+export function shouldIncrementUnreadCount(options) {
+  const { messageSource, isActiveConversation, isViewVisible } = options || {};
+  return messageSource === "mobile" && (!isActiveConversation || !isViewVisible);
+}
+
+export function shouldApplyReadReceiptToUnread(options) {
+  return options?.clientType === "vscode";
+}

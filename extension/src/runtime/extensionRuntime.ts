@@ -5,12 +5,17 @@ import * as socketService from "../services/socketService";
 import * as conversationStore from "../services/conversationStore";
 import { BackgroundSyncService } from "../services/backgroundSyncService";
 import { type SyncPullUpdate } from "../services/syncApiService";
+import * as unreadStateService from "../services/unreadStateService";
 import * as statusBar from "../ui/statusBar";
 import { ChatViewProvider, getWebviewView } from "../providers/chatViewProvider";
 import { ensureDefaultConnection } from "../services/configService";
 import { buildHostMessage, type HostMessageBody } from "../webview-bridge/protocol";
 import { ConfigChangeKind, ConfigWatcher } from "./configWatcher";
 import { registerRuntimeCommands } from "./registerCommands";
+import {
+  shouldApplyReadReceiptToUnread,
+  shouldIncrementUnreadCount,
+} from "../../../packages/chat-core/index.js";
 
 const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 const DEFAULT_BACKGROUND_SYNC_INTERVAL_MS = 4000;
@@ -136,8 +141,7 @@ export class ExtensionRuntime {
 
   private activateConversation(connectionName: string): void {
     conversationStore.setActiveConversation(connectionName);
-    conversationStore.clearUnread(connectionName);
-    this.refreshUnreadStatus();
+    unreadStateService.clearUnreadForConnection(connectionName);
   }
 
   private resetSocketState(): void {
@@ -183,9 +187,15 @@ export class ExtensionRuntime {
         this.postToWebview({ type: "aroundArchivedMessagesLoaded", payload });
       },
       onPresenceUpdate: (payload) => {
+        conversationStore.assignAppId(connectionName, payload.appId);
         this.postToWebview({ type: "presenceUpdate", payload });
       },
       onReadReceipt: (payload) => {
+        conversationStore.assignAppId(connectionName, payload.appId);
+        if (shouldApplyReadReceiptToUnread({ clientType: payload.clientType })) {
+          unreadStateService.clearUnreadForAppId(payload.appId);
+          return;
+        }
         this.postToWebview({ type: "readReceipt", payload });
       },
     };
@@ -202,7 +212,11 @@ export class ExtensionRuntime {
       }
 
       const isActive = options.connectionName === activeConnection;
-      const shouldUnread = message.source === "mobile" && (!isActive || !webview?.visible);
+      const shouldUnread = shouldIncrementUnreadCount({
+        messageSource: message.source,
+        isActiveConversation: isActive,
+        isViewVisible: webview?.visible === true,
+      });
       if (shouldUnread) {
         conversationStore.incrementUnread(options.connectionName, 1);
       }

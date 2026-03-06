@@ -25,3 +25,11 @@ export function compareMessages<T extends MessageLike>(a: T, b: T): number;
 export function normalizeIncomingMessages<T extends MessageLike = MessageLike>(messages: unknown): T[];
 export function mergeMessages<T extends MessageLike>(existing: readonly T[], incoming: readonly T[]): T[];
 export function buildQuoteSnippet(message: MessageLike, maxLength?: number): string;
+export function shouldIncrementUnreadCount(options: {
+  messageSource?: unknown;
+  isActiveConversation?: boolean;
+  isViewVisible?: boolean;
+}): boolean;
+export function shouldApplyReadReceiptToUnread(options: {
+  clientType?: unknown;
+}): boolean;
