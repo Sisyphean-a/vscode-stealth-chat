@@ -13,6 +13,7 @@ Tech Stack: TypeScript, Svelte, browser Vue code, shared chat core helpers, smok
 ### Task 1: Shared read state helpers
 
 Files:
+
 - Modify packages/chat-core/index.js
 - Create packages/chat-core/scripts/read-status-smoke.js
 
@@ -24,6 +25,7 @@ Step 4: run node packages/chat-core/scripts/read-status-smoke.js and confirm pas
 ### Task 2: Extension read marker and overlay preview
 
 Files:
+
 - Modify extension/src/webview-svelte/App.svelte
 - Modify extension/src/webview-svelte/components/layout/StatusBar.svelte
 - Modify extension/src/webview-svelte/components/layout/MessageList.svelte
@@ -40,6 +42,7 @@ Step 4: run npm run -w extension check-types.
 ### Task 3: Page client read marker and overlay preview
 
 Files:
+
 - Modify server/src/public/js/views/Chat.js
 - Modify server/src/public/js/composables/useChatConnection.js
 - Modify server/src/public/js/composables/useMessages.js
@@ -54,6 +57,7 @@ Step 4: run node packages/chat-core/scripts/read-status-smoke.js and npm run lin
 ### Task 4: Final verification
 
 Run:
+
 - node packages/chat-core/scripts/read-status-smoke.js
 - npm run -w extension check-types
 - npm run lint
