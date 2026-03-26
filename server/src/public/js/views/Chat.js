@@ -262,6 +262,8 @@ export default {
         const searchError = ref('')
         const showSearchPanel = ref(false)
         const lastReadTimestamp = ref(0)
+        const isPageVisible = ref(document.visibilityState === 'visible')
+        const isWindowFocused = ref(document.hasFocus())
         const emojiList = DEFAULT_EMOJI_SET
         const emojiPickerVisible = ref(false)
         const emojiPickerWrap = ref(null)
@@ -495,7 +497,7 @@ export default {
             }
             searchError.value = ''
             try {
-                const results = await chat.searchMessages(keyword, 50)
+                const results = await chat.searchMessages(keyword, 50, true)
                 searchResults.value = Array.isArray(results) ? results : []
             } catch (error) {
                 searchResults.value = []
@@ -507,16 +509,62 @@ export default {
             showSearchPanel.value = !showSearchPanel.value
         }
 
+        const isReadReportingActive = () => isPageVisible.value && isWindowFocused.value
+
+        const resolveLastVisibleMessage = () => {
+            const container = chat.messagesContainer.value
+            if (!container || !Array.isArray(chat.messages) || chat.messages.length === 0) {
+                return null
+            }
+            const containerRect = container.getBoundingClientRect()
+            let lastVisible = null
+            for (const message of chat.messages) {
+                const messageId = parsePositiveId(message.id)
+                if (!messageId) {
+                    continue
+                }
+                const element = container.querySelector(`[data-message-id="${messageId}"]`)
+                if (!element) {
+                    continue
+                }
+                const rect = element.getBoundingClientRect()
+                const visibleHeight = Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top)
+                if (visibleHeight <= 0) {
+                    continue
+                }
+                if (!lastVisible || message.timestamp >= lastVisible.timestamp) {
+                    lastVisible = message
+                }
+            }
+            return lastVisible
+        }
+
         const reportRead = () => {
-            if (!chat.messages || chat.messages.length === 0) {
+            if (!isReadReportingActive()) {
                 return
             }
-            const last = chat.messages[chat.messages.length - 1]
-            if (!last || !Number.isFinite(last.timestamp) || last.timestamp <= lastReadTimestamp.value) {
+            const lastVisible = resolveLastVisibleMessage()
+            if (!lastVisible || !Number.isFinite(lastVisible.timestamp) || lastVisible.timestamp <= lastReadTimestamp.value) {
                 return
             }
-            lastReadTimestamp.value = last.timestamp
-            chat.markRead(last.timestamp, parsePositiveId(last.id) || undefined)
+            lastReadTimestamp.value = lastVisible.timestamp
+            chat.markRead(lastVisible.timestamp, parsePositiveId(lastVisible.id) || undefined)
+        }
+
+        const handleVisibilityChange = () => {
+            isPageVisible.value = document.visibilityState === 'visible'
+            if (isPageVisible.value) {
+                reportRead()
+            }
+        }
+
+        const handleWindowFocus = () => {
+            isWindowFocused.value = true
+            reportRead()
+        }
+
+        const handleWindowBlur = () => {
+            isWindowFocused.value = false
         }
 
         const sendMessage = async () => {
@@ -605,6 +653,9 @@ export default {
             readTimer = setInterval(reportRead, 1500)
             document.addEventListener('mousedown', handleDocumentPointerDown)
             document.addEventListener('keydown', handleDocumentKeydown)
+            document.addEventListener('visibilitychange', handleVisibilityChange)
+            window.addEventListener('focus', handleWindowFocus)
+            window.addEventListener('blur', handleWindowBlur)
         })
 
         onUnmounted(() => {
@@ -615,6 +666,9 @@ export default {
             }
             document.removeEventListener('mousedown', handleDocumentPointerDown)
             document.removeEventListener('keydown', handleDocumentKeydown)
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+            window.removeEventListener('focus', handleWindowFocus)
+            window.removeEventListener('blur', handleWindowBlur)
         })
 
         return {

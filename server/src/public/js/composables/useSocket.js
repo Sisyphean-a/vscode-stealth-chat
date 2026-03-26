@@ -281,10 +281,10 @@ export function useSocket() {
     throw lastError;
   };
 
-  const searchMessages = async (keyword, limit = SEARCH_RESULT_LIMIT) => {
+  const searchMessages = async (keyword, limit = SEARCH_RESULT_LIMIT, includeArchived = true) => {
     const ack = await emitWithAck(
       SOCKET_EVENTS.SEARCH_MESSAGES,
-      { keyword, limit },
+      { keyword, limit, includeArchived },
       6000,
       { traceId: buildClientMessageId("trace") }
     );

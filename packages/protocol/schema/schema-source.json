@@ -298,7 +298,8 @@
       "required": ["keyword"],
       "properties": {
         "keyword": { "kind": "string", "minLength": 1 },
-        "limit": { "kind": "number", "finite": true }
+        "limit": { "kind": "number", "finite": true },
+        "includeArchived": { "kind": "boolean" }
       }
     },
 
@@ -338,7 +339,7 @@
     { "type": "loadMoreHistory", "payload": { "kind": "object", "required": ["beforeTimestamp"], "properties": { "beforeTimestamp": { "kind": "number", "finite": true } } } },
     { "type": "loadAroundMessage", "payload": { "kind": "object", "required": ["targetMessageId"], "properties": { "targetMessageId": { "kind": "number", "finite": true } } } },
     { "type": "loadAroundArchivedMessage", "payload": { "kind": "object", "required": ["targetArchiveId"], "properties": { "targetArchiveId": { "kind": "number", "finite": true } } } },
-    { "type": "searchMessages", "payload": { "kind": "object", "required": ["keyword"], "properties": { "keyword": { "kind": "string", "minLength": 1 }, "limit": { "kind": "number", "finite": true } } } },
+    { "type": "searchMessages", "payload": { "kind": "object", "required": ["keyword"], "properties": { "keyword": { "kind": "string", "minLength": 1 }, "limit": { "kind": "number", "finite": true }, "includeArchived": { "kind": "boolean" } } } },
     { "type": "markRead", "payload": { "kind": "object", "required": ["lastReadTimestamp"], "properties": { "lastReadTimestamp": { "kind": "number", "finite": true }, "lastReadMessageId": { "kind": "number", "finite": true } } } },
     { "type": "openImage", "payload": { "kind": "object", "required": ["url"], "properties": { "url": { "kind": "string", "minLength": 1 } } } },
     { "type": "getConfig" },
@@ -347,6 +348,8 @@
     { "type": "deleteConnection", "payload": { "kind": "object", "required": ["name"], "properties": { "name": { "kind": "string", "minLength": 1 } } } },
     { "type": "setActiveConnection", "payload": { "kind": "object", "required": ["name"], "properties": { "name": { "kind": "string", "minLength": 1 } } } },
     { "type": "testConnection", "payload": { "kind": "object", "required": ["name", "serverUrl", "token"], "properties": { "name": { "kind": "string", "minLength": 1 }, "serverUrl": { "kind": "string", "minLength": 1 }, "token": { "kind": "string", "minLength": 1 } } } }
+    ,
+    { "type": "importConfig", "payload": { "kind": "ref", "name": "ConfigLoadedPayload" } }
   ],
 
   "hostMessages": [

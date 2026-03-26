@@ -172,7 +172,8 @@
 
 .form-group input[type="text"],
 .form-group input[type="password"],
-.form-group select {
+.form-group select,
+.form-group textarea {
   width: 100%;
   border: 1px solid var(--chat-border-soft);
   border-radius: var(--chat-radius-sm);
@@ -184,7 +185,8 @@
 
 .form-group input[type="text"]:focus,
 .form-group input[type="password"]:focus,
-.form-group select:focus {
+.form-group select:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: var(--vscode-focusBorder);
 }
@@ -245,6 +247,12 @@
 .connection-actions {
   display: flex;
   gap: 4px;
+}
+
+.connection-tools {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .status-badge {

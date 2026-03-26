@@ -78,6 +78,8 @@
   let autoScrollEnabled = true;
   let showScrollToBottom = false;
   let isComposing = false;
+  let isViewVisible = true;
+  let isWindowFocused = true;
   let pendingIncoming: ChatMessage[] = [];
   let deliveryStateMap: DeliveryStateMap = {};
 
@@ -117,12 +119,33 @@
 
   onMount(() => {
     const dispose = listenHostMessages(handleHostMessage);
+    isViewVisible = document.visibilityState === "visible";
+    isWindowFocused = document.hasFocus();
+    const handleVisibilityChange = () => {
+      isViewVisible = document.visibilityState === "visible";
+      if (isViewVisible) {
+        reportReadStatus();
+      }
+    };
+    const handleWindowFocus = () => {
+      isWindowFocused = true;
+      reportReadStatus();
+    };
+    const handleWindowBlur = () => {
+      isWindowFocused = false;
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("blur", handleWindowBlur);
     postToHost({ type: "ready" });
     return () => {
       dispose();
       clearRuntimeTimers();
       incomingBatcher.dispose();
       readReporter.dispose();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("blur", handleWindowBlur);
     };
   });
 
@@ -408,14 +431,14 @@
   }
 
   function reportReadStatus(): void {
-    if (messages.length === 0) {
+    if (!isViewVisible || !isWindowFocused) {
       return;
     }
-    const last = messages[messages.length - 1];
-    if (!Number.isFinite(last.timestamp)) {
+    const visible = messageListRef?.getLastVisibleMessageMeta();
+    if (!visible || !Number.isFinite(visible.timestamp)) {
       return;
     }
-    readReporter.report(last.timestamp, last.id);
+    readReporter.report(visible.timestamp, visible.id);
   }
 
   function onComposerComposition(active: boolean): void {
@@ -588,9 +611,7 @@
   function onAtBottomChange(atBottom: boolean): void {
     autoScrollEnabled = atBottom;
     showScrollToBottom = !atBottom;
-    if (atBottom) {
-      reportReadStatus();
-    }
+    reportReadStatus();
   }
 
   function onSearchRun(keyword: string): void {
@@ -601,7 +622,24 @@
       return;
     }
     searchError = "";
-    postToHost({ type: "searchMessages", payload: { keyword, limit: 50 } });
+    postToHost({ type: "searchMessages", payload: { keyword, limit: 50, includeArchived: true } });
+  }
+
+  async function copyCurrentConfig(): Promise<void> {
+    await navigator.clipboard.writeText(JSON.stringify({
+      globalSettings,
+      connections,
+      activeConnection,
+    }, null, 2));
+  }
+
+  async function importConfigFromText(rawText: string): Promise<void> {
+    const parsed = JSON.parse(rawText) as {
+      globalSettings: GlobalSettings;
+      connections: Connection[];
+      activeConnection: string;
+    };
+    postToHost({ type: "importConfig", payload: parsed });
   }
 
   function onSearchSelect(result: SearchResult): void {
@@ -642,6 +680,7 @@
   on:openImage={(event) => postToHost({ type: "openImage", payload: { url: event.detail.url } })}
   on:retry={(event) => retryMessage(event.detail.clientMessageId)}
   on:atBottomChange={(event) => onAtBottomChange(event.detail.atBottom)}
+  on:viewportChange={() => reportReadStatus()}
   on:previewHoverStart={(event) => showHoverPreview(event.detail)}
   on:previewHoverMove={(event) => showHoverPreview(event.detail)}
   on:previewHoverEnd={scheduleHideHoverPreview}
@@ -707,4 +746,16 @@
   on:deleteConnection={(event) => postToHost({ type: "deleteConnection", payload: event.detail })}
   on:setActiveConnection={(event) => postToHost({ type: "setActiveConnection", payload: event.detail })}
   on:testConnection={(event) => postToHost({ type: "testConnection", payload: event.detail })}
+  on:copyConfig={() => {
+    void copyCurrentConfig().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setSendError(`复制配置失败: ${message}`);
+    });
+  }}
+  on:importConfig={(event) => {
+    void importConfigFromText(event.detail.rawText).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setSendError(`导入配置失败: ${message}`);
+    });
+  }}
 />

@@ -96,6 +96,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case "searchMessages":
           this.handleSearchMessages(view, message.payload);
           break;
+        case "importConfig":
+          this.handleImportConfig(view, message.payload);
+          break;
         case "markRead":
           this.handleMarkRead(message.payload);
           break;
@@ -204,7 +207,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async handleSearchMessages(view: vscode.WebviewView, payload: { keyword: string; limit?: number }): Promise<void> {
+  private async handleSearchMessages(view: vscode.WebviewView, payload: {
+    keyword: string;
+    limit?: number;
+    includeArchived?: boolean;
+  }): Promise<void> {
     if (!socketService.isConnected()) {
       this.postHostMessage(view, {
         type: "searchResults",
@@ -215,7 +222,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const keyword = typeof payload?.keyword === "string" ? payload.keyword.trim() : "";
       const limit = Number.isFinite(payload?.limit) ? Number(payload.limit) : 50;
-      const results = await socketService.searchMessages(keyword, limit);
+      const includeArchived = payload?.includeArchived !== false;
+      const results = await socketService.searchMessages(keyword, limit, includeArchived);
       this.postHostMessage(view, {
         type: "searchResults",
         payload: { keyword, results, error: null },
@@ -327,5 +335,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       type: "testResult",
       payload: { name, ...result },
     });
+  }
+
+  private async handleImportConfig(
+    view: vscode.WebviewView,
+    payload: {
+      globalSettings: import("../types").GlobalSettings;
+      connections: import("../types").Connection[];
+      activeConnection: string;
+    },
+  ): Promise<void> {
+    try {
+      await configService.importConfig(payload);
+      this.postHostMessage(view, {
+        type: "operationResult",
+        payload: { success: true, message: "Config imported" },
+      });
+    } catch (error) {
+      this.postHostMessage(view, {
+        type: "operationResult",
+        payload: { success: false, message: `Failed to import config: ${getErrorMessage(error)}` },
+      });
+    }
   }
 }

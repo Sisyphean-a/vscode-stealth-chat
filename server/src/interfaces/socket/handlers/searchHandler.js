@@ -24,7 +24,8 @@ function registerSearchHandler(options) {
         return;
       }
       const limit = runtime.normalizeSearchLimit(request.limit);
-      const results = db.searchMessages({ appId, keyword, limit });
+      const includeArchived = request.includeArchived !== false;
+      const results = db.searchMessages({ appId, keyword, limit, includeArchived });
       runtime.safeAck(
         ack,
         buildAckOk({

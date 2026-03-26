@@ -179,7 +179,9 @@ export function useChatConnection() {
     }
 
     const sendChatMessage = (payload) => socketManager.sendChatMessage(payload)
-    const searchMessages = (keyword, limit) => socketManager.searchMessages(keyword, limit)
+    const searchMessages = (keyword, limit, includeArchived = true) => {
+        return socketManager.searchMessages(keyword, limit, includeArchived)
+    }
     const markRead = (lastReadTimestamp, lastReadMessageId) => {
         socketManager.markRead(lastReadTimestamp, lastReadMessageId)
     }

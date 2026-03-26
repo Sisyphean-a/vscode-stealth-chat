@@ -140,3 +140,57 @@ export async function setActiveConnection(name: string): Promise<void> {
   const config = vscode.workspace.getConfiguration("tsLint");
   await config.update("activeConnection", name, true);
 }
+
+function sanitizeConnection(input: Connection): Connection {
+  return {
+    name: input.name.trim(),
+    token: input.token.trim(),
+    serverUrl: input.serverUrl ? normalizeServerUrl(input.serverUrl) : undefined,
+    backgroundSync: input.backgroundSync !== false,
+  };
+}
+
+function validateImportPayload(payload: {
+  globalSettings: GlobalSettings;
+  connections: Connection[];
+  activeConnection: string;
+}): { globalSettings: GlobalSettings; connections: Connection[]; activeConnection: string } {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("配置格式错误");
+  }
+  if (!Array.isArray(payload.connections)) {
+    throw new Error("connections 必须是数组");
+  }
+  const sanitizedConnections = payload.connections
+    .map(sanitizeConnection)
+    .filter((item) => item.name.length > 0 && item.token.length > 0);
+  const globalSettings: GlobalSettings = {
+    serverUrl: normalizeServerUrl(payload.globalSettings?.serverUrl || DEFAULT_SERVER_URL),
+    forceWebsocket: payload.globalSettings?.forceWebsocket === true,
+    autoReveal: payload.globalSettings?.autoReveal === true,
+    displayMode: payload.globalSettings?.displayMode === "log" ? "log" : "bubble",
+  };
+  const requestedActive = typeof payload.activeConnection === "string"
+    ? payload.activeConnection.trim()
+    : "";
+  const resolvedActive = sanitizedConnections.some((item) => item.name === requestedActive)
+    ? requestedActive
+    : (sanitizedConnections[0]?.name || "");
+  return {
+    globalSettings,
+    connections: sanitizedConnections,
+    activeConnection: resolvedActive,
+  };
+}
+
+export async function importConfig(payload: {
+  globalSettings: GlobalSettings;
+  connections: Connection[];
+  activeConnection: string;
+}): Promise<void> {
+  const config = vscode.workspace.getConfiguration("tsLint");
+  const normalized = validateImportPayload(payload);
+  await saveGlobalSettings(normalized.globalSettings);
+  await config.update("connections", normalized.connections, true);
+  await config.update("activeConnection", normalized.activeConnection, true);
+}

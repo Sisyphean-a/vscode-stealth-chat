@@ -222,7 +222,8 @@ export function sendChatMessage(input: SendMessageInput): Promise<ChatMessage> {
 
 export function searchMessages(
   keyword: string,
-  limit = SEARCH_RESULT_LIMIT
+  limit = SEARCH_RESULT_LIMIT,
+  includeArchived = true,
 ): Promise<Array<{
   targetType: "hot" | "archive";
   messageId: number | null;
@@ -242,6 +243,7 @@ export function searchMessages(
     const envelope = buildSocketClientEnvelope(SOCKET_EVENTS.SEARCH_MESSAGES, {
       keyword: safeKeyword,
       limit,
+      includeArchived,
     }, {
       traceId: ensureTraceId(),
     });

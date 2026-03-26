@@ -32,6 +32,7 @@
     openImage: { url: string };
     retry: { clientMessageId: string };
     atBottomChange: { atBottom: boolean };
+    viewportChange: void;
     previewHoverStart: HoverPreviewDetail;
     previewHoverMove: HoverPreviewDetail;
     previewHoverEnd: void;
@@ -48,6 +49,7 @@
     }
     const gap = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
     dispatch('atBottomChange', { atBottom: gap < 50 });
+    dispatch('viewportChange');
   }
 
   function highlight(el: HTMLElement): void {
@@ -115,6 +117,43 @@
     if (gap < 50) {
       containerEl.scrollTop = containerEl.scrollHeight;
     }
+  }
+
+  export function getLastVisibleMessageMeta(): { id?: number; timestamp: number } | null {
+    if (!containerEl || messages.length === 0) {
+      return null;
+    }
+    const containerRect = containerEl.getBoundingClientRect();
+    let lastVisible: ChatMessage | null = null;
+    for (const message of messages) {
+      const safeMessageId = parsePositiveInt(message.id);
+      if (!safeMessageId) {
+        continue;
+      }
+      const selector = `[data-message-id="${safeMessageId}"]`;
+      const element = containerEl.querySelector(selector) as HTMLElement | null;
+      if (!element) {
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      const visibleTop = Math.max(rect.top, containerRect.top);
+      const visibleBottom = Math.min(rect.bottom, containerRect.bottom);
+      const visibleHeight = visibleBottom - visibleTop;
+      if (visibleHeight <= 0) {
+        continue;
+      }
+      if (!lastVisible || message.timestamp >= lastVisible.timestamp) {
+        lastVisible = message;
+      }
+    }
+    if (!lastVisible || !Number.isFinite(lastVisible.timestamp)) {
+      return null;
+    }
+    const safeId = parsePositiveInt(lastVisible.id);
+    return {
+      id: safeId || undefined,
+      timestamp: Number(lastVisible.timestamp),
+    };
   }
 
   function readDeliveryState(clientMessageId: unknown): 'sending' | 'failed' | null {

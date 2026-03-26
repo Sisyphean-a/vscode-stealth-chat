@@ -31,12 +31,12 @@ export type SocketChatMessagePayload = { text: string; source: Source; clickUrl?
 export type SocketLoadMoreHistoryPayload = { limit: number; beforeTimestamp: number; };
 export type SocketLoadAroundMessagePayload = { targetMessageId: number; windowSize?: number; };
 export type SocketLoadAroundArchivedPayload = { targetArchiveId: number; windowSize?: number; };
-export type SocketSearchPayload = { keyword: string; limit?: number; };
+export type SocketSearchPayload = { keyword: string; limit?: number; includeArchived?: boolean; };
 export type SocketMarkReadPayload = { clientType: ClientType; lastReadTimestamp: number; lastReadMessageId?: number; };
 export type ChatMessageAckData = { clientMessageId: NullableString; message: ChatMessage; };
 export type SearchAckData = { results: Array<SearchResult>; keyword: string; limit: number; };
 
-export const KNOWN_WEBVIEW_TYPES: readonly ["ready", "sendMessage", "loadMoreHistory", "loadAroundMessage", "loadAroundArchivedMessage", "searchMessages", "markRead", "openImage", "getConfig", "saveGlobalSettings", "saveConnection", "deleteConnection", "setActiveConnection", "testConnection"];
+export const KNOWN_WEBVIEW_TYPES: readonly ["ready", "sendMessage", "loadMoreHistory", "loadAroundMessage", "loadAroundArchivedMessage", "searchMessages", "markRead", "openImage", "getConfig", "saveGlobalSettings", "saveConnection", "deleteConnection", "setActiveConnection", "testConnection", "importConfig"];
 export const KNOWN_HOST_TYPES: readonly ["addMessage", "loadHistory", "prependHistory", "aroundMessagesLoaded", "aroundArchivedMessagesLoaded", "updateStatus", "presenceUpdate", "readReceipt", "sendFailed", "searchResults", "setDisplayMode", "clearMessages", "configLoaded", "operationResult", "testResult"];
 
 export type WebviewMessageBody =
@@ -45,7 +45,7 @@ export type WebviewMessageBody =
   | { type: "loadMoreHistory"; payload: { beforeTimestamp: number; } }
   | { type: "loadAroundMessage"; payload: { targetMessageId: number; } }
   | { type: "loadAroundArchivedMessage"; payload: { targetArchiveId: number; } }
-  | { type: "searchMessages"; payload: { keyword: string; limit?: number; } }
+  | { type: "searchMessages"; payload: { keyword: string; limit?: number; includeArchived?: boolean; } }
   | { type: "markRead"; payload: { lastReadTimestamp: number; lastReadMessageId?: number; } }
   | { type: "openImage"; payload: { url: string; } }
   | { type: "getConfig" }
@@ -53,7 +53,8 @@ export type WebviewMessageBody =
   | { type: "saveConnection"; payload: { connection: Connection; originalName?: string; } }
   | { type: "deleteConnection"; payload: { name: string; } }
   | { type: "setActiveConnection"; payload: { name: string; } }
-  | { type: "testConnection"; payload: { name: string; serverUrl: string; token: string; } };
+  | { type: "testConnection"; payload: { name: string; serverUrl: string; token: string; } }
+  | { type: "importConfig"; payload: ConfigLoadedPayload };
 
 export type HostMessageBody =
   | { type: "addMessage"; payload: ChatMessage }
@@ -78,7 +79,7 @@ export type WebviewMessage =
   | { v: 2; traceId: string; sentAt: number; type: "loadMoreHistory"; payload: { beforeTimestamp: number; } }
   | { v: 2; traceId: string; sentAt: number; type: "loadAroundMessage"; payload: { targetMessageId: number; } }
   | { v: 2; traceId: string; sentAt: number; type: "loadAroundArchivedMessage"; payload: { targetArchiveId: number; } }
-  | { v: 2; traceId: string; sentAt: number; type: "searchMessages"; payload: { keyword: string; limit?: number; } }
+  | { v: 2; traceId: string; sentAt: number; type: "searchMessages"; payload: { keyword: string; limit?: number; includeArchived?: boolean; } }
   | { v: 2; traceId: string; sentAt: number; type: "markRead"; payload: { lastReadTimestamp: number; lastReadMessageId?: number; } }
   | { v: 2; traceId: string; sentAt: number; type: "openImage"; payload: { url: string; } }
   | { v: 2; traceId: string; sentAt: number; type: "getConfig" }
@@ -86,7 +87,8 @@ export type WebviewMessage =
   | { v: 2; traceId: string; sentAt: number; type: "saveConnection"; payload: { connection: Connection; originalName?: string; } }
   | { v: 2; traceId: string; sentAt: number; type: "deleteConnection"; payload: { name: string; } }
   | { v: 2; traceId: string; sentAt: number; type: "setActiveConnection"; payload: { name: string; } }
-  | { v: 2; traceId: string; sentAt: number; type: "testConnection"; payload: { name: string; serverUrl: string; token: string; } };
+  | { v: 2; traceId: string; sentAt: number; type: "testConnection"; payload: { name: string; serverUrl: string; token: string; } }
+  | { v: 2; traceId: string; sentAt: number; type: "importConfig"; payload: ConfigLoadedPayload };
 
 export type HostMessage =
   | { v: 2; traceId: string; sentAt: number; type: "addMessage"; payload: ChatMessage }

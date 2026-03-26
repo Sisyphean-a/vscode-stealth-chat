@@ -187,6 +187,34 @@ async function testPairPersistenceRecovery() {
   assert(!fs.existsSync(paths.commitMarkerPath), "Recovery should remove commit marker");
 }
 
+async function testSearchIncludesArchivedResults() {
+  console.log("\nTest 12: Search Includes Archived Results");
+  const baseTimestamp = Date.now() + 5000;
+  db.saveMessage("arch-keyword archived target", "mobile", baseTimestamp - 3 * DAY_IN_MS);
+  await db.cleanupOldMessages();
+  for (let i = 0; i < 8; i += 1) {
+    db.saveMessage(`arch-keyword hot ${i}`, "vscode", baseTimestamp + i);
+  }
+
+  const mixedResults = db.searchMessages({
+    appId: "default",
+    keyword: "arch-keyword",
+    limit: 5,
+    includeArchived: true,
+  });
+  const hasArchiveHit = mixedResults.some((item) => item.targetType === "archive");
+  assert(hasArchiveHit, "Search should contain archived results when includeArchived=true");
+
+  const hotOnlyResults = db.searchMessages({
+    appId: "default",
+    keyword: "arch-keyword",
+    limit: 5,
+    includeArchived: false,
+  });
+  const hasArchiveInHotOnly = hotOnlyResults.some((item) => item.targetType === "archive");
+  assert(!hasArchiveInHotOnly, "Search should exclude archived results when includeArchived=false");
+}
+
 async function runTests() {
   console.log("🧪 Running Database Tests...\n");
 
@@ -250,7 +278,9 @@ async function runTests() {
   await testImageCleanup();
   await testPairPersistenceRecovery();
 
-  console.log("\nTest 12: Close Database");
+  await testSearchIncludesArchivedResults();
+
+  console.log("\nTest 13: Close Database");
   await db.close();
   assert(true, "Database should close without errors");
   cleanup();

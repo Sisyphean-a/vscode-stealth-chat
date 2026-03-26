@@ -10,6 +10,7 @@
     autoReveal: false,
     displayMode: "bubble",
   };
+  const IMPORT_PLACEHOLDER = "{\"globalSettings\":{},\"connections\":[],\"activeConnection\":\"\"}";
 
   export let visible = false;
   export let globalSettings: GlobalSettings = DEFAULT_SETTINGS;
@@ -24,6 +25,8 @@
     deleteConnection: { name: string };
     setActiveConnection: { name: string };
     testConnection: { name: string; serverUrl: string; token: string };
+    copyConfig: void;
+    importConfig: { rawText: string };
   }>();
 
   let serverUrl = DEFAULT_SETTINGS.serverUrl;
@@ -39,6 +42,8 @@
   let connServerUrl = "";
   let connToken = "";
   let connBackgroundSync = true;
+  let importModalVisible = false;
+  let importRawText = "";
 
   $: if (globalSettings !== previousSettingsRef) {
     previousSettingsRef = globalSettings;
@@ -109,6 +114,25 @@
       token: connection.token,
     });
   }
+
+  function openImportModal(): void {
+    importRawText = "";
+    importModalVisible = true;
+  }
+
+  function closeImportModal(): void {
+    importModalVisible = false;
+    importRawText = "";
+  }
+
+  function handleImportConfig(): void {
+    const rawText = importRawText.trim();
+    if (!rawText) {
+      return;
+    }
+    dispatch("importConfig", { rawText });
+    closeImportModal();
+  }
 </script>
 
 <div id="settings-view" class="{visible ? 'visible' : 'hidden'}">
@@ -170,6 +194,14 @@
 
     <section class="section">
       <h2 class="section-title">连接配置</h2>
+      <div class="connection-tools">
+        <button class="btn btn-secondary" on:click={() => dispatch("copyConfig")}>
+          复制配置
+        </button>
+        <button class="btn btn-secondary" on:click={openImportModal}>
+          导入配置
+        </button>
+      </div>
       <div id="connectionList">
         {#each connections as connection}
           <div class="connection-item {connection.name === activeConnection ? 'active' : ''}">
@@ -212,6 +244,20 @@
         + 添加连接配置
       </button>
     </section>
+  </div>
+</div>
+
+<div id="import-modal" class="modal {importModalVisible ? '' : 'hidden'}">
+  <div class="modal-content">
+    <h3>导入连接配置</h3>
+    <div class="form-group">
+      <label for="importRawText">配置 JSON</label>
+      <textarea id="importRawText" rows="10" bind:value={importRawText} placeholder={IMPORT_PLACEHOLDER}></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" on:click={closeImportModal}>取消</button>
+      <button class="btn btn-primary" on:click={handleImportConfig}>导入并应用</button>
+    </div>
   </div>
 </div>
 

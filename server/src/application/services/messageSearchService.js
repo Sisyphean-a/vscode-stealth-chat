@@ -32,7 +32,8 @@ function normalizeSearchInput(options, parsePositiveInt) {
       : null;
   const keyword = typeof options.keyword === "string" ? options.keyword.trim() : "";
   const limit = parsePositiveInt(options.limit, DEFAULT_SEARCH_LIMIT);
-  return { appId, keyword, limit };
+  const includeArchived = options.includeArchived !== false;
+  return { appId, keyword, limit, includeArchived };
 }
 
 function getHotSearchRows(database, appId, keyword, limit) {
@@ -88,8 +89,8 @@ function mapArchiveResults(rows, mapArchivedRow, keyword) {
   });
 }
 
-function sortAndLimitResults(results, limit) {
-  return results
+function sortResultsByTime(results) {
+  return [...results]
     .sort((a, b) => {
       if (a.timestamp === b.timestamp) {
         const aId = a.messageId || a.archiveId || 0;
@@ -97,8 +98,21 @@ function sortAndLimitResults(results, limit) {
         return bId - aId;
       }
       return b.timestamp - a.timestamp;
-    })
-    .slice(0, limit);
+    });
+}
+
+function pickMixedResults(hotResults, archiveResults, limit) {
+  if (archiveResults.length === 0) {
+    return sortResultsByTime(hotResults).slice(0, limit);
+  }
+  const archiveReserve = Math.min(
+    archiveResults.length,
+    Math.max(1, Math.floor(limit / 3)),
+  );
+  const hotLimit = Math.max(0, limit - archiveReserve);
+  const pickedHot = sortResultsByTime(hotResults).slice(0, hotLimit);
+  const pickedArchive = sortResultsByTime(archiveResults).slice(0, archiveReserve);
+  return sortResultsByTime([...pickedHot, ...pickedArchive]).slice(0, limit);
 }
 
 function createMessageSearchService(options) {
@@ -129,13 +143,16 @@ function createMessageSearchService(options) {
       normalized.limit,
     );
     const hotResults = mapHotResults(hotRows, mapMessageRow, normalized.keyword);
+    if (!normalized.includeArchived) {
+      return sortResultsByTime(hotResults).slice(0, normalized.limit);
+    }
     const archiveRows = archiveDb.searchArchivedMessages({
       appId: normalized.appId,
       keyword: normalized.keyword,
       limit: normalized.limit,
     });
     const archiveResults = mapArchiveResults(archiveRows, mapArchivedRow, normalized.keyword);
-    return sortAndLimitResults([...hotResults, ...archiveResults], normalized.limit);
+    return pickMixedResults(hotResults, archiveResults, normalized.limit);
   }
 
   return { searchMessages };
