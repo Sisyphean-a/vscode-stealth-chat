@@ -109,6 +109,12 @@ textarea:focus {
     white-space: nowrap;
 }
 
+.send-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
 /* Attach Button */
 .attach-btn {
     width: 36px;
@@ -321,4 +327,10 @@ textarea:focus {
     padding: 0 20px 10px;
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+.send-error {
+    padding: 0 20px 10px;
+    font-size: 12px;
+    color: var(--danger-color);
 }

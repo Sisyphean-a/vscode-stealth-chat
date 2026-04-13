@@ -140,6 +140,12 @@ export default {
                                         <span class="quote-inline-prefix">↩ {{ getSourceLabel(msg.quote.source) }}</span>
                                         <span class="quote-inline-text">{{ msg.quote.textSnippet || '(空消息)' }}</span>
                                     </button>
+                                    <span
+                                        v-if="msg.type === 'own' && msg.id && msg.id === readAnchorMessageId"
+                                        class="bubble-read-marker"
+                                    >
+                                        Read
+                                    </span>
                                 </div>
                             </div>
                             <button
@@ -161,15 +167,10 @@ export default {
                         <img :src="img.data" alt="待发送图片">
                         <span v-if="img.wasCompressed" class="pending-badge">已压缩</span>
                         <button class="remove-pending" :disabled="isSending" @click="removePendingImage(idx)">×</button>
-                    <span
-                        v-if="msg.type === 'own' && msg.id && msg.id === readAnchorMessageId"
-                        class="bubble-read-marker"
-                    >
-                        Read
-                    </span>
                     </div>
                 </div>
                 <div v-if="sendProgressText" class="send-progress">{{ sendProgressText }}</div>
+                <div v-if="errorMsg" class="send-error">{{ errorMsg }}</div>
                 <div v-if="quotedMessage" class="quote-draft">
                     <span class="quote-draft-text">{{ quoteDraftLabel }}</span>
                     <button class="quote-draft-clear" type="button" @click="clearQuote">×</button>
@@ -207,7 +208,17 @@ export default {
                         @keydown.enter.exact.prevent="sendMessage"
                     ></textarea>
                     <button type="submit" class="send-btn" :class="{ busy: isSending }" :disabled="sendButtonDisabled">
-                        <span>{{ sendButtonLabel }}</span>
+                        <span v-if="isSending">{{ sendButtonBusyText }}</span>
+                        <svg v-else class="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                                d="M4 12.75L19.2 4.32c.58-.32 1.28.2 1.13.84l-2.4 10.15a1 1 0 0 1-.73.74L7.06 18.78c-.64.15-1.16-.55-.84-1.13l2.94-5.28a1 1 0 0 0 0-.98L6.22 6.1c-.32-.58.2-1.28.84-1.13L17.2 7.35"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="1.8"
+                            />
+                        </svg>
                     </button>
                 </form>
             </footer>
@@ -353,14 +364,11 @@ export default {
             return !inputText.value.trim() && pendingImages.length === 0
         })
 
-        const sendButtonLabel = computed(() => {
+        const sendButtonBusyText = computed(() => {
             if (sendPhase.value === 'uploading') {
                 return '上传中'
             }
-            if (sendPhase.value === 'sending') {
-                return '发送中'
-            }
-            return '↑'
+            return '发送中'
         })
 
         const clearQuote = () => {
@@ -570,6 +578,7 @@ export default {
         const sendMessage = async () => {
             if ((!inputText.value.trim() && pendingImages.length === 0) || !chat.socketConnected.value || isSending.value) return
 
+            chat.errorMsg.value = ''
             isSending.value = true
             sendPhase.value = pendingImages.length > 0 ? 'uploading' : 'sending'
             sendProgressText.value = pendingImages.length > 0 ? `准备上传 ${pendingImages.length} 张图片...` : '正在发送消息...'
@@ -685,6 +694,7 @@ export default {
             parseMarkdown, formatTime, showTimeDivider, formatDividerDate, getImageSrc,
             searchKeyword, searchResults, searchError, showSearchPanel,
             peerReadText, readAnchorMessageId,
+            sendButtonBusyText,
             reportRead,
         }
     }
