@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { ChatMessage } from '../../../types';
   import { escapeHtml, formatLogTime, formatShortTime, linkifyImages } from '../../lib/format';
+  import { buildLogImageTagTitle, formatLogImageLabel } from '../../lib/logLayout';
   import {
     normalizeClientMessageId,
     parsePositiveInt,
@@ -192,29 +193,37 @@
 
           <div class="log-body">
             {#if message.attachments && message.attachments.length > 0}
-              {#each message.attachments as attachment}
-                {#if attachment.type === 'image'}
-                  {@const resolved = resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
-                  <button
-                    type="button"
-                    class="img-tag"
-                    on:click={() => onImageClick(resolved)}
-                    on:mouseenter={(event) => dispatchPreview('previewHoverStart', event, resolved)}
-                    on:mousemove={(event) => dispatchPreview('previewHoverMove', event, resolved)}
-                    on:mouseleave={onPreviewEnd}
-                  >
-                    [IMG:{attachment.filename || 'image.png'}]
-                  </button>
+              <div class="log-attachments">
+                {#each message.attachments as attachment}
+                  {#if attachment.type === 'image'}
+                    {@const resolved = resolveAttachmentUrl(attachment.data || attachment.url, serverUrl)}
+                    <button
+                      type="button"
+                      class="img-tag"
+                      title={buildLogImageTagTitle(attachment.filename)}
+                      aria-label={buildLogImageTagTitle(attachment.filename)}
+                      on:click={() => onImageClick(resolved)}
+                      on:mouseenter={(event) => dispatchPreview('previewHoverStart', event, resolved)}
+                      on:mousemove={(event) => dispatchPreview('previewHoverMove', event, resolved)}
+                      on:mouseleave={onPreviewEnd}
+                    >
+                      {formatLogImageLabel(attachment.filename)}
+                    </button>
+                  {/if}
+                {/each}
+              </div>
+            {/if}
+
+            {#if message.text || (isOwn && isReadAnchor)}
+              <div class="log-text-row">
+                {#if message.text}
+                  <span class="log-text">{@html textHtml}</span>
                 {/if}
-              {/each}
-            {/if}
 
-            {#if message.text}
-              <span class="log-text">{@html textHtml}</span>
-            {/if}
-
-            {#if isOwn && isReadAnchor}
-              <span class="log-read-marker">Read</span>
+                {#if isOwn && isReadAnchor}
+                  <span class="log-read-marker">Read</span>
+                {/if}
+              </div>
             {/if}
           </div>
 

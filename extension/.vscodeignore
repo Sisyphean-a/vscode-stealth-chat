@@ -3,6 +3,7 @@
 .vscode-test/**
 src/**
 out/**
+scripts/**
 node_modules/**
 .gitignore
 .gitattributes
