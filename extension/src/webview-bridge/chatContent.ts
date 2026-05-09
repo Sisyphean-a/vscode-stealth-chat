@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
+import { PUBLIC_WEBVIEW_BUILD_TITLE } from "../constants/branding";
 
 const TEMPLATE_SEGMENTS = ["src", "webview-bridge", "app.html"] as const;
 const BUNDLE_CSS_SEGMENTS = ["dist", "webview", "main.css"] as const;
@@ -17,7 +18,7 @@ function getMissingAssetHtml(missingFiles: string[]): string {
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>TS-Lint Service</title>
+    <title>${PUBLIC_WEBVIEW_BUILD_TITLE}</title>
     <style>
       body { font-family: sans-serif; padding: 16px; line-height: 1.5; }
       h1 { font-size: 16px; margin: 0 0 8px; }
@@ -57,6 +58,7 @@ function applyHtmlPlaceholders(
   scriptUri: string
 ): string {
   return html
+    .replace(/{{appTitle}}/g, PUBLIC_WEBVIEW_BUILD_TITLE)
     .replace(/{{nonce}}/g, nonce)
     .replace(/{{cspSource}}/g, cspSource)
     .replace(/{{styleUri}}/g, styleUri)

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { ChatMessage, Connection, SocketCallbacks } from "../types";
-import { getActiveConnection, getAllConnections } from "../utils/helpers";
+import { ChatMessage, SocketCallbacks } from "../types";
+import { getActiveConnection, getAllConnections, getCompatibleConfigValue } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as conversationStore from "../services/conversationStore";
 import { BackgroundSyncService } from "../services/backgroundSyncService";
@@ -12,12 +12,12 @@ import { ensureDefaultConnection } from "../services/configService";
 import { buildHostMessage, type HostMessageBody } from "../webview-bridge/protocol";
 import { ConfigChangeKind, ConfigWatcher } from "./configWatcher";
 import { registerRuntimeCommands } from "./registerCommands";
+import { PUBLIC_OUTPUT_CHANNEL_NAME } from "../constants/branding";
 import {
   shouldApplyReadReceiptToUnread,
   shouldIncrementUnreadCount,
 } from "../../../packages/chat-core/index.js";
 
-const OUTPUT_CHANNEL_NAME = "TS-Lint Service";
 const DEFAULT_BACKGROUND_SYNC_INTERVAL_MS = 4000;
 
 function toMessageText(message: { source: "mobile" | "vscode"; timestamp: number; text: string }): string {
@@ -41,7 +41,7 @@ export class ExtensionRuntime {
 
   public constructor(context: vscode.ExtensionContext) {
     this.context = context;
-    this.outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+    this.outputChannel = vscode.window.createOutputChannel(PUBLIC_OUTPUT_CHANNEL_NAME);
   }
 
   public async activate(): Promise<void> {
@@ -104,10 +104,11 @@ export class ExtensionRuntime {
     if (!this.backgroundSync) {
       return;
     }
-    const config = vscode.workspace.getConfiguration("tsLint");
-    const enabled = config.get<boolean>("backgroundSyncEnabled") ?? true;
-    const pollIntervalMs =
-      config.get<number>("backgroundSyncIntervalMs") ?? DEFAULT_BACKGROUND_SYNC_INTERVAL_MS;
+    const enabled = getCompatibleConfigValue<boolean>("backgroundSyncEnabled", true) ?? true;
+    const pollIntervalMs = getCompatibleConfigValue<number>(
+      "backgroundSyncIntervalMs",
+      DEFAULT_BACKGROUND_SYNC_INTERVAL_MS,
+    ) ?? DEFAULT_BACKGROUND_SYNC_INTERVAL_MS;
     const syncConnections = getAllConnections().filter((connection) => connection.backgroundSync !== false);
 
     const syncReady = enabled && syncConnections.length > 0;
@@ -122,9 +123,8 @@ export class ExtensionRuntime {
   }
 
   private connectActiveSocket(): void {
-    const config = vscode.workspace.getConfiguration("tsLint");
     const connection = getActiveConnection();
-    const forceWebsocket = config.get<boolean>("forceWebsocket") || false;
+    const forceWebsocket = getCompatibleConfigValue<boolean>("forceWebsocket", false) || false;
 
     this.activateConversation(connection.name);
     this.resetSocketState();
@@ -269,8 +269,7 @@ export class ExtensionRuntime {
   }
 
   private postWebviewRuntimeConfig(): void {
-    const config = vscode.workspace.getConfiguration("tsLint");
-    const rawDisplayMode = config.get<string>("displayMode");
+    const rawDisplayMode = getCompatibleConfigValue<string>("displayMode", "bubble");
     const displayMode: "bubble" | "log" = rawDisplayMode === "log" ? "log" : "bubble";
     const connection = getActiveConnection();
     this.postToWebview({

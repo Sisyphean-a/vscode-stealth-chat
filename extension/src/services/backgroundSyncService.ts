@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { Connection } from "../types";
 import * as conversationStore from "./conversationStore";
+import { CURRENT_CURSOR_STATE_KEY } from "./configNamespace";
 import {
   closeSyncSession,
   createSyncSession,
@@ -8,8 +9,6 @@ import {
   type SyncPullUpdate,
   type SyncSessionApp,
 } from "./syncApiService";
-
-const CURSOR_STATE_KEY = "tsLint.backgroundSyncCursors";
 const DEFAULT_POLL_INTERVAL_MS = 4000;
 const DEFAULT_LIMIT_PER_APP = 50;
 const MAX_BACKOFF_MS = 30000;
@@ -119,7 +118,7 @@ export class BackgroundSyncService {
   }
 
   public loadPersistedState(): void {
-    const saved = this.globalState.get<Record<string, { timestamp: number; id: number }>>(CURSOR_STATE_KEY, {});
+    const saved = this.globalState.get<Record<string, { timestamp: number; id: number }>>(CURRENT_CURSOR_STATE_KEY, {});
     conversationStore.loadPersistedCursors(saved);
   }
 
@@ -151,7 +150,7 @@ export class BackgroundSyncService {
       clearTimeout(this.cursorSaveTimer);
       this.cursorSaveTimer = undefined;
     }
-    void this.globalState.update(CURSOR_STATE_KEY, conversationStore.exportCursors());
+    void this.globalState.update(CURRENT_CURSOR_STATE_KEY, conversationStore.exportCursors());
   }
 
   private log(line: string): void {
@@ -317,7 +316,7 @@ export class BackgroundSyncService {
       clearTimeout(this.cursorSaveTimer);
     }
     this.cursorSaveTimer = setTimeout(() => {
-      void this.globalState.update(CURSOR_STATE_KEY, conversationStore.exportCursors());
+      void this.globalState.update(CURRENT_CURSOR_STATE_KEY, conversationStore.exportCursors());
     }, delayMs);
   }
 }

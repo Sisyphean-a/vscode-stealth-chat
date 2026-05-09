@@ -1,4 +1,10 @@
 import * as vscode from "vscode";
+import {
+  buildConfigPath,
+  CURRENT_CONFIG_NAMESPACE,
+  LEGACY_CONFIG_NAMESPACE,
+  type MigratableConfigKey,
+} from "../services/configNamespace";
 
 const DEFAULT_DEBOUNCE_MS = 200;
 
@@ -9,23 +15,32 @@ type ConfigWatcherOptions = {
   readonly onChange: (kinds: ReadonlySet<ConfigChangeKind>) => void;
 };
 
+function affectsEitherNamespace(
+  event: vscode.ConfigurationChangeEvent,
+  key: MigratableConfigKey,
+): boolean {
+  return event.affectsConfiguration(buildConfigPath(CURRENT_CONFIG_NAMESPACE, key))
+    || event.affectsConfiguration(buildConfigPath(LEGACY_CONFIG_NAMESPACE, key));
+}
+
 function collectKinds(event: vscode.ConfigurationChangeEvent): ConfigChangeKind[] {
   const kinds: ConfigChangeKind[] = [];
   if (
-    event.affectsConfiguration("tsLint.activeConnection")
-    || event.affectsConfiguration("tsLint.connections")
-    || event.affectsConfiguration("tsLint.serverUrl")
-    || event.affectsConfiguration("tsLint.secret")
+    affectsEitherNamespace(event, "activeConnection")
+    || affectsEitherNamespace(event, "connections")
+    || affectsEitherNamespace(event, "serverUrl")
+    || affectsEitherNamespace(event, "secret")
+    || affectsEitherNamespace(event, "forceWebsocket")
   ) {
     kinds.push("connection");
   }
   if (
-    event.affectsConfiguration("tsLint.backgroundSyncEnabled")
-    || event.affectsConfiguration("tsLint.backgroundSyncIntervalMs")
+    affectsEitherNamespace(event, "backgroundSyncEnabled")
+    || affectsEitherNamespace(event, "backgroundSyncIntervalMs")
   ) {
     kinds.push("backgroundSync");
   }
-  if (event.affectsConfiguration("tsLint.displayMode")) {
+  if (affectsEitherNamespace(event, "displayMode")) {
     kinds.push("display");
   }
   return kinds;

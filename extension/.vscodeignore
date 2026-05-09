@@ -13,9 +13,14 @@ node_modules/**
 tsconfig.json
 esbuild.js
 *.map
+**/*.map
+svelte.config.js
 
 # 文档和配置
 *.md
+!README.md
+!CHANGELOG.md
+!SUPPORT.md
 .eslintrc.json
 .prettierrc
 

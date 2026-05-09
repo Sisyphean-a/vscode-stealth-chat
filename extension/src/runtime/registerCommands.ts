@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { Connection } from "../types";
 import * as socketService from "../services/socketService";
+import * as configService from "../services/configService";
 import * as unreadStateService from "../services/unreadStateService";
 import { getActiveConnection } from "../utils/helpers";
 
@@ -9,14 +9,13 @@ type RegisterCommandOptions = {
 };
 
 async function switchConnection(): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  const connections = config.get<Connection[]>("connections") || [];
+  const connections = configService.getConnections();
   if (connections.length === 0) {
-    vscode.window.showInformationMessage("未配置任何连接。");
+    vscode.window.showInformationMessage("还没有可用连接。");
     return;
   }
 
-  const currentActive = config.get<string>("activeConnection");
+  const currentActive = configService.getActiveConnectionName();
   const items = connections.map((connection) => ({
     label: connection.name,
     description: connection.serverUrl || "default",
@@ -24,16 +23,16 @@ async function switchConnection(): Promise<void> {
   }));
 
   const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: "选择连接配置",
+    placeHolder: "切换连接",
   });
   if (selected && selected.label !== currentActive) {
-    await config.update("activeConnection", selected.label, true);
+    await configService.setActiveConnection(selected.label);
   }
 }
 
 async function sendMessageFromQuickInput(): Promise<void> {
   const message = await vscode.window.showInputBox({
-    placeHolder: "Enter configuration parameters...",
+    placeHolder: "发送一条消息",
     ignoreFocusOut: true,
   });
   if (!message?.trim() || !socketService.isConnected()) {

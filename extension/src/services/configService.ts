@@ -1,23 +1,27 @@
 /**
  * 配置读写服务
  */
-import * as vscode from "vscode";
 import { Connection, GlobalSettings } from "../types";
-import { DEFAULT_SERVER_URL, normalizeServerUrl } from "../utils/helpers";
+import {
+  DEFAULT_SERVER_URL,
+  getCompatibleConfigValue,
+  normalizeServerUrl,
+  updateCurrentConfigValue,
+} from "../utils/helpers";
 
 /**
  * 获取全局设置
  */
 export function getGlobalSettings(): GlobalSettings {
-  const config = vscode.workspace.getConfiguration("tsLint");
   const serverUrl = normalizeServerUrl(
-    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+    getCompatibleConfigValue<string>("serverUrl", DEFAULT_SERVER_URL) || DEFAULT_SERVER_URL
   );
+  const rawDisplayMode = getCompatibleConfigValue<string>("displayMode", "bubble");
   return {
     serverUrl,
-    forceWebsocket: config.get<boolean>("forceWebsocket") || false,
-    autoReveal: config.get<boolean>("autoReveal") || false,
-    displayMode: config.get<"bubble" | "log">("displayMode") || "bubble",
+    forceWebsocket: getCompatibleConfigValue<boolean>("forceWebsocket", false) || false,
+    autoReveal: getCompatibleConfigValue<boolean>("autoReveal", false) || false,
+    displayMode: rawDisplayMode === "log" ? "log" : "bubble",
   };
 }
 
@@ -25,11 +29,10 @@ export function getGlobalSettings(): GlobalSettings {
  * 保存全局设置
  */
 export async function saveGlobalSettings(settings: GlobalSettings): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  await config.update("serverUrl", normalizeServerUrl(settings.serverUrl), true);
-  await config.update("forceWebsocket", settings.forceWebsocket, true);
-  await config.update("autoReveal", settings.autoReveal, true);
-  await config.update("displayMode", settings.displayMode, true);
+  await updateCurrentConfigValue("serverUrl", normalizeServerUrl(settings.serverUrl));
+  await updateCurrentConfigValue("forceWebsocket", settings.forceWebsocket);
+  await updateCurrentConfigValue("autoReveal", settings.autoReveal);
+  await updateCurrentConfigValue("displayMode", settings.displayMode);
 }
 
 /**
@@ -37,16 +40,15 @@ export async function saveGlobalSettings(settings: GlobalSettings): Promise<void
  * 当 connections 为空时，基于旧配置自动创建默认连接
  */
 export async function ensureDefaultConnection(): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  const connections = config.get<Connection[]>("connections") || [];
+  const connections = getCompatibleConfigValue<Connection[]>("connections", []) || [];
   if (connections.length > 0) {
     return;
   }
 
   const serverUrl = normalizeServerUrl(
-    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+    getCompatibleConfigValue<string>("serverUrl", DEFAULT_SERVER_URL) || DEFAULT_SERVER_URL
   );
-  const token = config.get<string>("secret") || "";
+  const token = getCompatibleConfigValue<string>("secret", "") || "";
 
   // 如果没有有效 token，不创建默认连接
   if (!token || token === "ChangeMeInProduction") {
@@ -60,24 +62,22 @@ export async function ensureDefaultConnection(): Promise<void> {
     backgroundSync: true,
   };
 
-  await config.update("connections", [defaultConn], true);
-  await config.update("activeConnection", defaultConn.name, true);
+  await updateCurrentConfigValue("connections", [defaultConn]);
+  await updateCurrentConfigValue("activeConnection", defaultConn.name);
 }
 
 /**
  * 获取连接列表
  */
 export function getConnections(): Connection[] {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  return config.get<Connection[]>("connections") || [];
+  return getCompatibleConfigValue<Connection[]>("connections", []) || [];
 }
 
 /**
  * 获取活跃连接名称
  */
 export function getActiveConnectionName(): string {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  return config.get<string>("activeConnection") || "";
+  return getCompatibleConfigValue<string>("activeConnection", "") || "";
 }
 
 /**
@@ -87,7 +87,6 @@ export async function saveConnection(
   connection: Connection,
   originalName?: string
 ): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
   const connections = [...getConnections()];
   const normalizedConnection: Connection = {
     ...connection,
@@ -106,13 +105,13 @@ export async function saveConnection(
     connections.push(normalizedConnection);
   }
 
-  await config.update("connections", connections, true);
+  await updateCurrentConfigValue("connections", connections);
 
   // 如果修改了名称且是活跃连接，更新活跃连接名
   if (originalName && originalName !== normalizedConnection.name) {
     const activeName = getActiveConnectionName();
     if (activeName === originalName) {
-      await config.update("activeConnection", normalizedConnection.name, true);
+      await updateCurrentConfigValue("activeConnection", normalizedConnection.name);
     }
   }
 }
@@ -121,15 +120,14 @@ export async function saveConnection(
  * 删除连接
  */
 export async function deleteConnection(name: string): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
   const connections = getConnections().filter((c) => c.name !== name);
-  await config.update("connections", connections, true);
+  await updateCurrentConfigValue("connections", connections);
 
   // 如果删除的是活跃连接，清空或切换到第一个
   const activeName = getActiveConnectionName();
   if (activeName === name) {
     const newActive = connections.length > 0 ? connections[0].name : "";
-    await config.update("activeConnection", newActive, true);
+    await updateCurrentConfigValue("activeConnection", newActive);
   }
 }
 
@@ -137,8 +135,7 @@ export async function deleteConnection(name: string): Promise<void> {
  * 设置活跃连接
  */
 export async function setActiveConnection(name: string): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  await config.update("activeConnection", name, true);
+  await updateCurrentConfigValue("activeConnection", name);
 }
 
 function sanitizeConnection(input: Connection): Connection {
@@ -188,9 +185,8 @@ export async function importConfig(payload: {
   connections: Connection[];
   activeConnection: string;
 }): Promise<void> {
-  const config = vscode.workspace.getConfiguration("tsLint");
   const normalized = validateImportPayload(payload);
   await saveGlobalSettings(normalized.globalSettings);
-  await config.update("connections", normalized.connections, true);
-  await config.update("activeConnection", normalized.activeConnection, true);
+  await updateCurrentConfigValue("connections", normalized.connections);
+  await updateCurrentConfigValue("activeConnection", normalized.activeConnection);
 }

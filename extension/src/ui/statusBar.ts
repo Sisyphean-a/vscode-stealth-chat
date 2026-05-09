@@ -3,6 +3,7 @@
  */
 import * as vscode from "vscode";
 import { getActiveConnection } from "../utils/helpers";
+import { PUBLIC_CONNECTING_TOOLTIP } from "../constants/branding";
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let unreadCount = 0;
@@ -55,7 +56,7 @@ export function updateStatusBar(): void {
 export function setConnecting(name: string): void {
   if (!statusBarItem) return;
   statusBarItem.text = `$(sync~spin) ${name}`;
-  statusBarItem.tooltip = "正在连接服务器...";
+  statusBarItem.tooltip = PUBLIC_CONNECTING_TOOLTIP;
 }
 
 /**

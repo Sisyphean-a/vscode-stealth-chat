@@ -3,8 +3,38 @@
  */
 import * as vscode from "vscode";
 import { Connection } from "../types";
+import {
+  CURRENT_CONFIG_NAMESPACE,
+  hasConfigValue,
+  LEGACY_CONFIG_NAMESPACE,
+  type MigratableConfigKey,
+} from "../services/configNamespace";
 
 export const DEFAULT_SERVER_URL = "http://localhost:3000";
+
+function getCurrentConfig(): vscode.WorkspaceConfiguration {
+  return vscode.workspace.getConfiguration(CURRENT_CONFIG_NAMESPACE);
+}
+
+function getLegacyConfig(): vscode.WorkspaceConfiguration {
+  return vscode.workspace.getConfiguration(LEGACY_CONFIG_NAMESPACE);
+}
+
+export function getCompatibleConfigValue<T>(key: MigratableConfigKey, fallback?: T): T | undefined {
+  const currentValue = getCurrentConfig().get<T>(key);
+  if (hasConfigValue(key, currentValue)) {
+    return currentValue;
+  }
+  const legacyValue = getLegacyConfig().get<T>(key);
+  if (hasConfigValue(key, legacyValue)) {
+    return legacyValue;
+  }
+  return fallback;
+}
+
+export async function updateCurrentConfigValue<T>(key: MigratableConfigKey, value: T): Promise<void> {
+  await getCurrentConfig().update(key, value, true);
+}
 
 /**
  * 规范化服务端 URL（去掉首尾空白、查询参数、hash 和尾部斜杠）
@@ -79,11 +109,10 @@ export function getDateKey(timestamp: number): string {
  * 获取当前活动连接配置
  */
 export function getActiveConnection(): Connection & { serverUrl: string } {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  const connections = config.get<Connection[]>("connections") || [];
-  const activeName = config.get<string>("activeConnection");
+  const connections = getCompatibleConfigValue<Connection[]>("connections", []) || [];
+  const activeName = getCompatibleConfigValue<string>("activeConnection", "");
   const globalServerUrl = normalizeServerUrl(
-    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+    getCompatibleConfigValue<string>("serverUrl", DEFAULT_SERVER_URL) || DEFAULT_SERVER_URL
   );
 
   if (connections.length > 0) {
@@ -100,7 +129,7 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
   return {
     name: "Default",
     serverUrl: globalServerUrl,
-    token: config.get<string>("secret") || "ChangeMeInProduction",
+    token: getCompatibleConfigValue<string>("secret", "ChangeMeInProduction") || "ChangeMeInProduction",
     backgroundSync: true,
   };
 }
@@ -109,17 +138,16 @@ export function getActiveConnection(): Connection & { serverUrl: string } {
  * 获取全部连接配置（带规范化 serverUrl）
  */
 export function getAllConnections(): Array<Connection & { serverUrl: string }> {
-  const config = vscode.workspace.getConfiguration("tsLint");
-  const connections = config.get<Connection[]>("connections") || [];
+  const connections = getCompatibleConfigValue<Connection[]>("connections", []) || [];
   const globalServerUrl = normalizeServerUrl(
-    config.get<string>("serverUrl") || DEFAULT_SERVER_URL
+    getCompatibleConfigValue<string>("serverUrl", DEFAULT_SERVER_URL) || DEFAULT_SERVER_URL
   );
 
   if (connections.length === 0) {
     return [{
       name: "Default",
       serverUrl: globalServerUrl,
-      token: config.get<string>("secret") || "ChangeMeInProduction",
+      token: getCompatibleConfigValue<string>("secret", "ChangeMeInProduction") || "ChangeMeInProduction",
       backgroundSync: true,
     }];
   }

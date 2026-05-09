@@ -25,6 +25,12 @@ import {
   parseReadReceiptPayload,
   parseSearchAck,
 } from "./socket/payloadParser";
+import {
+  PUBLIC_CONNECTED_LOG,
+  PUBLIC_CONNECTED_TOOLTIP,
+  PUBLIC_DISCONNECTED_LOG,
+  PUBLIC_DISCONNECTED_TOOLTIP,
+} from "../constants/branding";
 
 const TEST_CONNECTION_TIMEOUT_MS = 10000;
 
@@ -94,8 +100,8 @@ function bindSocketEvents(callbacks: SocketCallbacks): void {
     return;
   }
   socket.on("connect", () => {
-    historyLogger.logInfo("TS-Lint Service connected");
-    statusBar.setTooltip("TS-Lint Service 已连接");
+    historyLogger.logInfo(PUBLIC_CONNECTED_LOG);
+    statusBar.setTooltip(PUBLIC_CONNECTED_TOOLTIP);
     statusBar.updateStatusBar();
     outboxService.bindEmitter(emitWithAck);
     if (!historyLoaded) {
@@ -106,8 +112,8 @@ function bindSocketEvents(callbacks: SocketCallbacks): void {
   });
 
   socket.on("disconnect", () => {
-    historyLogger.logInfo("TS-Lint Service disconnected");
-    statusBar.setTooltip("TS-Lint Service 已断开");
+    historyLogger.logInfo(PUBLIC_DISCONNECTED_LOG);
+    statusBar.setTooltip(PUBLIC_DISCONNECTED_TOOLTIP);
     outboxService.bindEmitter(undefined);
     callbacks.onDisconnect?.();
   });

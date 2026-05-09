@@ -1,0 +1,11 @@
+export const PUBLIC_BRAND_NAME = "Stealth Chat Client";
+export const PUBLIC_SHORT_DESCRIPTION = "A lightweight VS Code client for Stealth Chat.";
+export const PUBLIC_VIEW_TITLE = "Stealth Chat";
+export const PUBLIC_OUTPUT_CHANNEL_NAME = PUBLIC_BRAND_NAME;
+export const PUBLIC_COMMAND_CATEGORY = "Stealth Chat";
+export const PUBLIC_CONNECTED_LOG = `${PUBLIC_BRAND_NAME} connected`;
+export const PUBLIC_DISCONNECTED_LOG = `${PUBLIC_BRAND_NAME} disconnected`;
+export const PUBLIC_CONNECTED_TOOLTIP = `${PUBLIC_BRAND_NAME} 已连接`;
+export const PUBLIC_DISCONNECTED_TOOLTIP = `${PUBLIC_BRAND_NAME} 已断开`;
+export const PUBLIC_CONNECTING_TOOLTIP = `${PUBLIC_BRAND_NAME} 连接中...`;
+export const PUBLIC_WEBVIEW_BUILD_TITLE = PUBLIC_VIEW_TITLE;

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { getChatHtml } from "../webview-bridge/chatContent";
-import { getNonce, getActiveConnection } from "../utils/helpers";
+import { getNonce, getActiveConnection, getCompatibleConfigValue } from "../utils/helpers";
 import * as socketService from "../services/socketService";
 import * as conversationStore from "../services/conversationStore";
 import * as configService from "../services/configService";
@@ -133,8 +133,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       payload: { connected: socketService.isConnected() },
     });
 
-    const config = vscode.workspace.getConfiguration("tsLint");
-    const rawDisplayMode = config.get<string>("displayMode");
+    const rawDisplayMode = getCompatibleConfigValue<string>("displayMode", "bubble");
     const displayMode: "bubble" | "log" = rawDisplayMode === "log" ? "log" : "bubble";
     const activeConnection = getActiveConnection();
     this.postHostMessage(view, {
