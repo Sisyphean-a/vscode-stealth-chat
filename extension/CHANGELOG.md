@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- Align the internal extension package name with the public Stealth Chat Client branding
+- Package the extension as `stealth-chat-client-1.0.2.vsix`
+
 ## 1.0.1
 
 - Restore the stable internal extension identifier so Marketplace installs upgrade the existing extension instead of creating a second one

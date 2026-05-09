@@ -10,7 +10,7 @@ const packageJson = JSON.parse(
 );
 const readme = await readFile(path.join(extensionDir, "README.md"), "utf8");
 
-assert.equal(packageJson.name, "vscode-stealth-chat");
+assert.equal(packageJson.name, "stealth-chat-client");
 assert.equal(packageJson.displayName, "Stealth Chat Client");
 assert.equal(packageJson.description, "A lightweight VS Code client for Stealth Chat.");
 assert.equal(packageJson.icon, "media/icon.png");

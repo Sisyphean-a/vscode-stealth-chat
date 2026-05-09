@@ -1,9 +1,9 @@
 {
-  "name": "vscode-stealth-chat",
+  "name": "stealth-chat-client",
   "displayName": "Stealth Chat Client",
   "description": "A lightweight VS Code client for Stealth Chat.",
-  "version": "1.0.1",
-  "publisher": "stealth",
+  "version": "1.0.2",
+  "publisher": "xixifu",
   "license": "MIT",
   "repository": {
     "type": "git",
